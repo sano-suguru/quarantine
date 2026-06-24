@@ -18,16 +18,32 @@ let quadVBO: WebGLBuffer;
 let u_cam: WebGLUniformLocation | null;
 let u_half: WebGLUniformLocation | null;
 let u_player: WebGLUniformLocation | null;
-let u_light: WebGLUniformLocation | null;
+let u_aim: WebGLUniformLocation | null;
+let u_cone: WebGLUniformLocation | null;
+let u_personal: WebGLUniformLocation | null;
+let u_intensity: WebGLUniformLocation | null;
+let u_emissive: WebGLUniformLocation | null;
 let g_cam: WebGLUniformLocation | null;
 let g_half: WebGLUniformLocation | null;
 let g_player: WebGLUniformLocation | null;
-let g_light: WebGLUniformLocation | null;
+let g_aim: WebGLUniformLocation | null;
+let g_cone: WebGLUniformLocation | null;
+let g_personal: WebGLUniformLocation | null;
+let g_intensity: WebGLUniformLocation | null;
 let viewHalfX = 400;
 let viewHalfY = 300;
+// flashlight state (set each frame via setLight + setFlashlight)
 let lightX = 0;
 let lightY = 0;
-let lightR = 600;
+let aimX = 1;
+let aimY = 0;
+let coneCos = 0.85;
+let coneRange = 620;
+let coneAmbient = 0.05;
+let personalRadius = 130;
+let personalMax = 0.5;
+let intensity = 1;
+let emissiveFloor = 0.4;
 
 interface Layer {
   vao: WebGLVertexArrayObject;
@@ -94,7 +110,11 @@ function init(cv: HTMLCanvasElement): void {
   u_cam = gl.getUniformLocation(instProg, "u_cam");
   u_half = gl.getUniformLocation(instProg, "u_half");
   u_player = gl.getUniformLocation(instProg, "u_player");
-  u_light = gl.getUniformLocation(instProg, "u_light");
+  u_aim = gl.getUniformLocation(instProg, "u_aim");
+  u_cone = gl.getUniformLocation(instProg, "u_cone");
+  u_personal = gl.getUniformLocation(instProg, "u_personal");
+  u_intensity = gl.getUniformLocation(instProg, "u_intensity");
+  u_emissive = gl.getUniformLocation(instProg, "u_emissive");
 
   quadVBO = gl.createBuffer() as WebGLBuffer;
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
@@ -107,7 +127,10 @@ function init(cv: HTMLCanvasElement): void {
   g_cam = gl.getUniformLocation(gridProg, "u_cam");
   g_half = gl.getUniformLocation(gridProg, "u_half");
   g_player = gl.getUniformLocation(gridProg, "u_player");
-  g_light = gl.getUniformLocation(gridProg, "u_light");
+  g_aim = gl.getUniformLocation(gridProg, "u_aim");
+  g_cone = gl.getUniformLocation(gridProg, "u_cone");
+  g_personal = gl.getUniformLocation(gridProg, "u_personal");
+  g_intensity = gl.getUniformLocation(gridProg, "u_intensity");
   gridVAO = gl.createVertexArray() as WebGLVertexArrayObject;
   gl.bindVertexArray(gridVAO);
   const triVBO = gl.createBuffer();
@@ -135,11 +158,33 @@ function begin(): void {
   additive.count = 0;
 }
 
-/** set the world-space light source (player) and its radius for darkness falloff */
-function setLight(x: number, y: number, radius: number): void {
+/** set the world-space flashlight origin (the player) */
+function setLight(x: number, y: number): void {
   lightX = x;
   lightY = y;
-  lightR = radius;
+}
+
+/** configure the aimed flashlight cone for this frame */
+function setFlashlight(
+  ax: number,
+  ay: number,
+  cosHalf: number,
+  range: number,
+  ambient: number,
+  personalR: number,
+  personalM: number,
+  intens: number,
+  emissive: number,
+): void {
+  aimX = ax;
+  aimY = ay;
+  coneCos = cosHalf;
+  coneRange = range;
+  coneAmbient = ambient;
+  personalRadius = personalR;
+  personalMax = personalM;
+  intensity = intens;
+  emissiveFloor = emissive;
 }
 
 function write(
@@ -331,7 +376,10 @@ function flush(camX: number, camY: number): void {
   gl.uniform2f(g_cam, camX, camY);
   gl.uniform2f(g_half, viewHalfX, viewHalfY);
   gl.uniform2f(g_player, lightX, lightY);
-  gl.uniform1f(g_light, lightR);
+  gl.uniform2f(g_aim, aimX, aimY);
+  gl.uniform3f(g_cone, coneCos, coneRange, coneAmbient);
+  gl.uniform2f(g_personal, personalRadius, personalMax);
+  gl.uniform1f(g_intensity, intensity);
   gl.bindVertexArray(gridVAO);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -339,11 +387,18 @@ function flush(camX: number, camY: number): void {
   gl.uniform2f(u_cam, camX, camY);
   gl.uniform2f(u_half, viewHalfX, viewHalfY);
   gl.uniform2f(u_player, lightX, lightY);
-  gl.uniform1f(u_light, lightR);
+  gl.uniform2f(u_aim, aimX, aimY);
+  gl.uniform3f(u_cone, coneCos, coneRange, coneAmbient);
+  gl.uniform2f(u_personal, personalRadius, personalMax);
+  gl.uniform1f(u_intensity, intensity);
 
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); // normal pass (bodies, ground)
+  // normal pass (bodies, ground): fully darkened outside the light
+  gl.uniform1f(u_emissive, 0);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   drawLayer(normal);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // additive pass (glow / sparks bloom on top)
+  // additive pass (glow / sparks / eyes): keep a floor so they read in the dark
+  gl.uniform1f(u_emissive, emissiveFloor);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
   drawLayer(additive);
   gl.bindVertexArray(null);
 }
@@ -356,6 +411,7 @@ export const Renderer = {
   init,
   begin,
   setLight,
+  setFlashlight,
   sprite,
   circle,
   rect,

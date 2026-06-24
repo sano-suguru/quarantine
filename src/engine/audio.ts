@@ -151,6 +151,55 @@ function hurt(): void {
   tone(140, 0.25, "sawtooth", 0.3, 60);
 }
 
+/** dry, hollow click when the trigger is pulled on an empty magazine */
+function dryFire(): void {
+  if (!ctx) return;
+  noise(0.03, 0.3, "highpass", 4000);
+  tone(2200, 0.02, "square", 0.05, 1200);
+}
+
+/** short, reassuring chime when an item is scavenged */
+function pickup(): void {
+  if (!ctx) return;
+  tone(660, 0.06, "sine", 0.16, 880);
+  tone(990, 0.1, "sine", 0.14, 1320);
+}
+
+/** whoosh of a knife swing */
+function melee(): void {
+  if (!ctx) return;
+  noise(0.14, 0.4, "bandpass", 1800, 0.8);
+  tone(240, 0.1, "sawtooth", 0.12, 90);
+}
+
+/** soft rising shimmer when a medkit is applied */
+function heal(): void {
+  if (!ctx) return;
+  tone(330, 0.4, "sine", 0.16, 560);
+  tone(495, 0.5, "sine", 0.12, 740);
+}
+
+/** dry tactile click for toggles (flashlight) */
+function click(): void {
+  if (!ctx) return;
+  noise(0.02, 0.25, "highpass", 3200);
+  tone(1400, 0.02, "square", 0.06, 800);
+}
+
+/** relief swell at dawn — the night is survived */
+function dawn(): void {
+  if (!ctx) return;
+  tone(180, 1.0, "sine", 0.3, 360);
+  tone(270, 1.2, "sine", 0.22, 420);
+}
+
+/** hammer thud of boarding up a barricade */
+function repair(): void {
+  if (!ctx) return;
+  tone(150, 0.08, "square", 0.22, 70);
+  noise(0.05, 0.3, "lowpass", 1200, 0.8);
+}
+
 function ui(select: boolean): void {
   resume();
   if (select) {
@@ -256,6 +305,13 @@ export const Audio = {
   reload,
   reloadDone,
   hurt,
+  dryFire,
+  pickup,
+  melee,
+  heal,
+  click,
+  dawn,
+  repair,
   ui,
   waveStart,
   gameOver,

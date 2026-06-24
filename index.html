@@ -40,6 +40,9 @@
   #cross::after{top:50%;left:0;height:2px;width:100%;margin-top:-1px;}
   #cross.fire{transform:scale(1.4);}
   #cross.reload::before,#cross.reload::after{background:var(--amber);box-shadow:0 0 6px var(--amber);}
+  /* dry-fire flinch: crosshair jolts inward and flashes blood-red */
+  #cross.empty{transform:scale(.7);}
+  #cross.empty::before,#cross.empty::after{background:var(--blood);box-shadow:0 0 6px var(--blood);}
 
   #hud{position:fixed;inset:0;pointer-events:none;padding:18px 20px;z-index:2;
     display:flex;flex-direction:column;justify-content:space-between;}
@@ -57,15 +60,44 @@
   #hud.low #hpbar-wrap{animation:hppulse 1s ease-in-out infinite;}
   @keyframes hppulse{0%,100%{box-shadow:0 0 0 rgba(255,77,77,0);}50%{box-shadow:0 0 16px rgba(255,77,77,.7);}}
 
+  /* flashlight battery */
+  #battery{margin-top:9px;}
+  #batbar-wrap{width:180px;height:7px;border:1px solid var(--dim);position:relative;
+    background:rgba(0,0,0,.4);margin-top:3px;}
+  #batbar{height:100%;width:100%;background:#7fd4ff;box-shadow:0 0 8px rgba(127,212,255,.5);
+    transition:width .1s linear,background .2s;}
+  #battery.low #batbar{background:var(--amber);animation:batpulse .7s ease-in-out infinite;}
+  #battery.low #bat-state{color:var(--amber);}
+  #battery.off #batbar{background:var(--dim);box-shadow:none;}
+  #battery.off #bat-state{color:var(--blood);}
+  @keyframes batpulse{0%,100%{opacity:1;}50%{opacity:.45;}}
+
+  /* medkits */
+  #medkit{margin-bottom:8px;}
+  #medkit .stat-val{color:var(--toxic);}
+  #medkit.empty .stat-val{color:var(--dim);}
+
   .weapons{display:flex;gap:7px;margin-top:7px;}
   .wslot{font-size:10px;letter-spacing:.12em;padding:3px 8px;border:1px solid var(--dim);
     color:var(--dim);border-radius:2px;}
   .wslot.active{color:var(--bg);background:var(--amber);border-color:var(--amber);
     box-shadow:0 0 12px rgba(255,179,71,.5);}
-  #ammo .stat-val{color:var(--amber);}
+  #ammo .stat-val{color:var(--amber);transition:color .15s;}
   #magwrap{color:var(--dim);font-size:14px;}
+  #reservewrap{color:var(--dim);font-size:13px;letter-spacing:.04em;}
+  /* running dry: ammo readout turns to blood and pulses */
+  #ammo.low .stat-val,#ammo.low #ammo-val{color:var(--blood);}
+  #ammo.low{animation:ammopulse 1s ease-in-out infinite;}
+  @keyframes ammopulse{0%,100%{filter:none;}50%{filter:drop-shadow(0 0 8px rgba(255,77,77,.7));}}
   #wavetag{font-size:11px;letter-spacing:.3em;color:var(--toxic);text-transform:uppercase;
     text-shadow:0 0 12px rgba(125,255,79,.4);}
+  #phase{font-size:13px;letter-spacing:.34em;color:var(--amber);text-transform:uppercase;
+    text-shadow:0 0 14px rgba(255,179,71,.45);margin-bottom:3px;}
+  #phase.night{color:var(--blood);text-shadow:0 0 16px rgba(255,77,77,.55);}
+  #prompt{font-size:11px;letter-spacing:.18em;color:var(--toxic);text-transform:uppercase;
+    margin-top:5px;opacity:0;transition:opacity .15s;}
+  #prompt.show{opacity:1;animation:promptpulse 1.1s ease-in-out infinite;}
+  @keyframes promptpulse{0%,100%{opacity:.55;}50%{opacity:1;}}
 
   /* wave banner */
   #banner{position:fixed;inset:0;z-index:5;pointer-events:none;display:flex;
@@ -129,24 +161,35 @@
       <div class="stat-label">Integrity</div>
       <div id="hpbar-wrap"><div id="hpbar"></div></div>
       <div id="hpnum">100 / 100</div>
+      <div id="battery">
+        <div class="stat-label">Flashlight [F] &middot; <span id="bat-state">100%</span></div>
+        <div id="batbar-wrap"><div id="batbar"></div></div>
+      </div>
     </div>
     <div class="hud-block r">
-      <div class="stat-label">Wave</div>
+      <div class="stat-label">Day</div>
       <div class="stat-val" id="wave">1</div>
     </div>
   </div>
   <div class="hud-bottom">
     <div class="hud-block" id="ammo">
       <div class="stat-label" id="weapon-name">PISTOL</div>
-      <div class="stat-val"><span id="ammo-val">12</span> <span id="magwrap">/ <span id="mag-val">12</span></span></div>
+      <div class="stat-val"><span id="ammo-val">12</span> <span id="magwrap">/ <span id="mag-val">12</span></span> <span id="reservewrap">&middot; <span id="reserve-val">36</span> spare</span></div>
       <div class="weapons">
         <span class="wslot active" id="slot-0">1 PISTOL</span>
         <span class="wslot" id="slot-1">2 SMG</span>
         <span class="wslot" id="slot-2">3 SHTG</span>
+        <span class="wslot" id="slot-3">4 KNIFE</span>
       </div>
     </div>
-    <div style="text-align:center"><div id="wavetag">&mdash; hostiles remaining: <span id="remaining">0</span> &mdash;</div></div>
+    <div style="text-align:center">
+      <div id="phase">DAY 1</div>
+      <div id="wavetag">&mdash; hostiles: <span id="remaining">0</span> &mdash;</div>
+      <div id="prompt">[E] repair barricade</div>
+    </div>
     <div class="hud-block r">
+      <div id="medkit"><div class="stat-label">Medkits [H]</div>
+      <div class="stat-val">&times;<span id="medkit-val">1</span></div></div>
       <div class="stat-label">Credits</div>
       <div class="stat-val"><span style="color:var(--amber)" id="money">0</span></div>
     </div>
@@ -154,18 +197,20 @@
 </div>
 
 <div id="banner">
-  <div class="bn-sub">Incoming</div>
-  <div class="bn-main">WAVE <span id="banner-n">1</span></div>
+  <div class="bn-sub">Sector 7</div>
+  <div class="bn-main"><span id="banner-label">DAY</span> <span id="banner-n">1</span></div>
 </div>
 
 <div id="start" class="overlay">
   <div class="eyebrow">Containment Breach &middot; Sector 7</div>
   <h1>QUARANTINE</h1>
-  <p>A top-down wave-survival prototype. Hold the line, bank credits between waves, upgrade, repeat.</p>
+  <p>Top-down survival horror. By day, scavenge and board up the shelter; by night, hole up inside and hold off the horde through the windows. Your flashlight only lights where you aim and its battery runs down. Ammo is finite, healing is deliberate.</p>
   <div class="controls">
-    <span><b>WASD</b> move</span><span><b>Mouse</b> aim</span>
+    <span><b>WASD</b> move</span><span><b>Mouse</b> aim / look</span>
     <span><b>Click</b> fire (hold)</span><span><b>R</b> reload</span>
-    <span><b>1 2 3</b> switch weapon</span><span><b>Shift</b> sprint</span>
+    <span><b>1 2 3</b> guns &middot; <b>4</b> knife</span><span><b>F</b> flashlight</span>
+    <span><b>H</b> use medkit</span><span><b>E</b> repair barricade</span>
+    <span><b>Enter</b> start night early</span><span><b>Shift</b> sprint</span>
     <span><b>Esc/P</b> pause</span><span><b>M</b> mute</span>
   </div>
   <button class="btn" id="startBtn">Deploy</button>
@@ -188,7 +233,7 @@
 <div id="over" class="overlay hidden">
   <div class="eyebrow">Signal Lost</div>
   <h1 class="big">OVERRUN</h1>
-  <p>You survived to wave <b id="over-wave" style="color:var(--ink)">1</b> &middot; <span id="over-kills">0</span> neutralized &middot; <span id="over-money">0</span> credits earned</p>
+  <p>You survived to day <b id="over-wave" style="color:var(--ink)">1</b> &middot; <span id="over-kills">0</span> neutralized &middot; <span id="over-money">0</span> credits earned</p>
   <button class="btn" id="restartBtn">Redeploy</button>
 </div>
 

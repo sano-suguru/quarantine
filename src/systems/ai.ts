@@ -1,8 +1,11 @@
 import { CONFIG } from "../config";
 import { Audio } from "../engine/audio";
+import { circlePushFromSegment } from "../engine/geometry";
 import { len } from "../engine/math";
 import type { State } from "../types";
-import { fxHurt } from "./fx";
+import { fxHurt, fxImpact } from "./fx";
+
+const WOOD: [number, number, number] = [0.62, 0.42, 0.2];
 
 export function sysAI(state: State, dt: number): void {
   const Z = state.zombies;
@@ -15,7 +18,11 @@ export function sysAI(state: State, dt: number): void {
 
   const kbK = Math.exp(-CONFIG.feel.knockbackDecay * dt);
   const surroundR2 = CONFIG.horror.surroundRadius * CONFIG.horror.surroundRadius;
+  const coneCos = Math.cos(CONFIG.flashlight.halfAngle);
+  const aimX = Math.cos(p.aim);
+  const aimY = Math.sin(p.aim);
   let near = 0;
+  let lurking = 0;
 
   for (let i = 0; i < Z.length; i++) {
     const z = Z[i] as (typeof Z)[number];
@@ -27,7 +34,11 @@ export function sysAI(state: State, dt: number): void {
     const dist = len(dx, dy) || 1;
     dx /= dist;
     dy /= dist;
-    if (dist * dist < surroundR2) near++;
+    if (dist * dist < surroundR2) {
+      near++;
+      // nearby but outside the flashlight cone = unseen threat (behind / in the dark)
+      if (dx * aimX + dy * aimY < coneCos) lurking++;
+    }
     let sx = 0;
     let sy = 0;
     state.hash.query(z.x, z.y, z.r * 2.5, (j) => {
@@ -55,6 +66,29 @@ export function sysAI(state: State, dt: number): void {
     z.vy *= kbK;
 
     if (z.attackCd > 0) z.attackCd -= dt;
+
+    // solid walls always block
+    for (const w of state.walls) {
+      const push = circlePushFromSegment(z.x, z.y, z.r, w);
+      if (push) {
+        z.x += push.dx;
+        z.y += push.dy;
+      }
+    }
+    // intact barricades block too — and the zombie smashes the one it's pressed against
+    for (const bar of state.barricades) {
+      if (bar.hp <= 0) continue;
+      const push = circlePushFromSegment(z.x, z.y, z.r, bar);
+      if (!push) continue;
+      z.x += push.dx;
+      z.y += push.dy;
+      if (z.spawnT <= 0 && z.attackCd <= 0) {
+        bar.hp -= z.dmg;
+        z.attackCd = 1 / z.attackRate;
+        fxImpact(state, z.x, z.y, Math.atan2(-push.dy, -push.dx), WOOD);
+        if (bar.hp <= 0) state.cam.shake = Math.min(state.cam.shake + 6, 20);
+      }
+    }
     if (z.spawnT <= 0 && dist < z.r + p.r + 2 && z.attackCd <= 0) {
       p.hp -= z.dmg;
       z.attackCd = 1 / z.attackRate;
@@ -72,4 +106,5 @@ export function sysAI(state: State, dt: number): void {
     }
   }
   state.surrounded = near;
+  state.lurking = lurking;
 }

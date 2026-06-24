@@ -1,20 +1,38 @@
 import { CONFIG } from "../config";
 import { WEAPONS, WEAPON_ORDER } from "../data/weapons";
 import { Audio } from "../engine/audio";
+import { circlePushFromSegment } from "../engine/geometry";
 import { clamp, len, rand } from "../engine/math";
 import { Renderer } from "../engine/renderer";
 import { Input } from "../input";
 import type { Player, State, WeaponDef } from "../types";
-import { fxMuzzle } from "./fx";
+import { ammoTransfer } from "./ammo";
+import { killZombie } from "./bullets";
+import { fxDamageText, fxImpact, fxMuzzle } from "./fx";
 
 export function sysPlayer(state: State, dt: number): void {
   const p = state.player;
+
+  // drain the flashlight while it's on
+  if (p.lightOn && p.battery > 0) {
+    p.battery = Math.max(0, p.battery - CONFIG.flashlight.drainPerSec * dt);
+  }
+
+  // healing roots the player: HP ticks up, but no moving or shooting (vulnerable)
+  const healing = p.healT > 0;
+  if (healing) {
+    p.healT -= dt;
+    p.hp = Math.min(p.maxHp, p.hp + (CONFIG.heal.amount / CONFIG.heal.duration) * dt);
+  }
+
   let dx = 0;
   let dy = 0;
-  if (Input.keys.has("KeyW") || Input.keys.has("ArrowUp")) dy -= 1;
-  if (Input.keys.has("KeyS") || Input.keys.has("ArrowDown")) dy += 1;
-  if (Input.keys.has("KeyA") || Input.keys.has("ArrowLeft")) dx -= 1;
-  if (Input.keys.has("KeyD") || Input.keys.has("ArrowRight")) dx += 1;
+  if (!healing) {
+    if (Input.keys.has("KeyW") || Input.keys.has("ArrowUp")) dy -= 1;
+    if (Input.keys.has("KeyS") || Input.keys.has("ArrowDown")) dy += 1;
+    if (Input.keys.has("KeyA") || Input.keys.has("ArrowLeft")) dx -= 1;
+    if (Input.keys.has("KeyD") || Input.keys.has("ArrowRight")) dx += 1;
+  }
   const l = len(dx, dy);
   const sprint =
     Input.keys.has("ShiftLeft") || Input.keys.has("ShiftRight") ? CONFIG.player.sprint : 1;
@@ -24,6 +42,18 @@ export function sysPlayer(state: State, dt: number): void {
   }
   p.x = clamp(p.x + dx * p.speed * sprint * dt, -CONFIG.arena, CONFIG.arena);
   p.y = clamp(p.y + dy * p.speed * sprint * dt, -CONFIG.arena, CONFIG.arena);
+  // solid walls block the player (openings/barricades do not — you slip through)
+  for (const w of state.walls) {
+    const push = circlePushFromSegment(p.x, p.y, p.r, w);
+    if (push) {
+      p.x += push.dx;
+      p.y += push.dy;
+    }
+  }
+
+  // repair the nearest damaged barricade you're standing by (E, costs credits)
+  if (p.repairCd > 0) p.repairCd -= dt;
+  if (Input.keys.has("KeyE") && p.repairCd <= 0) tryRepair(state, p);
 
   const half = Renderer.worldToScreenHalf();
   const cv = document.getElementById("game") as HTMLCanvasElement;
@@ -33,34 +63,56 @@ export function sysPlayer(state: State, dt: number): void {
   const wy = state.cam.y + myN * half.y;
   p.aim = Math.atan2(wy - p.y, wx - p.x);
 
+  // switch weapons — magazine state is preserved per weapon (no free refill)
   for (let i = 0; i < WEAPON_ORDER.length; i++) {
     const id = WEAPON_ORDER[i] as string;
     if (Input.keys.has(`Digit${i + 1}`) && p.weapon !== id) {
+      p.mags[p.weapon] = p.ammo; // stash the rounds left in the current mag
       p.weapon = id;
-      p.ammo = weapon(id).mag;
+      p.ammo = p.mags[id] ?? 0; // restore the new weapon's mag
       p.reloadT = 0;
     }
   }
   const wd = weapon(p.weapon);
-  if ((Input.keys.has("KeyR") || p.ammo <= 0) && p.reloadT <= 0 && p.ammo < wd.mag) {
-    p.reloadT = wd.reload;
-    Audio.reload();
-  }
-  if (p.reloadT > 0) {
-    p.reloadT -= dt;
-    if (p.reloadT <= 0) {
-      p.ammo = wd.mag;
-      Audio.reloadDone();
+
+  // reload draws from this weapon's finite reserve (melee weapons never reload)
+  if (!wd.melee) {
+    const reserve = p.reserve[p.weapon] ?? 0;
+    if (
+      (Input.keys.has("KeyR") || p.ammo <= 0) &&
+      p.reloadT <= 0 &&
+      p.ammo < wd.mag &&
+      reserve > 0
+    ) {
+      p.reloadT = wd.reload;
+      Audio.reload();
+    }
+    if (p.reloadT > 0) {
+      p.reloadT -= dt;
+      if (p.reloadT <= 0) {
+        const t = ammoTransfer(wd.mag, p.ammo, p.reserve[p.weapon] ?? 0);
+        p.ammo = t.ammo;
+        p.reserve[p.weapon] = t.reserve;
+        Audio.reloadDone();
+      }
     }
   }
 
   if (p.fireCd > 0) p.fireCd -= dt;
   const wantFire = Input.firing && (wd.auto || !state._firedThisHold);
-  if (wantFire && p.fireCd <= 0 && p.reloadT <= 0 && p.ammo > 0) {
-    fireWeapon(state, p, wd);
-    p.ammo--;
-    p.fireCd = 1 / (wd.fireRate * state.fireRateMul);
-    state._firedThisHold = true;
+  if (wantFire && p.fireCd <= 0 && p.reloadT <= 0 && !healing) {
+    if (wd.melee || p.ammo > 0) {
+      fireWeapon(state, p, wd);
+      if (!wd.melee) p.ammo--;
+      p.fireCd = 1 / (wd.fireRate * state.fireRateMul);
+      state._firedThisHold = true;
+    } else {
+      // empty magazine: the desperate dry-fire click
+      Audio.dryFire();
+      p.dryT = 0.12;
+      p.fireCd = 0.18;
+      state._firedThisHold = true;
+    }
   }
   if (!Input.firing) state._firedThisHold = false;
 
@@ -71,9 +123,14 @@ export function sysPlayer(state: State, dt: number): void {
   if (p.hitFlash > 0) p.hitFlash -= dt;
   if (p.iframe > 0) p.iframe -= dt;
   if (p.muzzle > 0) p.muzzle -= dt;
+  if (p.dryT > 0) p.dryT -= dt;
 }
 
 export function fireWeapon(state: State, p: Player, wd: WeaponDef): void {
+  if (wd.melee) {
+    meleeSwing(state, p, wd);
+    return;
+  }
   const tipX = p.x + Math.cos(p.aim) * p.r;
   const tipY = p.y + Math.sin(p.aim) * p.r;
   for (let i = 0; i < wd.pellets; i++) {
@@ -99,6 +156,65 @@ export function fireWeapon(state: State, p: Player, wd: WeaponDef): void {
   p.recoilY -= Math.sin(p.aim) * wd.recoil * 0.9;
   fxMuzzle(state, tipX, tipY, p.aim, wd.color);
   Audio.shot(p.weapon);
+}
+
+/** A short melee arc: damage every zombie inside the cone in front of the player. */
+function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
+  const Z = state.zombies;
+  const reach = (wd.meleeRange ?? 30) + p.r;
+  const arc = wd.meleeArc ?? 0.9;
+  const dead: number[] = [];
+  state.hash.query(p.x, p.y, reach + 40, (zi) => {
+    const z = Z[zi];
+    if (!z) return;
+    const dx = z.x - p.x;
+    const dy = z.y - p.y;
+    const d = len(dx, dy) || 1;
+    if (d > reach + z.r) return;
+    // angular distance between the swing direction and the zombie
+    let da = Math.atan2(dy, dx) - p.aim;
+    da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)));
+    if (da > arc) return;
+    z.hp -= wd.dmg * state.dmgMul;
+    z.flash = 0.12;
+    z.vx += (dx / d) * wd.knockback;
+    z.vy += (dy / d) * wd.knockback;
+    fxImpact(state, z.x, z.y, p.aim, wd.color);
+    fxDamageText(state, z.x, z.y - z.r, wd.dmg * state.dmgMul, true);
+    if (z.hp <= 0) dead.push(zi);
+  });
+  // swap-and-pop removal is index-based, so kill from the highest index down
+  dead.sort((a, b) => b - a);
+  for (const zi of dead) killZombie(state, zi);
+
+  // swing feel — same kick/shake channel as a gun, plus a whoosh
+  state.cam.shake = Math.min(state.cam.shake + wd.recoil, 18);
+  p.recoilX -= Math.cos(p.aim) * wd.recoil * 0.6;
+  p.recoilY -= Math.sin(p.aim) * wd.recoil * 0.6;
+  p.muzzle = 0.04;
+  Audio.melee();
+}
+
+/** Repair the closest damaged barricade within reach, paying credits for it. */
+function tryRepair(state: State, p: Player): void {
+  const reach = CONFIG.siege.interactRadius;
+  let best: (typeof state.barricades)[number] | null = null;
+  let bestD = reach;
+  for (const b of state.barricades) {
+    if (b.hp >= b.maxHp) continue;
+    const mx = (b.x1 + b.x2) / 2;
+    const my = (b.y1 + b.y2) / 2;
+    const d = len(mx - p.x, my - p.y);
+    if (d < bestD) {
+      bestD = d;
+      best = b;
+    }
+  }
+  if (!best || state.money < CONFIG.siege.repairCost) return;
+  state.money -= CONFIG.siege.repairCost;
+  best.hp = Math.min(best.maxHp, best.hp + CONFIG.siege.repairAmount);
+  p.repairCd = CONFIG.siege.repairCd;
+  Audio.repair();
 }
 
 function weapon(id: string): WeaponDef {

@@ -16,6 +16,8 @@ export const WEAPONS: Record<string, WeaponDef> = {
     recoil: 4,
     pierce: 0,
     color: [1.0, 0.85, 0.4],
+    reserveStart: 36,
+    reserveMax: 96,
   },
   smg: {
     name: "SMG",
@@ -32,6 +34,8 @@ export const WEAPONS: Record<string, WeaponDef> = {
     recoil: 2.4,
     pierce: 0,
     color: [0.55, 0.95, 1.0],
+    reserveStart: 64,
+    reserveMax: 160,
   },
   shotgun: {
     name: "SHOTGUN",
@@ -48,7 +52,34 @@ export const WEAPONS: Record<string, WeaponDef> = {
     recoil: 10,
     pierce: 0,
     color: [1.0, 0.7, 0.35],
+    reserveStart: 18,
+    reserveMax: 42,
+  },
+  // Last-resort melee. Always available, consumes no ammo — but deliberately
+  // weak and short-ranged: switching to it should feel like desperation.
+  knife: {
+    name: "KNIFE",
+    dmg: 34,
+    fireRate: 2.2,
+    bulletSpeed: 0,
+    spread: 0,
+    pellets: 0,
+    mag: 0,
+    reload: 0,
+    range: 0,
+    auto: false,
+    knockback: 170,
+    recoil: 6,
+    pierce: 0,
+    color: [0.82, 0.88, 0.95],
+    reserveStart: 0,
+    reserveMax: 0,
+    melee: true,
+    meleeArc: 0.95,
+    meleeRange: 30,
   },
 };
 
-export const WEAPON_ORDER = ["pistol", "smg", "shotgun"];
+// Order drives the 1/2/3/4 hotkeys. Guns keep 1-3; knife is 4 so muscle
+// memory for the guns is preserved.
+export const WEAPON_ORDER = ["pistol", "smg", "shotgun", "knife"];

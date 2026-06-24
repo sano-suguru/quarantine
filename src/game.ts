@@ -1,4 +1,5 @@
 import { CONFIG } from "./config";
+import { PICKUP_TYPES } from "./data/pickups";
 import { UPGRADES } from "./data/upgrades";
 import { WEAPONS, WEAPON_ORDER } from "./data/weapons";
 import { Audio } from "./engine/audio";
@@ -7,9 +8,11 @@ import { newState } from "./state";
 import { sysAI } from "./systems/ai";
 import { sysBullets } from "./systems/bullets";
 import { sysCamera } from "./systems/camera";
+import { flashlightIntensity } from "./systems/flashlight";
 import { sysFx } from "./systems/fx";
+import { sysPickups } from "./systems/pickups";
 import { sysPlayer } from "./systems/player";
-import { startWave, sysWave } from "./systems/wave";
+import { startDay, startNight, sysSiege } from "./systems/siege";
 import type { State, Upgrade, WeaponDef } from "./types";
 import { el, hide, show } from "./ui";
 
@@ -44,21 +47,36 @@ export function update(dt: number): void {
     return;
   }
   sysBullets(state, sdt);
+  sysPickups(state, sdt);
   sysFx(state, sdt);
-  const cleared = sysWave(state, sdt);
+  const ev = sysSiege(state, sdt);
   sysCamera(state, sdt);
   audioAmbience(dt);
-  if (cleared) openShop();
+  if (ev === "night") {
+    announce("NIGHT", state.day);
+    Audio.waveStart();
+  } else if (ev === "dawn") {
+    Audio.dawn();
+    openShop();
+  }
 }
 
 function audioAmbience(dt: number): void {
   const p = state.player;
   const hpf = p.hp / p.maxHp;
+  const wd = weapon(p.weapon);
+  // running dry feeds the dread too — the fear of an empty gun
+  const totalAmmo = p.ammo + (p.reserve[p.weapon] ?? 0);
+  const lowAmmo = !wd.melee && wd.mag > 0 && totalAmmo < wd.mag * CONFIG.horror.lowAmmo;
   const dread = Math.min(
     1,
     0.12 +
       state.surrounded / (CONFIG.horror.surroundCount * 1.6) +
-      (hpf < CONFIG.horror.lowHp ? 0.35 : 0),
+      // unseen threats in the dark weigh heavier than ones in your light
+      state.lurking / (CONFIG.horror.surroundCount * 1.2) +
+      (hpf < CONFIG.horror.lowHp ? 0.35 : 0) +
+      (lowAmmo ? 0.2 : 0) +
+      (state.phase === "night" ? 0.15 : 0),
   );
   Audio.setDread(dread);
 
@@ -87,7 +105,29 @@ export function draw(): void {
   const sh = c.shake;
   const camX = c.x + (Math.random() * 2 - 1) * sh;
   const camY = c.y + (Math.random() * 2 - 1) * sh;
-  R.setLight(p.x, p.y, CONFIG.horror.lightRadius);
+  // aimed flashlight: cone follows the mouse; flickers and dies with the battery
+  const flc = CONFIG.flashlight;
+  const intensity = flashlightIntensity(
+    p.battery / flc.batteryMax,
+    p.lightOn,
+    flc.lowThreshold,
+    flc.flickerDepth,
+    Math.random(),
+  );
+  // daylight floods the arena; night sinks to near-black (flashlight essential)
+  const ambient = state.phase === "day" ? CONFIG.siege.dayAmbient : CONFIG.siege.nightAmbient;
+  R.setLight(p.x, p.y);
+  R.setFlashlight(
+    Math.cos(p.aim),
+    Math.sin(p.aim),
+    Math.cos(flc.halfAngle),
+    flc.range,
+    ambient,
+    flc.personalRadius,
+    flc.personalMax,
+    intensity,
+    flc.emissiveFloor,
+  );
   R.begin();
 
   // --- ground: blood decals ---
@@ -95,6 +135,9 @@ export function draw(): void {
     const a = Math.min(0.5, (d.life / d.maxLife) * 0.5);
     R.circle(d.x, d.y, d.r, d.color[0], d.color[1], d.color[2], a);
   }
+
+  // --- shelter: stone walls + boarded openings ---
+  drawShelter(R);
 
   // --- normal particles (shards / smoke) ---
   for (const pt of state.particles) {
@@ -167,6 +210,41 @@ export function draw(): void {
     }
   }
 
+  // --- pickups (self-lit so they read in the dark; bob + blink before expiry) ---
+  for (const pk of state.pickups) {
+    const def = PICKUP_TYPES[pk.defId];
+    if (!def) continue;
+    const bob = Math.sin(state.time * 3 + pk.bob) * 3;
+    const y = pk.y + bob;
+    const fade = Math.min(1, pk.life / 2); // fade over the last 2s
+    const blink = pk.life < 4 ? 0.55 + 0.45 * Math.sin(state.time * 12) : 1;
+    const a = fade * blink;
+    R.glow(pk.x, y, 28, def.glow[0], def.glow[1], def.glow[2], 0.55 * a);
+    if (def.shape === "cross") {
+      // medkit: a plus sign
+      R.rect(pk.x, y, 16, 5, 0, def.color[0], def.color[1], def.color[2], a);
+      R.rect(pk.x, y, 5, 16, 0, def.color[0], def.color[1], def.color[2], a);
+    } else if (def.shape === "battery") {
+      // battery: an upright cell with a little terminal nub
+      R.rect(pk.x, y, 9, 15, 0, def.color[0], def.color[1], def.color[2], a);
+      R.rect(pk.x, y - 9, 4, 3, 0, def.color[0], def.color[1], def.color[2], a);
+    } else {
+      // ammo: a slowly spinning crate
+      R.rect(
+        pk.x,
+        y,
+        13,
+        13,
+        state.time * 1.5 + pk.bob,
+        def.color[0],
+        def.color[1],
+        def.color[2],
+        a,
+      );
+    }
+    R.ring(pk.x, y, 11, 0.02, 0.03, 0.02, 0.6 * a);
+  }
+
   // --- bullets (tracer + glowing core) ---
   for (const b of state.bullets) {
     const mx = (b.x + b.px) / 2;
@@ -200,6 +278,12 @@ export function draw(): void {
     const prog = 1 - p.reloadT / wd.reload;
     R.rect(p.x, p.y - p.r - 12, 34 * prog, 4, 0, 1, 0.75, 0.2, 1);
   }
+  // healing: green aura + progress bar (you're rooted and exposed while it fills)
+  if (p.healT > 0) {
+    const prog = 1 - p.healT / CONFIG.heal.duration;
+    R.glow(px, py, p.r * 3.4, 0.3, 1, 0.45, 0.4);
+    R.rect(p.x, p.y - p.r - 12, 34 * prog, 4, 0, 0.3, 1, 0.45, 1);
+  }
 
   // --- additive particles (sparks / rings) ---
   for (const pt of state.particles) {
@@ -231,6 +315,32 @@ export function draw(): void {
   R.flush(camX, camY);
 }
 
+/** draw a segment as an oriented rect of the given thickness */
+function drawSeg(
+  R: typeof Renderer,
+  s: { x1: number; y1: number; x2: number; y2: number },
+  thick: number,
+  r: number,
+  g: number,
+  b: number,
+  a = 1,
+): void {
+  const cx = (s.x1 + s.x2) / 2;
+  const cy = (s.y1 + s.y2) / 2;
+  const dx = s.x2 - s.x1;
+  const dy = s.y2 - s.y1;
+  R.rect(cx, cy, Math.hypot(dx, dy) + thick, thick, Math.atan2(dy, dx), r, g, b, a);
+}
+
+function drawShelter(R: typeof Renderer): void {
+  for (const w of state.walls) drawSeg(R, w, 14, 0.32, 0.34, 0.33);
+  for (const bar of state.barricades) {
+    if (bar.hp <= 0) continue;
+    const f = bar.hp / bar.maxHp; // wood darkens + thins as it splinters
+    drawSeg(R, bar, 5 + 6 * f, 0.5 + 0.2 * f, 0.34 + 0.12 * f, 0.16 + 0.06 * f);
+  }
+}
+
 /* ----------------------------- HUD ------------------------------ */
 let lastWeapon = "";
 export function updateHUD(): void {
@@ -240,12 +350,55 @@ export function updateHUD(): void {
   el("hpbar").style.width = `${100 * hpf}%`;
   el("hpbar").style.background = hpf < 0.3 ? "var(--blood)" : "var(--toxic)";
   el("hpnum").textContent = `${Math.max(0, Math.ceil(p.hp))} / ${p.maxHp}`;
-  el("wave").textContent = String(state.wave.n);
+  el("wave").textContent = String(state.day);
   el("weapon-name").textContent = wd.name + (p.reloadT > 0 ? " · RELOADING" : "");
-  el("ammo-val").textContent = String(p.ammo);
-  el("mag-val").textContent = String(wd.mag);
+  const reserve = p.reserve[p.weapon] ?? 0;
+  if (wd.melee) {
+    el("ammo-val").textContent = "∞";
+    el("mag-val").textContent = "—";
+    el("reserve-val").textContent = "—";
+  } else {
+    el("ammo-val").textContent = String(p.ammo);
+    el("mag-val").textContent = String(wd.mag);
+    el("reserve-val").textContent = String(reserve);
+  }
+  // low-ammo warning: empty mag, or total rounds below a mag's worth
+  const totalAmmo = p.ammo + reserve;
+  const lowAmmo = !wd.melee && wd.mag > 0 && (p.ammo === 0 || totalAmmo < wd.mag);
+  el("ammo").classList.toggle("low", lowAmmo);
+
+  // flashlight battery
+  const batf = p.battery / CONFIG.flashlight.batteryMax;
+  el("batbar").style.width = `${100 * batf}%`;
+  const batBlock = el("battery");
+  batBlock.classList.toggle("low", p.lightOn && batf < CONFIG.flashlight.lowThreshold);
+  batBlock.classList.toggle("off", !p.lightOn || p.battery <= 0);
+  el("bat-state").textContent = !p.lightOn
+    ? "OFF"
+    : p.battery <= 0
+      ? "DEAD"
+      : `${Math.ceil(batf * 100)}%`;
+
+  // medkits
+  el("medkit-val").textContent = String(p.medkits);
+  el("medkit").classList.toggle("empty", p.medkits <= 0);
+
+  // day/night phase
+  const phaseEl = el("phase");
+  if (state.phase === "day") {
+    phaseEl.textContent = `DAY ${state.day} · DUSK IN ${Math.ceil(state.phaseT)}s`;
+    phaseEl.classList.remove("night");
+  } else {
+    phaseEl.textContent = `NIGHT ${state.day}`;
+    phaseEl.classList.add("night");
+  }
+
+  // contextual repair prompt when standing by a damaged barricade
+  el("prompt").classList.toggle("show", canRepairNearby());
+
   el("money").textContent = String(state.money);
-  el("remaining").textContent = String(state.zombies.length + state.wave.queue.length);
+  el("remaining").textContent =
+    state.phase === "night" ? String(state.zombies.length + state.wave.queue.length) : "—";
 
   // weapon slot highlight
   if (p.weapon !== lastWeapon) {
@@ -267,13 +420,13 @@ export function updateHUD(): void {
 }
 
 /* --------------------------- FLOW / UI -------------------------- */
-function announceWave(n: number): void {
+function announce(label: string, n: number): void {
   const b = el("banner");
+  el("banner-label").textContent = label;
   el("banner-n").textContent = String(n);
   b.classList.remove("show");
   void b.offsetWidth; // reflow to restart animation
   b.classList.add("show");
-  Audio.waveStart();
 }
 
 export function startGame(): void {
@@ -285,8 +438,16 @@ export function startGame(): void {
   hide("over");
   hide("shop");
   show("hud");
-  startWave(state, 1);
-  announceWave(1);
+  startDay(state);
+  announce("DAY", state.day);
+}
+
+/** Player chooses to bring the night early, skipping the rest of the day. */
+export function startNightNow(): void {
+  if (!state.running || state.paused || state.phase !== "day") return;
+  startNight(state);
+  announce("NIGHT", state.day);
+  Audio.waveStart();
 }
 
 let shopChoices: Upgrade[] = [];
@@ -295,12 +456,13 @@ let shopSel = 0;
 export function openShop(): void {
   state.paused = true;
   Audio.setDread(0.1);
+  resupply();
   const pool = UPGRADES.slice();
   shopChoices = [];
   for (let i = 0; i < 3 && pool.length; i++)
     shopChoices.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0] as Upgrade);
   shopSel = 0;
-  el("shop-wave").textContent = String(state.wave.n);
+  el("shop-wave").textContent = String(state.day);
   renderShop();
   show("shop");
 }
@@ -348,16 +510,17 @@ export function chooseUpgrade(i: number): void {
   u.apply(state);
   hide("shop");
   state.paused = false;
-  const n = state.wave.n + 1;
-  startWave(state, n);
-  announceWave(n);
+  // survived the night → next day's scavenge phase
+  state.day++;
+  startDay(state);
+  announce("DAY", state.day);
 }
 
 export function gameOver(): void {
   state.running = false;
   Audio.gameOver();
   Audio.stopDread();
-  el("over-wave").textContent = String(state.wave.n);
+  el("over-wave").textContent = String(state.day);
   el("over-kills").textContent = String(state.kills);
   el("over-money").textContent = String(state.money);
   hide("hud");
@@ -377,4 +540,49 @@ export function shopVisible(): boolean {
 
 function weapon(id: string): WeaponDef {
   return WEAPONS[id] as WeaponDef;
+}
+
+/** Is the player next to a damaged barricade they can afford to repair? */
+function canRepairNearby(): boolean {
+  if (state.money < CONFIG.siege.repairCost) return false;
+  const p = state.player;
+  const reach = CONFIG.siege.interactRadius;
+  for (const b of state.barricades) {
+    if (b.hp >= b.maxHp) continue;
+    const mx = (b.x1 + b.x2) / 2;
+    const my = (b.y1 + b.y2) / 2;
+    if (Math.hypot(mx - p.x, my - p.y) < reach) return true;
+  }
+  return false;
+}
+
+/** Safe-room resupply: top up spare ammo, the battery, and medkits between waves. */
+function resupply(): void {
+  const p = state.player;
+  const refill = CONFIG.ammo.shopRefillMags;
+  for (const id of WEAPON_ORDER) {
+    const w = WEAPONS[id];
+    if (!w || w.melee) continue;
+    const cap = Math.round(w.reserveMax * state.reserveMul);
+    p.reserve[id] = Math.min(cap, (p.reserve[id] ?? 0) + Math.round(w.mag * refill));
+  }
+  p.battery = Math.min(CONFIG.flashlight.batteryMax, p.battery + CONFIG.flashlight.shopBattery);
+  p.medkits = Math.min(CONFIG.heal.maxMedkits, p.medkits + CONFIG.heal.shopMedkits);
+}
+
+/** Toggle the flashlight (off = no battery drain, but near-blind). */
+export function toggleFlashlight(): void {
+  if (!state.running || state.paused) return;
+  state.player.lightOn = !state.player.lightOn;
+  Audio.click();
+}
+
+/** Use a carried medkit: a deliberate, rooted heal-over-time. */
+export function useMedkit(): void {
+  if (!state.running || state.paused) return;
+  const p = state.player;
+  if (p.medkits <= 0 || p.healT > 0 || p.hp >= p.maxHp) return;
+  p.medkits--;
+  p.healT = CONFIG.heal.duration;
+  Audio.heal();
 }

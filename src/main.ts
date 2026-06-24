@@ -9,9 +9,12 @@ import {
   shopMove,
   shopVisible,
   startGame,
+  startNightNow,
+  toggleFlashlight,
   togglePause,
   update,
   updateHUD,
+  useMedkit,
 } from "./game";
 import { Input } from "./input";
 import { el } from "./ui";
@@ -51,6 +54,9 @@ function main(): void {
       e.preventDefault();
       togglePause();
     }
+    if (e.code === "KeyF" && state.running) toggleFlashlight();
+    if (e.code === "KeyH" && state.running) useMedkit();
+    if (e.code === "Enter" && state.running) startNightNow();
   });
 
   const step = 1 / CONFIG.simHz;
@@ -72,7 +78,11 @@ function main(): void {
     if (state.running && !state.paused) {
       cross.style.opacity = "1";
       cross.style.transform = `translate(${Input.mouseX}px,${Input.mouseY}px)`;
-      cross.classList.toggle("fire", Input.firing && state.player.reloadT <= 0);
+      cross.classList.toggle("empty", state.player.dryT > 0);
+      cross.classList.toggle(
+        "fire",
+        Input.firing && state.player.reloadT <= 0 && state.player.dryT <= 0,
+      );
       cross.classList.toggle("reload", state.player.reloadT > 0);
     } else {
       cross.style.opacity = "0";

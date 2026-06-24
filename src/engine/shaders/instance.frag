@@ -1,16 +1,29 @@
 #version 300 es
 precision mediump float;
 in vec2 v_local; in vec4 v_color; in float v_shape; in vec2 v_world;
-uniform vec2 u_player; uniform float u_light;
+uniform vec2 u_player;   // flashlight origin (player)
+uniform vec2 u_aim;      // normalized aim direction
+uniform vec3 u_cone;     // x: cos(halfAngle), y: range, z: ambient floor
+uniform vec2 u_personal; // x: radius, y: max brightness of the dim pool
+uniform float u_intensity; // cone brightness (battery / flicker), 0 = off
+uniform float u_emissive;  // darkness floor for this pass (0 normal, >0 additive)
 out vec4 frag;
 
 /* shape flags: 0 rect, 1 circle, 2 soft glow, 3 ring, 4 triangle, 5 hexagon */
 
-// darkness falloff away from the player's light
-float lit(vec2 w){
-  float d = distance(w, u_player);
-  float f = smoothstep(u_light, u_light * 0.4, d);
-  return mix(0.16, 1.0, f);
+// how lit a world point is: a dim personal pool + the aimed flashlight cone
+float lightAt(vec2 w){
+  vec2 d = w - u_player;
+  float dist = length(d);
+  // dim bubble right around the player so your feet aren't pitch black
+  float pool = smoothstep(u_personal.x, u_personal.x * 0.3, dist) * u_personal.y;
+  // aimed cone: angle gate * distance falloff * intensity
+  vec2 dir = dist > 1e-3 ? d / dist : u_aim;
+  float ca = dot(dir, u_aim);
+  float edge = smoothstep(u_cone.x, mix(u_cone.x, 1.0, 0.35), ca);
+  float reach = smoothstep(u_cone.y, u_cone.y * 0.25, dist);
+  float cone = edge * reach * u_intensity;
+  return clamp(u_cone.z + max(pool, cone), 0.0, 1.0);
 }
 
 // regular hexagon signed distance (negative inside), p/r in local space
@@ -73,5 +86,7 @@ void main(){
   } else {
     frag = v_color;
   }
-  frag.rgb *= lit(v_world);
+  // normal pass (u_emissive 0) fully darkens; additive pass keeps a floor so
+  // glows, muzzle flashes and zombie eyes still read in the dark.
+  frag.rgb *= mix(u_emissive, 1.0, lightAt(v_world));
 }

@@ -13,6 +13,16 @@ export interface WeaponDef {
   recoil: number;
   pierce: number;
   color: [number, number, number];
+  /** spare rounds (outside the magazine) carried at run start */
+  reserveStart: number;
+  /** hard cap on spare rounds this weapon can hold */
+  reserveMax: number;
+  /** melee weapons swing an arc instead of spawning bullets; never consume ammo */
+  melee?: boolean;
+  /** melee half-angle (radians) of the damage cone */
+  meleeArc?: number;
+  /** melee reach in world units (added to player radius) */
+  meleeRange?: number;
 }
 
 export interface EnemyType {
@@ -45,7 +55,12 @@ export interface Player {
   speed: number;
   aim: number;
   weapon: string;
+  /** rounds in the active weapon's magazine */
   ammo: number;
+  /** spare rounds per weapon, keyed by weapon id */
+  reserve: Record<string, number>;
+  /** magazine state per weapon, preserved across weapon switches */
+  mags: Record<string, number>;
   fireCd: number;
   reloadT: number;
   hitFlash: number;
@@ -53,6 +68,18 @@ export interface Player {
   recoilY: number;
   iframe: number;
   muzzle: number;
+  /** brief flinch timer after a dry-fire (empty magazine) */
+  dryT: number;
+  /** flashlight charge remaining (0..CONFIG.flashlight.batteryMax) */
+  battery: number;
+  /** whether the flashlight is switched on (off = no drain, near-blind) */
+  lightOn: boolean;
+  /** medkits carried */
+  medkits: number;
+  /** active heal timer; while > 0 the player is rooted and can't fire */
+  healT: number;
+  /** cooldown between barricade repair presses */
+  repairCd: number;
 }
 
 export interface Zombie {
@@ -93,6 +120,30 @@ export interface Bullet {
   color: [number, number, number];
 }
 
+/** Data-driven pickup type: defines how a dropped item looks, sounds, and what it does. */
+export interface PickupDef {
+  id: string;
+  /** short HUD label, e.g. "AMMO" / "MEDKIT" */
+  label: string;
+  color: [number, number, number];
+  glow: [number, number, number];
+  /** draw hint: "box" | "cross" */
+  shape: string;
+  /** mutates state when collected (reads the current weapon for ammo top-ups) */
+  apply: (s: State) => void;
+}
+
+/** A collectible instance on the ground. Type/behaviour lives in PICKUP_TYPES, referenced by defId. */
+export interface Pickup {
+  x: number;
+  y: number;
+  defId: string;
+  life: number;
+  maxLife: number;
+  /** phase offset for the idle bob/blink animation */
+  bob: number;
+}
+
 export type ParticleKind = "spark" | "shard" | "ring" | "smoke";
 
 export interface Particle {
@@ -129,6 +180,23 @@ export interface Decal {
   maxLife: number;
 }
 
+/** A line segment in world space (shelter wall / opening). */
+export interface Segment {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+/** A boardable opening: blocks zombies (and is attackable) but lets the player and bullets through. */
+export interface Barricade extends Segment {
+  hp: number;
+  maxHp: number;
+}
+
+/** Day = lit scavenge/repair window; night = the dark horde siege. */
+export type SiegePhase = "day" | "night";
+
 export type WavePhase = "prep" | "active" | "cleared";
 
 export interface WaveDefinition {
@@ -160,20 +228,35 @@ export interface State {
   player: Player;
   zombies: Zombie[];
   bullets: Bullet[];
+  pickups: Pickup[];
   particles: Particle[];
   texts: DamageText[];
   decals: Decal[];
+  /** static shelter walls (block player, zombies and bullets) */
+  walls: Segment[];
+  /** boardable openings (block zombies only; repairable, destructible) */
+  barricades: Barricade[];
+  /** day/night siege phase */
+  phase: SiegePhase;
+  /** current day number (drives night horde intensity) */
+  day: number;
+  /** seconds left in the current phase (day countdown) */
+  phaseT: number;
   cam: Cam;
   wave: Wave;
   money: number;
   kills: number;
   dmgMul: number;
   fireRateMul: number;
+  /** run-scoped multiplier on every weapon's spare-ammo capacity */
+  reserveMul: number;
   hash: SpatialHashLike;
   hitstopT: number;
   flashT: number;
   flashColor: [number, number, number];
   surrounded: number;
+  /** nearby zombies that are outside the flashlight cone (behind / in the dark) */
+  lurking: number;
   _firedThisHold: boolean;
 }
 

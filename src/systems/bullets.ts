@@ -1,8 +1,12 @@
 import { CONFIG } from "../config";
 import { Audio } from "../engine/audio";
+import { segmentHitsSegment } from "../engine/geometry";
 import { len } from "../engine/math";
 import type { State } from "../types";
 import { fxDamageText, fxImpact, fxKill } from "./fx";
+import { dropFromKill } from "./pickups";
+
+const STONE: [number, number, number] = [0.5, 0.52, 0.5];
 
 export function sysBullets(state: State, dt: number): void {
   const B = state.bullets;
@@ -15,6 +19,16 @@ export function sysBullets(state: State, dt: number): void {
     b.y += b.vy * dt;
     b.life -= dt;
     let dead = b.life <= 0 || Math.abs(b.x) > CONFIG.arena || Math.abs(b.y) > CONFIG.arena;
+    // solid walls stop bullets (windows/boards let you fire out)
+    if (!dead) {
+      for (const w of state.walls) {
+        if (segmentHitsSegment(b.px, b.py, b.x, b.y, w.x1, w.y1, w.x2, w.y2)) {
+          fxImpact(state, b.x, b.y, Math.atan2(b.vy, b.vx), STONE);
+          dead = true;
+          break;
+        }
+      }
+    }
     if (!dead) {
       const dir = Math.atan2(b.vy, b.vx);
       const inv = 1 / (len(b.vx, b.vy) || 1);
@@ -56,6 +70,7 @@ export function killZombie(state: State, idx: number): void {
   state.hitstopT = Math.max(state.hitstopT, CONFIG.feel.hitstop * (big ? 1.8 : 1));
   state.money += z.bounty;
   state.kills++;
+  dropFromKill(state, z.x, z.y, big);
   state.zombies[idx] = state.zombies[state.zombies.length - 1] as (typeof state.zombies)[number];
   state.zombies.pop();
 }

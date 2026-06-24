@@ -124,6 +124,27 @@ export function fxKill(
   bloodPool(state, x, y, big);
 }
 
+/** a small satisfying pop when an item is collected */
+export function fxPickup(state: State, x: number, y: number, glow: RGB): void {
+  spawn(state, x, y, 0, 0, 0.3, 16, glow, "ring", 0);
+  for (let i = 0; i < 8; i++) {
+    const a = rand(0, 6.28);
+    const sp = rand(80, 200);
+    spawn(
+      state,
+      x,
+      y,
+      Math.cos(a) * sp,
+      Math.sin(a) * sp,
+      rand(0.2, 0.4),
+      rand(1.5, 3),
+      glow,
+      "spark",
+      6,
+    );
+  }
+}
+
 /** red spray when the player is mauled */
 export function fxHurt(state: State, x: number, y: number): void {
   const blood: RGB = [0.8, 0.12, 0.12];
