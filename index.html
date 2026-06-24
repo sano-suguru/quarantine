@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QUARANTINE — Zombie Survival Prototype</title>
+<style>
+  :root{
+    --bg:#070a08;
+    --toxic:#7dff4f;
+    --amber:#ffb347;
+    --blood:#ff4d4d;
+    --ink:#d6e6d0;
+    --dim:#5a6b58;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;
+    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;color:var(--ink);}
+  #game{display:block;width:100vw;height:100vh;cursor:crosshair;}
+
+  #hud{position:fixed;inset:0;pointer-events:none;padding:18px 20px;
+    display:flex;flex-direction:column;justify-content:space-between;}
+  .hud-top{display:flex;justify-content:space-between;align-items:flex-start;}
+  .hud-bottom{display:flex;justify-content:space-between;align-items:flex-end;}
+  .stat-label{font-size:10px;letter-spacing:.22em;color:var(--dim);text-transform:uppercase;}
+  .stat-val{font-size:22px;letter-spacing:.04em;}
+  .hud-block{min-width:90px;}
+  .hud-block.r{text-align:right;}
+  #hpbar-wrap{width:240px;height:10px;border:1px solid var(--dim);
+    background:rgba(0,0,0,.4);margin-top:4px;}
+  #hpbar{height:100%;width:100%;background:var(--toxic);transition:width .08s linear;}
+  #ammo .stat-val{color:var(--amber);}
+  #wavetag{font-size:11px;letter-spacing:.3em;color:var(--toxic);text-transform:uppercase;}
+
+  .overlay{position:fixed;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:6px;text-align:center;
+    background:radial-gradient(circle at 50% 40%,rgba(10,20,10,.78),rgba(3,5,3,.94));}
+  .overlay.hidden{display:none;}
+  .eyebrow{font-size:11px;letter-spacing:.5em;color:var(--toxic);text-transform:uppercase;}
+  .overlay h1{margin:6px 0 0;font-size:clamp(34px,7vw,68px);font-weight:700;
+    letter-spacing:.04em;color:var(--ink);text-shadow:0 0 24px rgba(125,255,79,.25);}
+  .overlay p{margin:2px 0;color:var(--dim);font-size:13px;letter-spacing:.04em;max-width:460px;}
+  .controls{margin-top:14px;display:grid;grid-template-columns:auto auto;gap:4px 14px;
+    font-size:12px;color:var(--ink);}
+  .controls b{color:var(--toxic);font-weight:600;}
+  .btn{pointer-events:auto;margin-top:22px;padding:13px 40px;cursor:pointer;
+    border:1px solid var(--toxic);background:transparent;color:var(--toxic);
+    font-family:inherit;font-size:14px;letter-spacing:.25em;text-transform:uppercase;
+    transition:background .12s,color .12s;}
+  .btn:hover{background:var(--toxic);color:var(--bg);}
+  .choices{display:flex;gap:14px;margin-top:18px;flex-wrap:wrap;justify-content:center;}
+  .choice{pointer-events:auto;cursor:pointer;width:170px;padding:18px 14px;
+    border:1px solid var(--dim);background:rgba(0,0,0,.35);text-align:center;
+    transition:border-color .12s,transform .08s;}
+  .choice:hover{border-color:var(--toxic);transform:translateY(-2px);}
+  .choice .num{font-size:11px;color:var(--toxic);letter-spacing:.2em;}
+  .choice .name{font-size:15px;margin:8px 0 4px;}
+  .choice .desc{font-size:11px;color:var(--dim);line-height:1.5;}
+  .big{font-size:clamp(40px,9vw,90px);color:var(--blood);}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hud hidden">
+  <div class="hud-top">
+    <div class="hud-block">
+      <div class="stat-label">Integrity</div>
+      <div id="hpbar-wrap"><div id="hpbar"></div></div>
+    </div>
+    <div class="hud-block r">
+      <div class="stat-label">Wave</div>
+      <div class="stat-val" id="wave">1</div>
+    </div>
+  </div>
+  <div class="hud-bottom">
+    <div class="hud-block" id="ammo">
+      <div class="stat-label" id="weapon-name">PISTOL</div>
+      <div class="stat-val"><span id="ammo-val">12</span> <span style="color:var(--dim);font-size:14px">/ &#8734;</span></div>
+    </div>
+    <div style="text-align:center"><div id="wavetag">&mdash; hostiles remaining: <span id="remaining">0</span> &mdash;</div></div>
+    <div class="hud-block r">
+      <div class="stat-label">Credits</div>
+      <div class="stat-val"><span style="color:var(--amber)" id="money">0</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="start" class="overlay">
+  <div class="eyebrow">Containment Breach &middot; Sector 7</div>
+  <h1>QUARANTINE</h1>
+  <p>A top-down wave-survival prototype. Hold the line, bank credits between waves, upgrade, repeat.</p>
+  <div class="controls">
+    <span><b>WASD</b> move</span><span><b>Mouse</b> aim</span>
+    <span><b>Click</b> fire (hold)</span><span><b>R</b> reload</span>
+    <span><b>1 2 3</b> switch weapon</span><span><b>Shift</b> sprint</span>
+  </div>
+  <button class="btn" id="startBtn">Deploy</button>
+</div>
+
+<div id="shop" class="overlay hidden">
+  <div class="eyebrow">Wave <span id="shop-wave">1</span> cleared</div>
+  <h1 style="font-size:clamp(26px,5vw,44px)">Field Upgrade</h1>
+  <p>Choose one. (Press <b>1</b>, <b>2</b>, or <b>3</b>.)</p>
+  <div class="choices" id="choices"></div>
+</div>
+
+<div id="over" class="overlay hidden">
+  <div class="eyebrow">Signal Lost</div>
+  <h1 class="big">OVERRUN</h1>
+  <p>You survived to wave <b id="over-wave" style="color:var(--ink)">1</b> &middot; <span id="over-kills">0</span> neutralized &middot; <span id="over-money">0</span> credits earned</p>
+  <button class="btn" id="restartBtn">Redeploy</button>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

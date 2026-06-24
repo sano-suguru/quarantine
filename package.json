@@ -1,0 +1,25 @@
+{
+  "name": "quarantine",
+  "version": "0.1.0",
+  "description": "Top-down wave-survival zombie shooter (WebGL2)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src",
+    "lint:fix": "biome check --write src",
+    "format": "biome format --write src index.html",
+    "format:check": "biome format src index.html"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.0"
+  },
+  "trustedDependencies": [
+    "@biomejs/biome"
+  ]
+}
