@@ -10,6 +10,7 @@ Hold the line, bank credits between waves, pick a field upgrade, repeat.
 - **TypeScript** (`strict`) — game logic
 - **[Biome](https://biomejs.dev)** — linter + formatter (one tool)
 - **[Vitest](https://vitest.dev)** — unit tests for the pure/deterministic logic
+- **[Lefthook](https://lefthook.dev)** — git hooks (pre-commit Biome, pre-push typecheck + test)
 - **WebGL2** — single instanced draw call, no rendering library
 
 ## Getting started

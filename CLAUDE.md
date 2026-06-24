@@ -28,6 +28,15 @@ bun run format         # biome format --write src index.html
 
 **Tests** use Vitest (`bun run test`, or `bun run test:watch`). By deliberate scope, only **pure, deterministic** code is tested — `waveDef()` (`src/data/waves.ts`), the math helpers (`src/engine/math.ts`), and `SpatialHash` (`src/engine/spatialHash.ts`). Tests are co-located as `*.test.ts`. The simulation "feel" (renderer, AI movement, camera, collision tuning) is intentionally **not** unit-tested — validate that by playtesting. `vite.config.ts` carries the Vitest config (`environment: "node"`, since no DOM is needed).
 
+## Quality gates
+
+Enforced locally via **Lefthook** git hooks (config in `lefthook.yml`; installed by `bun install` through the `prepare` script, or manually with `bunx lefthook install`):
+
+- **pre-commit** — `biome check --write` on staged files. Safe fixes are auto-applied and re-staged; an unfixable lint error blocks the commit.
+- **pre-push** — `bun run typecheck` + `bun run test`. A type error or failing test blocks the push.
+
+There is no CI yet (deferred until a remote exists). To bypass a hook in an emergency: `git commit --no-verify` (avoid).
+
 ## Architecture
 
 Entry: `index.html` (markup + CSS) loads `src/main.ts` as a module.

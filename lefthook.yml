@@ -1,0 +1,20 @@
+# Local quality gates. Run `bunx lefthook install` once (or `bun install`,
+# which triggers it via the "prepare" script) to wire up the git hooks.
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: biome
+      # Lint + format + import-sort the staged files. Safe fixes are applied
+      # and re-staged; an unfixable lint error blocks the commit.
+      glob: "*.{ts,tsx,js,jsonc,json,css,html}"
+      run: bunx biome check --write --no-errors-on-unmatched {staged_files}
+      stage_fixed: true
+
+pre-push:
+  parallel: true
+  jobs:
+    - name: typecheck
+      run: bun run typecheck
+    - name: test
+      run: bun run test

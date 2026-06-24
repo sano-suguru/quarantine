@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare": "lefthook install",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
@@ -18,11 +19,10 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "lefthook": "^2.1.9",
     "typescript": "^5.7.2",
     "vite": "^6.0.0",
     "vitest": "^4.1.9"
   },
-  "trustedDependencies": [
-    "@biomejs/biome"
-  ]
+  "trustedDependencies": ["@biomejs/biome", "lefthook"]
 }
