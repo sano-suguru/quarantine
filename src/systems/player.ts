@@ -1,9 +1,11 @@
 import { CONFIG } from "../config";
 import { WEAPONS, WEAPON_ORDER } from "../data/weapons";
+import { Audio } from "../engine/audio";
 import { clamp, len, rand } from "../engine/math";
 import { Renderer } from "../engine/renderer";
 import { Input } from "../input";
 import type { Player, State, WeaponDef } from "../types";
+import { fxMuzzle } from "./fx";
 
 export function sysPlayer(state: State, dt: number): void {
   const p = state.player;
@@ -40,11 +42,16 @@ export function sysPlayer(state: State, dt: number): void {
     }
   }
   const wd = weapon(p.weapon);
-  if ((Input.keys.has("KeyR") || p.ammo <= 0) && p.reloadT <= 0 && p.ammo < wd.mag)
+  if ((Input.keys.has("KeyR") || p.ammo <= 0) && p.reloadT <= 0 && p.ammo < wd.mag) {
     p.reloadT = wd.reload;
+    Audio.reload();
+  }
   if (p.reloadT > 0) {
     p.reloadT -= dt;
-    if (p.reloadT <= 0) p.ammo = wd.mag;
+    if (p.reloadT <= 0) {
+      p.ammo = wd.mag;
+      Audio.reloadDone();
+    }
   }
 
   if (p.fireCd > 0) p.fireCd -= dt;
@@ -56,23 +63,42 @@ export function sysPlayer(state: State, dt: number): void {
     state._firedThisHold = true;
   }
   if (!Input.firing) state._firedThisHold = false;
+
+  // decay feel timers (visual offsets / cooldowns)
+  const rk = Math.exp(-CONFIG.feel.recoilDecay * dt);
+  p.recoilX *= rk;
+  p.recoilY *= rk;
+  if (p.hitFlash > 0) p.hitFlash -= dt;
+  if (p.iframe > 0) p.iframe -= dt;
+  if (p.muzzle > 0) p.muzzle -= dt;
 }
 
 export function fireWeapon(state: State, p: Player, wd: WeaponDef): void {
+  const tipX = p.x + Math.cos(p.aim) * p.r;
+  const tipY = p.y + Math.sin(p.aim) * p.r;
   for (let i = 0; i < wd.pellets; i++) {
     const a = p.aim + rand(-wd.spread, wd.spread);
     state.bullets.push({
-      x: p.x + Math.cos(p.aim) * p.r,
-      y: p.y + Math.sin(p.aim) * p.r,
+      x: tipX,
+      y: tipY,
+      px: tipX,
+      py: tipY,
       vx: Math.cos(a) * wd.bulletSpeed,
       vy: Math.sin(a) * wd.bulletSpeed,
       r: 4,
       dmg: wd.dmg * state.dmgMul,
       life: wd.range,
-      pierce: 0,
+      pierce: wd.pierce,
+      knockback: wd.knockback,
+      color: wd.color,
     });
   }
-  state.cam.shake = Math.min(state.cam.shake + (wd.pellets > 1 ? 7 : 3), 14);
+  // recoil: kick the camera and shove the player back a touch
+  state.cam.shake = Math.min(state.cam.shake + wd.recoil, 18);
+  p.recoilX -= Math.cos(p.aim) * wd.recoil * 0.9;
+  p.recoilY -= Math.sin(p.aim) * wd.recoil * 0.9;
+  fxMuzzle(state, tipX, tipY, p.aim, wd.color);
+  Audio.shot(p.weapon);
 }
 
 function weapon(id: string): WeaponDef {

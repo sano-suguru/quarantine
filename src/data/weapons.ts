@@ -12,6 +12,10 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reload: 0.9,
     range: 0.9,
     auto: false,
+    knockback: 140,
+    recoil: 4,
+    pierce: 0,
+    color: [1.0, 0.85, 0.4],
   },
   smg: {
     name: "SMG",
@@ -24,6 +28,10 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reload: 1.3,
     range: 0.8,
     auto: true,
+    knockback: 70,
+    recoil: 2.4,
+    pierce: 0,
+    color: [0.55, 0.95, 1.0],
   },
   shotgun: {
     name: "SHOTGUN",
@@ -36,6 +44,10 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reload: 1.6,
     range: 0.55,
     auto: false,
+    knockback: 95,
+    recoil: 10,
+    pierce: 0,
+    color: [1.0, 0.7, 0.35],
   },
 };
 

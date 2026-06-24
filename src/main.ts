@@ -1,6 +1,18 @@
 import { CONFIG } from "./config";
+import { Audio } from "./engine/audio";
 import { Renderer } from "./engine/renderer";
-import { chooseUpgrade, draw, getState, shopVisible, startGame, update, updateHUD } from "./game";
+import {
+  chooseUpgrade,
+  draw,
+  getState,
+  shopConfirm,
+  shopMove,
+  shopVisible,
+  startGame,
+  togglePause,
+  update,
+  updateHUD,
+} from "./game";
 import { Input } from "./input";
 import { el } from "./ui";
 
@@ -12,12 +24,32 @@ function main(): void {
   el("startBtn").onclick = startGame;
   el("restartBtn").onclick = startGame;
 
+  const cross = el("cross");
+  const muteTag = el("mute");
+  const refreshMute = (): void => {
+    muteTag.textContent = Audio.isMuted() ? "♪ muted [M]" : "";
+  };
+  refreshMute();
+
   addEventListener("keydown", (e) => {
     const state = getState();
-    if (state.paused && shopVisible()) {
+    if (e.code === "KeyM") {
+      Audio.toggleMute();
+      refreshMute();
+      return;
+    }
+    if (shopVisible()) {
       if (e.code === "Digit1") chooseUpgrade(0);
-      if (e.code === "Digit2") chooseUpgrade(1);
-      if (e.code === "Digit3") chooseUpgrade(2);
+      else if (e.code === "Digit2") chooseUpgrade(1);
+      else if (e.code === "Digit3") chooseUpgrade(2);
+      else if (e.code === "ArrowLeft" || e.code === "KeyA") shopMove(-1);
+      else if (e.code === "ArrowRight" || e.code === "KeyD") shopMove(1);
+      else if (e.code === "Enter" || e.code === "Space") shopConfirm();
+      return;
+    }
+    if ((e.code === "Escape" || e.code === "KeyP") && state.running) {
+      e.preventDefault();
+      togglePause();
     }
   });
 
@@ -33,7 +65,19 @@ function main(): void {
       acc -= step;
     }
     draw();
-    if (getState().running) updateHUD();
+    const state = getState();
+    if (state.running) updateHUD();
+
+    // custom crosshair
+    if (state.running && !state.paused) {
+      cross.style.opacity = "1";
+      cross.style.transform = `translate(${Input.mouseX}px,${Input.mouseY}px)`;
+      cross.classList.toggle("fire", Input.firing && state.player.reloadT <= 0);
+      cross.classList.toggle("reload", state.player.reloadT > 0);
+    } else {
+      cross.style.opacity = "0";
+    }
+
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

@@ -15,10 +15,33 @@
   }
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;
-    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;color:var(--ink);}
-  #game{display:block;width:100vw;height:100vh;cursor:crosshair;}
+    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;color:var(--ink);
+    -webkit-user-select:none;user-select:none;}
+  #game{display:block;width:100vw;height:100vh;cursor:none;}
 
-  #hud{position:fixed;inset:0;pointer-events:none;padding:18px 20px;
+  /* persistent atmospheric vignette */
+  #vignette{position:fixed;inset:0;pointer-events:none;z-index:1;
+    box-shadow:inset 0 0 220px 60px rgba(0,0,0,.85);
+    background:radial-gradient(circle at 50% 50%,transparent 45%,rgba(0,0,0,.45) 100%);
+    transition:box-shadow .4s;}
+  #hud.low ~ #vignette, body.low #vignette{}
+
+  /* full-screen damage / heal flash */
+  #flash{position:fixed;inset:0;pointer-events:none;z-index:3;opacity:0;
+    transition:opacity .12s ease-out;}
+
+  /* custom crosshair */
+  #cross{position:fixed;left:0;top:0;z-index:4;pointer-events:none;
+    width:26px;height:26px;margin:-13px 0 0 -13px;
+    transition:transform .04s linear,opacity .15s;}
+  #cross::before,#cross::after{content:"";position:absolute;background:var(--toxic);
+    box-shadow:0 0 6px var(--toxic);}
+  #cross::before{left:50%;top:0;width:2px;height:100%;margin-left:-1px;}
+  #cross::after{top:50%;left:0;height:2px;width:100%;margin-top:-1px;}
+  #cross.fire{transform:scale(1.4);}
+  #cross.reload::before,#cross.reload::after{background:var(--amber);box-shadow:0 0 6px var(--amber);}
+
+  #hud{position:fixed;inset:0;pointer-events:none;padding:18px 20px;z-index:2;
     display:flex;flex-direction:column;justify-content:space-between;}
   .hud-top{display:flex;justify-content:space-between;align-items:flex-start;}
   .hud-bottom{display:flex;justify-content:space-between;align-items:flex-end;}
@@ -26,15 +49,43 @@
   .stat-val{font-size:22px;letter-spacing:.04em;}
   .hud-block{min-width:90px;}
   .hud-block.r{text-align:right;}
-  #hpbar-wrap{width:240px;height:10px;border:1px solid var(--dim);
+  #hpbar-wrap{width:240px;height:11px;border:1px solid var(--dim);position:relative;
     background:rgba(0,0,0,.4);margin-top:4px;}
-  #hpbar{height:100%;width:100%;background:var(--toxic);transition:width .08s linear;}
-  #ammo .stat-val{color:var(--amber);}
-  #wavetag{font-size:11px;letter-spacing:.3em;color:var(--toxic);text-transform:uppercase;}
+  #hpbar{height:100%;width:100%;background:var(--toxic);transition:width .08s linear,background .2s;}
+  #hpnum{font-size:11px;letter-spacing:.06em;color:var(--ink);margin-top:3px;}
+  #hud.low #hpnum{color:var(--blood);}
+  #hud.low #hpbar-wrap{animation:hppulse 1s ease-in-out infinite;}
+  @keyframes hppulse{0%,100%{box-shadow:0 0 0 rgba(255,77,77,0);}50%{box-shadow:0 0 16px rgba(255,77,77,.7);}}
 
-  .overlay{position:fixed;inset:0;display:flex;flex-direction:column;
+  .weapons{display:flex;gap:7px;margin-top:7px;}
+  .wslot{font-size:10px;letter-spacing:.12em;padding:3px 8px;border:1px solid var(--dim);
+    color:var(--dim);border-radius:2px;}
+  .wslot.active{color:var(--bg);background:var(--amber);border-color:var(--amber);
+    box-shadow:0 0 12px rgba(255,179,71,.5);}
+  #ammo .stat-val{color:var(--amber);}
+  #magwrap{color:var(--dim);font-size:14px;}
+  #wavetag{font-size:11px;letter-spacing:.3em;color:var(--toxic);text-transform:uppercase;
+    text-shadow:0 0 12px rgba(125,255,79,.4);}
+
+  /* wave banner */
+  #banner{position:fixed;inset:0;z-index:5;pointer-events:none;display:flex;
+    flex-direction:column;align-items:center;justify-content:center;opacity:0;}
+  #banner.show{animation:bannerIn 2s ease-out forwards;}
+  #banner .bn-sub{font-size:12px;letter-spacing:.55em;color:var(--blood);text-transform:uppercase;}
+  #banner .bn-main{font-size:clamp(40px,8vw,82px);font-weight:700;letter-spacing:.08em;
+    color:var(--ink);text-shadow:0 0 40px rgba(255,77,77,.4);}
+  @keyframes bannerIn{
+    0%{opacity:0;transform:scale(1.25);letter-spacing:.3em;}
+    15%{opacity:1;transform:scale(1);}
+    75%{opacity:1;}
+    100%{opacity:0;transform:scale(.96);}
+  }
+
+  .overlay{position:fixed;inset:0;z-index:6;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:6px;text-align:center;
-    background:radial-gradient(circle at 50% 40%,rgba(10,20,10,.78),rgba(3,5,3,.94));}
+    background:radial-gradient(circle at 50% 40%,rgba(10,20,10,.82),rgba(3,5,3,.96));
+    animation:fadeIn .35s ease-out;}
+  @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
   .overlay.hidden{display:none;}
   .eyebrow{font-size:11px;letter-spacing:.5em;color:var(--toxic);text-transform:uppercase;}
   .overlay h1{margin:6px 0 0;font-size:clamp(34px,7vw,68px);font-weight:700;
@@ -46,27 +97,38 @@
   .btn{pointer-events:auto;margin-top:22px;padding:13px 40px;cursor:pointer;
     border:1px solid var(--toxic);background:transparent;color:var(--toxic);
     font-family:inherit;font-size:14px;letter-spacing:.25em;text-transform:uppercase;
-    transition:background .12s,color .12s;}
-  .btn:hover{background:var(--toxic);color:var(--bg);}
+    transition:background .12s,color .12s,box-shadow .12s;}
+  .btn:hover{background:var(--toxic);color:var(--bg);box-shadow:0 0 24px rgba(125,255,79,.5);}
   .choices{display:flex;gap:14px;margin-top:18px;flex-wrap:wrap;justify-content:center;}
-  .choice{pointer-events:auto;cursor:pointer;width:170px;padding:18px 14px;
-    border:1px solid var(--dim);background:rgba(0,0,0,.35);text-align:center;
-    transition:border-color .12s,transform .08s;}
-  .choice:hover{border-color:var(--toxic);transform:translateY(-2px);}
+  .choice{pointer-events:auto;cursor:pointer;width:190px;padding:18px 14px;
+    border:1px solid var(--dim);background:rgba(0,0,0,.4);text-align:center;
+    transition:border-color .12s,transform .1s,box-shadow .12s,background .12s;}
+  .choice.sel{border-color:var(--toxic);transform:translateY(-4px);background:rgba(20,40,18,.5);
+    box-shadow:0 0 26px rgba(125,255,79,.35);}
   .choice .num{font-size:11px;color:var(--toxic);letter-spacing:.2em;}
-  .choice .name{font-size:15px;margin:8px 0 4px;}
+  .choice .cname{font-size:15px;margin:8px 0 4px;color:var(--ink);}
   .choice .desc{font-size:11px;color:var(--dim);line-height:1.5;}
-  .big{font-size:clamp(40px,9vw,90px);color:var(--blood);}
+  .choice .prev{font-size:10px;color:var(--amber);margin-top:8px;letter-spacing:.02em;}
+  .big{font-size:clamp(40px,9vw,90px);color:var(--blood);text-shadow:0 0 40px rgba(255,77,77,.4);}
+  .hint{font-size:11px;color:var(--dim);letter-spacing:.1em;margin-top:10px;}
+
+  #mute{position:fixed;right:14px;top:12px;z-index:7;font-size:10px;letter-spacing:.18em;
+    color:var(--dim);pointer-events:none;text-transform:uppercase;}
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="vignette"></div>
+<div id="flash"></div>
+<div id="cross"></div>
+<div id="mute"></div>
 
 <div id="hud" class="hud hidden">
   <div class="hud-top">
     <div class="hud-block">
       <div class="stat-label">Integrity</div>
       <div id="hpbar-wrap"><div id="hpbar"></div></div>
+      <div id="hpnum">100 / 100</div>
     </div>
     <div class="hud-block r">
       <div class="stat-label">Wave</div>
@@ -76,7 +138,12 @@
   <div class="hud-bottom">
     <div class="hud-block" id="ammo">
       <div class="stat-label" id="weapon-name">PISTOL</div>
-      <div class="stat-val"><span id="ammo-val">12</span> <span style="color:var(--dim);font-size:14px">/ &#8734;</span></div>
+      <div class="stat-val"><span id="ammo-val">12</span> <span id="magwrap">/ <span id="mag-val">12</span></span></div>
+      <div class="weapons">
+        <span class="wslot active" id="slot-0">1 PISTOL</span>
+        <span class="wslot" id="slot-1">2 SMG</span>
+        <span class="wslot" id="slot-2">3 SHTG</span>
+      </div>
     </div>
     <div style="text-align:center"><div id="wavetag">&mdash; hostiles remaining: <span id="remaining">0</span> &mdash;</div></div>
     <div class="hud-block r">
@@ -84,6 +151,11 @@
       <div class="stat-val"><span style="color:var(--amber)" id="money">0</span></div>
     </div>
   </div>
+</div>
+
+<div id="banner">
+  <div class="bn-sub">Incoming</div>
+  <div class="bn-main">WAVE <span id="banner-n">1</span></div>
 </div>
 
 <div id="start" class="overlay">
@@ -94,6 +166,7 @@
     <span><b>WASD</b> move</span><span><b>Mouse</b> aim</span>
     <span><b>Click</b> fire (hold)</span><span><b>R</b> reload</span>
     <span><b>1 2 3</b> switch weapon</span><span><b>Shift</b> sprint</span>
+    <span><b>Esc/P</b> pause</span><span><b>M</b> mute</span>
   </div>
   <button class="btn" id="startBtn">Deploy</button>
 </div>
@@ -101,8 +174,15 @@
 <div id="shop" class="overlay hidden">
   <div class="eyebrow">Wave <span id="shop-wave">1</span> cleared</div>
   <h1 style="font-size:clamp(26px,5vw,44px)">Field Upgrade</h1>
-  <p>Choose one. (Press <b>1</b>, <b>2</b>, or <b>3</b>.)</p>
+  <p>Choose one.</p>
   <div class="choices" id="choices"></div>
+  <div class="hint">[1] [2] [3] or &larr; &rarr; &middot; ENTER to confirm</div>
+</div>
+
+<div id="pause" class="overlay hidden">
+  <div class="eyebrow">Standby</div>
+  <h1 style="font-size:clamp(26px,5vw,44px)">PAUSED</h1>
+  <p class="hint">Press Esc or P to resume</p>
 </div>
 
 <div id="over" class="overlay hidden">

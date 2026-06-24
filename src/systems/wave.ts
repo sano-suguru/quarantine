@@ -25,6 +25,14 @@ export function spawnZombie(state: State, type: string, hpScale: number, spdScal
     attackRate: t.attackRate,
     color: t.color,
     type,
+    shape: t.shape,
+    glow: t.glow,
+    eye: t.eye,
+    vx: 0,
+    vy: 0,
+    flash: 0,
+    spawnT: 0.35,
+    wob: rand(0, Math.PI * 2),
   });
 }
 
