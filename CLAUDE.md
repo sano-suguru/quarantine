@@ -26,7 +26,7 @@ bun run lint:fix       # biome check --write src   (add --unsafe for template-li
 bun run format         # biome format --write src index.html
 ```
 
-There is **no test suite** yet. `waveDef()` (`src/data/waves.ts`) is the best first candidate for unit tests (pure function).
+**Tests** use Vitest (`bun run test`, or `bun run test:watch`). By deliberate scope, only **pure, deterministic** code is tested — `waveDef()` (`src/data/waves.ts`), the math helpers (`src/engine/math.ts`), and `SpatialHash` (`src/engine/spatialHash.ts`). Tests are co-located as `*.test.ts`. The simulation "feel" (renderer, AI movement, camera, collision tuning) is intentionally **not** unit-tested — validate that by playtesting. `vite.config.ts` carries the Vitest config (`environment: "node"`, since no DOM is needed).
 
 ## Architecture
 
