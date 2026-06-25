@@ -1,0 +1,25 @@
+import { describe, expect, it } from "vitest";
+import { CONFIG } from "../config";
+import { levelCost, scaledDmg, scaledMag } from "./arsenal";
+
+describe("weapon level scaling", () => {
+  it("is the base value at level 0", () => {
+    expect(scaledDmg(20, 0)).toBe(20);
+    expect(scaledMag(30, 0)).toBe(30);
+  });
+
+  it("adds the per-level damage fraction", () => {
+    // +15%/level by default
+    expect(scaledDmg(20, 2)).toBeCloseTo(20 * (1 + 2 * CONFIG.arsenal.dmgPerLevel));
+  });
+
+  it("rounds magazine to a whole number", () => {
+    // 30 * (1 + 0.2) = 36
+    expect(scaledMag(30, 1)).toBe(36);
+    expect(Number.isInteger(scaledMag(7, 1))).toBe(true);
+  });
+
+  it("level cost rises by the step each level", () => {
+    expect(levelCost(1) - levelCost(0)).toBe(CONFIG.arsenal.levelStep);
+  });
+});

@@ -2,14 +2,17 @@ import { CONFIG } from "./config";
 import { Audio } from "./engine/audio";
 import { Renderer } from "./engine/renderer";
 import {
-  chooseUpgrade,
+  buyItem,
   draw,
   getState,
-  shopConfirm,
+  renderArsenal,
+  shopBuySelected,
+  shopDeploy,
   shopMove,
   shopVisible,
   startGame,
   startNightNow,
+  toTitle,
   toggleFlashlight,
   togglePause,
   update,
@@ -25,7 +28,9 @@ function main(): void {
   Input.init(canvas);
 
   el("startBtn").onclick = startGame;
-  el("restartBtn").onclick = startGame;
+  el("restartBtn").onclick = toTitle;
+  el("deployBtn").onclick = shopDeploy;
+  renderArsenal(); // populate the title-screen arsenal panel on first load
 
   const cross = el("cross");
   const muteTag = el("mute");
@@ -42,12 +47,12 @@ function main(): void {
       return;
     }
     if (shopVisible()) {
-      if (e.code === "Digit1") chooseUpgrade(0);
-      else if (e.code === "Digit2") chooseUpgrade(1);
-      else if (e.code === "Digit3") chooseUpgrade(2);
-      else if (e.code === "ArrowLeft" || e.code === "KeyA") shopMove(-1);
-      else if (e.code === "ArrowRight" || e.code === "KeyD") shopMove(1);
-      else if (e.code === "Enter" || e.code === "Space") shopConfirm();
+      const digit = /^Digit([1-9])$/.exec(e.code);
+      if (digit) buyItem(Number(digit[1]) - 1);
+      else if (e.code === "ArrowUp" || e.code === "KeyW") shopMove(-1);
+      else if (e.code === "ArrowDown" || e.code === "KeyS") shopMove(1);
+      else if (e.code === "Space") shopBuySelected();
+      else if (e.code === "Enter") shopDeploy();
       return;
     }
     if ((e.code === "Escape" || e.code === "KeyP") && state.running) {

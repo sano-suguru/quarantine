@@ -55,6 +55,64 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 18,
     reserveMax: 42,
   },
+  // ---- meta-unlocked arsenal (locked until bought with SALVAGE) ----
+  // Assault rifle: accurate full-auto that punches through one zombie.
+  rifle: {
+    name: "RIFLE",
+    dmg: 22,
+    fireRate: 9,
+    bulletSpeed: 1050,
+    spread: 0.04,
+    pellets: 1,
+    mag: 30,
+    reload: 1.4,
+    range: 1.0,
+    auto: true,
+    knockback: 90,
+    recoil: 3.2,
+    pierce: 1,
+    color: [0.7, 1.0, 0.6],
+    reserveStart: 90,
+    reserveMax: 240,
+  },
+  // Light machine gun: suppressing fire, huge mag, heavy kick, long reload.
+  lmg: {
+    name: "LMG",
+    dmg: 17,
+    fireRate: 17,
+    bulletSpeed: 980,
+    spread: 0.1,
+    pellets: 1,
+    mag: 75,
+    reload: 2.6,
+    range: 0.95,
+    auto: true,
+    knockback: 80,
+    recoil: 4,
+    pierce: 1,
+    color: [1.0, 0.85, 0.5],
+    reserveStart: 150,
+    reserveMax: 450,
+  },
+  // Magnum: a slow, devastating hand-cannon that pierces and throws bodies back.
+  magnum: {
+    name: "MAGNUM",
+    dmg: 95,
+    fireRate: 1.7,
+    bulletSpeed: 1150,
+    spread: 0.012,
+    pellets: 1,
+    mag: 6,
+    reload: 1.5,
+    range: 1.1,
+    auto: false,
+    knockback: 320,
+    recoil: 13,
+    pierce: 2,
+    color: [1.0, 0.55, 0.5],
+    reserveStart: 24,
+    reserveMax: 60,
+  },
   // Last-resort melee. Always available, consumes no ammo — but deliberately
   // weak and short-ranged: switching to it should feel like desperation.
   knife: {
@@ -80,6 +138,16 @@ export const WEAPONS: Record<string, WeaponDef> = {
   },
 };
 
-// Order drives the 1/2/3/4 hotkeys. Guns keep 1-3; knife is 4 so muscle
-// memory for the guns is preserved.
-export const WEAPON_ORDER = ["pistol", "smg", "shotgun", "knife"];
+// Order drives the number hotkeys. Starter guns keep 1-3; meta-unlocked guns
+// slot in next; knife is always last. Only OWNED weapons are switchable.
+export const WEAPON_ORDER = ["pistol", "smg", "shotgun", "rifle", "lmg", "magnum", "knife"];
+
+// Guns the player always starts a run with (the rest are unlocked via SALVAGE).
+export const STARTER_WEAPONS = ["pistol", "smg", "shotgun", "knife"];
+
+// Meta-unlockable weapons and their permanent SALVAGE price.
+export const UNLOCKABLE: { id: string; price: number }[] = [
+  { id: "rifle", price: 120 },
+  { id: "lmg", price: 200 },
+  { id: "magnum", price: 280 },
+];

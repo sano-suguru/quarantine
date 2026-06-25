@@ -1,5 +1,6 @@
 import { CONFIG } from "../config";
-import { WEAPONS, WEAPON_ORDER } from "../data/weapons";
+import { effWeapon } from "../data/arsenal";
+import { WEAPON_ORDER } from "../data/weapons";
 import { Audio } from "../engine/audio";
 import { circlePushFromSegment } from "../engine/geometry";
 import { clamp, len, rand } from "../engine/math";
@@ -64,17 +65,17 @@ export function sysPlayer(state: State, dt: number): void {
   const wy = state.cam.y + myN * half.y;
   p.aim = Math.atan2(wy - p.y, wx - p.x);
 
-  // switch weapons — magazine state is preserved per weapon (no free refill)
+  // switch weapons — only to ones you own; magazine state is preserved per weapon
   for (let i = 0; i < WEAPON_ORDER.length; i++) {
     const id = WEAPON_ORDER[i] as string;
-    if (Input.keys.has(`Digit${i + 1}`) && p.weapon !== id) {
+    if (Input.keys.has(`Digit${i + 1}`) && p.weapon !== id && state.owned[id]) {
       p.mags[p.weapon] = p.ammo; // stash the rounds left in the current mag
       p.weapon = id;
       p.ammo = p.mags[id] ?? 0; // restore the new weapon's mag
       p.reloadT = 0;
     }
   }
-  const wd = weapon(p.weapon);
+  const wd = effWeapon(state, p.weapon);
 
   // reload draws from this weapon's finite reserve (melee weapons never reload)
   if (!wd.melee) {
@@ -269,8 +270,4 @@ function interact(state: State, p: Player, dt: number, healing: boolean, moving:
   }
   // any cache not actively being searched loses its progress
   for (const c of state.caches) if (c !== searching && c.searchT > 0) c.searchT = 0;
-}
-
-function weapon(id: string): WeaponDef {
-  return WEAPONS[id] as WeaponDef;
 }

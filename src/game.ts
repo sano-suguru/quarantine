@@ -1,9 +1,10 @@
 import { CONFIG } from "./config";
+import { type StoreItem, effWeapon, storeItems } from "./data/arsenal";
 import { PICKUP_TYPES } from "./data/pickups";
-import { UPGRADES } from "./data/upgrades";
-import { WEAPONS, WEAPON_ORDER } from "./data/weapons";
+import { UNLOCKABLE, WEAPONS, WEAPON_ORDER } from "./data/weapons";
 import { Audio } from "./engine/audio";
 import { Renderer, SHAPE } from "./engine/renderer";
+import { addSalvage, buyUnlock, loadMeta } from "./meta";
 import { newState } from "./state";
 import { sysAI } from "./systems/ai";
 import { sysBullets } from "./systems/bullets";
@@ -13,7 +14,7 @@ import { sysFx } from "./systems/fx";
 import { sysPickups } from "./systems/pickups";
 import { sysPlayer } from "./systems/player";
 import { startDay, startNight, sysSiege } from "./systems/siege";
-import type { State, Upgrade, WeaponDef } from "./types";
+import type { State } from "./types";
 import { el, hide, show } from "./ui";
 
 let state: State = newState();
@@ -64,7 +65,7 @@ export function update(dt: number): void {
 function audioAmbience(dt: number): void {
   const p = state.player;
   const hpf = p.hp / p.maxHp;
-  const wd = weapon(p.weapon);
+  const wd = effWeapon(state, p.weapon);
   // running dry feeds the dread too — the fear of an empty gun
   const totalAmmo = p.ammo + (p.reserve[p.weapon] ?? 0);
   const lowAmmo = !wd.melee && wd.mag > 0 && totalAmmo < wd.mag * CONFIG.horror.lowAmmo;
@@ -275,7 +276,7 @@ export function draw(): void {
     R.glow(tx, ty, p.r * 1.6, 1, 0.9, 0.6, Math.min(1, p.muzzle * 18));
   }
   if (p.reloadT > 0) {
-    const wd = weapon(p.weapon);
+    const wd = effWeapon(state, p.weapon);
     const prog = 1 - p.reloadT / wd.reload;
     R.rect(p.x, p.y - p.r - 12, 34 * prog, 4, 0, 1, 0.75, 0.2, 1);
   }
@@ -395,7 +396,7 @@ function drawCaches(R: typeof Renderer): void {
 let lastWeapon = "";
 export function updateHUD(): void {
   const p = state.player;
-  const wd = weapon(p.weapon);
+  const wd = effWeapon(state, p.weapon);
   const hpf = Math.max(0, p.hp) / p.maxHp;
   el("hpbar").style.width = `${100 * hpf}%`;
   el("hpbar").style.background = hpf < 0.3 ? "var(--blood)" : "var(--toxic)";
@@ -453,7 +454,7 @@ export function updateHUD(): void {
   el("remaining").textContent =
     state.phase === "night" ? String(state.zombies.length + state.wave.queue.length) : "—";
 
-  // weapon slot highlight
+  // weapon slot highlight (slots are built per run from owned weapons)
   if (p.weapon !== lastWeapon) {
     lastWeapon = p.weapon;
     for (let i = 0; i < WEAPON_ORDER.length; i++) {
@@ -482,6 +483,24 @@ function announce(label: string, n: number): void {
   b.classList.add("show");
 }
 
+/** Build the HUD weapon row from the weapons owned this run (number = hotkey). */
+function buildWeaponSlots(): void {
+  const row = el("weapons-row");
+  row.innerHTML = "";
+  for (let i = 0; i < WEAPON_ORDER.length; i++) {
+    const id = WEAPON_ORDER[i] as string;
+    if (!state.owned[id]) continue;
+    const w = WEAPONS[id];
+    if (!w) continue;
+    const s = document.createElement("span");
+    s.className = "wslot";
+    s.id = `slot-${i}`;
+    s.textContent = `${i + 1} ${w.name}`;
+    row.appendChild(s);
+  }
+  lastWeapon = ""; // force a re-highlight on the next HUD tick
+}
+
 export function startGame(): void {
   state = newState();
   state.running = true;
@@ -491,6 +510,7 @@ export function startGame(): void {
   hide("over");
   hide("shop");
   show("hud");
+  buildWeaponSlots();
   startDay(state);
   announce("DAY", state.day);
 }
@@ -503,34 +523,31 @@ export function startNightNow(): void {
   Audio.waveStart();
 }
 
-let shopChoices: Upgrade[] = [];
+let shopItems: StoreItem[] = [];
 let shopSel = 0;
+let shopEls: HTMLElement[] = [];
 
 export function openShop(): void {
   state.paused = true;
   Audio.setDread(0.1);
   resupply();
-  const pool = UPGRADES.slice();
-  shopChoices = [];
-  for (let i = 0; i < 3 && pool.length; i++)
-    shopChoices.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0] as Upgrade);
+  shopItems = storeItems(state);
   shopSel = 0;
   el("shop-wave").textContent = String(state.day);
   renderShop();
   show("shop");
 }
 
-let shopEls: HTMLElement[] = [];
-
 function renderShop(): void {
+  el("shop-credits").textContent = String(state.money);
   const box = el("choices");
   box.innerHTML = "";
-  shopEls = shopChoices.map((u, i) => {
+  shopEls = shopItems.map((it, i) => {
+    const able = it.canBuy(state);
     const d = document.createElement("div");
-    d.className = `choice${i === shopSel ? " sel" : ""}`;
-    const preview = u.preview ? u.preview(state) : "";
-    d.innerHTML = `<div class='num'>[${i + 1}]</div><div class='cname'>${u.name}</div><div class='desc'>${u.desc}</div>${preview ? `<div class='prev'>${preview}</div>` : ""}`;
-    d.onclick = () => chooseUpgrade(i);
+    d.className = `srow${i === shopSel ? " sel" : ""}${able ? "" : " off"}`;
+    d.innerHTML = `<div class='snum'>${i + 1}</div><div class='sinfo'><div class='cname'>${it.name}</div><div class='desc'>${it.desc}</div></div><div class='sprice'>${it.price}c</div>`;
+    d.onclick = () => buyItem(i);
     d.onmouseenter = () => {
       shopSel = i;
       highlightShop();
@@ -546,24 +563,35 @@ function highlightShop(): void {
 }
 
 export function shopMove(dir: number): void {
-  if (!shopVisible()) return;
-  shopSel = (shopSel + dir + shopChoices.length) % shopChoices.length;
+  if (!shopVisible() || shopItems.length === 0) return;
+  shopSel = (shopSel + dir + shopItems.length) % shopItems.length;
   Audio.ui(false);
   highlightShop();
 }
 
-export function shopConfirm(): void {
-  if (shopVisible()) chooseUpgrade(shopSel);
+/** Buy one item; prices/levels can change, so the list is rebuilt after. */
+export function buyItem(i: number): void {
+  if (!shopVisible()) return;
+  const it = shopItems[i];
+  if (!it || !it.canBuy(state)) return;
+  state.money -= it.price;
+  it.buy(state);
+  Audio.ui(true);
+  shopItems = storeItems(state);
+  if (shopSel >= shopItems.length) shopSel = Math.max(0, shopItems.length - 1);
+  renderShop();
 }
 
-export function chooseUpgrade(i: number): void {
-  const u = shopChoices[i];
-  if (!u) return;
+export function shopBuySelected(): void {
+  if (shopVisible()) buyItem(shopSel);
+}
+
+/** Leave the arsenal and start the next day. */
+export function shopDeploy(): void {
+  if (!shopVisible()) return;
   Audio.ui(true);
-  u.apply(state);
   hide("shop");
   state.paused = false;
-  // survived the night → next day's scavenge phase
   state.day++;
   startDay(state);
   announce("DAY", state.day);
@@ -573,11 +601,56 @@ export function gameOver(): void {
   state.running = false;
   Audio.gameOver();
   Audio.stopDread();
+  // bank SALVAGE for permanent unlocks (meta-progression)
+  const gained = Math.round(
+    state.day * CONFIG.arsenal.salvagePerDay + state.kills * CONFIG.arsenal.salvagePerKill,
+  );
+  addSalvage(gained);
   el("over-wave").textContent = String(state.day);
   el("over-kills").textContent = String(state.kills);
   el("over-money").textContent = String(state.money);
+  el("over-salvage").textContent = String(gained);
   hide("hud");
   show("over");
+}
+
+/** Back to the title screen (so the player can spend SALVAGE before redeploying). */
+export function toTitle(): void {
+  hide("over");
+  hide("shop");
+  hide("hud");
+  renderArsenal();
+  show("start");
+}
+
+/** Render the title-screen ARSENAL panel: SALVAGE balance + weapon unlocks. */
+export function renderArsenal(): void {
+  const meta = loadMeta();
+  el("salvage-bal").textContent = String(meta.salvage);
+  const box = el("arsenal-list");
+  box.innerHTML = "";
+  for (const u of UNLOCKABLE) {
+    const w = WEAPONS[u.id];
+    if (!w) continue;
+    const owned = !!meta.unlocked[u.id];
+    const able = !owned && meta.salvage >= u.price;
+    const d = document.createElement("div");
+    d.className = `arow${owned ? " owned" : able ? "" : " off"}`;
+    d.innerHTML = owned
+      ? `<div class='cname'>${w.name}</div><div class='atag'>UNLOCKED</div>`
+      : `<div class='cname'>${w.name}</div><div class='aprice'>${u.price} ◆</div>`;
+    if (!owned && able) d.onclick = () => unlockWeapon(u.id, u.price);
+    box.appendChild(d);
+  }
+}
+
+function unlockWeapon(id: string, price: number): void {
+  if (buyUnlock(id, price)) {
+    Audio.ui(true);
+    renderArsenal();
+  } else {
+    Audio.ui(false);
+  }
 }
 
 export function togglePause(): void {
@@ -589,10 +662,6 @@ export function togglePause(): void {
 
 export function shopVisible(): boolean {
   return !el("shop").classList.contains("hidden");
-}
-
-function weapon(id: string): WeaponDef {
-  return WEAPONS[id] as WeaponDef;
 }
 
 /** Context interact hint for the HUD: repair a barricade (priority) or search a cache. */

@@ -148,16 +148,21 @@
     box-shadow:0 0 0 1px var(--toxic),0 0 52px rgba(125,255,79,.6);}
   .btn:active{transform:translateY(0);}
   .btn:focus-visible{outline:3px solid var(--amber);outline-offset:4px;}
-  .choices{display:flex;gap:14px;margin-top:18px;flex-wrap:wrap;justify-content:center;}
-  .choice{pointer-events:auto;cursor:pointer;width:190px;padding:18px 14px;
-    border:1px solid var(--dim);background:rgba(0,0,0,.4);text-align:center;
-    transition:border-color .12s,transform .1s,box-shadow .12s,background .12s;}
-  .choice.sel{border-color:var(--toxic);transform:translateY(-4px);background:rgba(20,40,18,.5);
-    box-shadow:0 0 26px rgba(125,255,79,.35);}
-  .choice .num{font-size:11px;color:var(--toxic);letter-spacing:.2em;}
-  .choice .cname{font-size:15px;margin:8px 0 4px;color:var(--ink);}
-  .choice .desc{font-size:11px;color:var(--dim);line-height:1.5;}
-  .choice .prev{font-size:10px;color:var(--amber);margin-top:8px;letter-spacing:.02em;}
+  /* arsenal store list */
+  .store{display:flex;flex-direction:column;gap:7px;margin-top:16px;width:min(440px,86vw);
+    max-height:46vh;overflow-y:auto;padding-right:4px;}
+  .srow{pointer-events:auto;cursor:pointer;display:flex;align-items:center;gap:12px;
+    padding:10px 13px;border:1px solid var(--line);background:rgba(0,0,0,.4);text-align:left;
+    transition:border-color .1s,background .1s;}
+  .srow.sel{border-color:var(--toxic);background:rgba(20,40,18,.5);box-shadow:0 0 20px rgba(125,255,79,.28);}
+  .srow.off{opacity:.42;}
+  .srow .snum{font-family:var(--display);font-size:18px;color:var(--toxic);min-width:18px;text-align:center;}
+  .srow .sinfo{flex:1;}
+  .srow .cname{font-size:14px;color:var(--ink);letter-spacing:.02em;}
+  .srow .desc{font-size:10.5px;color:var(--dim);line-height:1.4;margin-top:2px;}
+  .srow .sprice{font-size:14px;color:var(--amber);font-variant-numeric:tabular-nums;letter-spacing:.04em;}
+  .srow.off .sprice{color:var(--blood);}
+  #shop .btn{margin-top:18px;}
   .big{font-size:clamp(40px,9vw,90px);color:var(--blood);text-shadow:0 0 40px rgba(255,77,77,.4);}
   .hint{font-size:11px;color:var(--dim);letter-spacing:.1em;margin-top:10px;}
 
@@ -190,6 +195,23 @@
     mask:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);}
   .build{font-size:10px;letter-spacing:.26em;color:var(--dim);text-transform:uppercase;
     white-space:nowrap;font-variant-numeric:tabular-nums;}
+
+  /* title-screen meta arsenal (permanent weapon unlocks) */
+  #arsenal{margin-top:18px;width:min(360px,82vw);border:1px solid var(--line);
+    background:rgba(8,14,12,.5);padding:11px 13px;}
+  .ars-head{font-size:10px;letter-spacing:.26em;color:var(--dim);text-transform:uppercase;
+    margin-bottom:8px;}
+  .ars-head b{color:var(--amber);font-variant-numeric:tabular-nums;}
+  #arsenal-list{display:flex;flex-direction:column;gap:5px;}
+  .arow{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:6px 9px;border:1px solid transparent;font-size:12px;}
+  .arow:not(.owned):not(.off){pointer-events:auto;cursor:pointer;border-color:var(--line);}
+  .arow:not(.owned):not(.off):hover{border-color:var(--toxic);background:rgba(20,40,18,.45);}
+  .arow .cname{color:var(--ink);letter-spacing:.04em;}
+  .arow .aprice{color:var(--amber);font-variant-numeric:tabular-nums;}
+  .arow .atag{color:var(--toxic);font-size:10px;letter-spacing:.18em;}
+  .arow.off{opacity:.4;}
+  .arow.off .aprice{color:var(--dim);}
 
   @media (prefers-reduced-motion:reduce){
     #start,.eyebrow .dot,#hud.low #hpbar-wrap,#battery.low #batbar{animation:none;}
@@ -224,12 +246,7 @@
     <div class="hud-block" id="ammo">
       <div class="stat-label" id="weapon-name">PISTOL</div>
       <div class="stat-val"><span id="ammo-val">12</span> <span id="magwrap">/ <span id="mag-val">12</span></span> <span id="reservewrap">&middot; <span id="reserve-val">36</span> spare</span></div>
-      <div class="weapons">
-        <span class="wslot active" id="slot-0">1 PISTOL</span>
-        <span class="wslot" id="slot-1">2 SMG</span>
-        <span class="wslot" id="slot-2">3 SHTG</span>
-        <span class="wslot" id="slot-3">4 KNIFE</span>
-      </div>
+      <div class="weapons" id="weapons-row"></div>
     </div>
     <div style="text-align:center">
       <div id="phase">DAY 1</div>
@@ -266,6 +283,11 @@
     <span><b>Enter</b> start night early</span><span><b>Shift</b> sprint</span>
     <span><b>Esc/P</b> pause</span><span><b>M</b> mute</span>
   </div>
+  <div id="arsenal">
+    <div class="ars-head">Arsenal &middot; Salvage <b id="salvage-bal">0</b> &#9670;</div>
+    <div id="arsenal-list"></div>
+  </div>
+
   <button class="btn" id="startBtn">Deploy</button>
 
   <div class="startfoot"><div class="tape"></div><div class="build">Build Sector-7 &middot; v0.4</div></div>
@@ -273,10 +295,11 @@
 
 <div id="shop" class="overlay hidden">
   <div class="eyebrow"><span class="dot"></span>Night <span id="shop-wave">1</span> survived</div>
-  <h1 style="font-size:clamp(26px,5vw,44px)">Field Upgrade</h1>
-  <p>Choose one.</p>
-  <div class="choices" id="choices"></div>
-  <div class="hint">[1] [2] [3] or &larr; &rarr; &middot; ENTER to confirm</div>
+  <h1 style="font-size:clamp(26px,5vw,44px)">Arsenal</h1>
+  <p>Credits <b id="shop-credits" style="color:var(--amber)">0</b> &middot; upgrade your kit, then deploy</p>
+  <div class="store" id="choices"></div>
+  <button class="btn" id="deployBtn">Deploy</button>
+  <div class="hint">[1&ndash;9] / click buy &middot; &uarr;&darr; select &middot; SPACE buy &middot; ENTER deploy</div>
 </div>
 
 <div id="pause" class="overlay hidden">
@@ -289,6 +312,7 @@
   <div class="eyebrow"><span class="dot" style="background:var(--blood);box-shadow:0 0 10px var(--blood)"></span>Signal Lost</div>
   <h1 class="big">OVERRUN</h1>
   <p>You survived to day <b id="over-wave" style="color:var(--ink)">1</b> &middot; <span id="over-kills">0</span> neutralized &middot; <span id="over-money">0</span> credits earned</p>
+  <p style="color:var(--amber)">Salvage recovered: <b id="over-salvage">0</b> &#9670;</p>
   <button class="btn" id="restartBtn">Redeploy</button>
 </div>
 

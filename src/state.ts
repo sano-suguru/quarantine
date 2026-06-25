@@ -1,8 +1,9 @@
 import { CONFIG } from "./config";
 import { HOME, POIS } from "./data/map";
-import { WEAPONS, WEAPON_ORDER } from "./data/weapons";
+import { STARTER_WEAPONS, WEAPONS, WEAPON_ORDER } from "./data/weapons";
 import { clamp } from "./engine/math";
 import { SpatialHash } from "./engine/spatialHash";
+import { loadMeta } from "./meta";
 import type { Barricade, Cache, Segment, State, WeaponDef } from "./types";
 
 /** loot tier rises with distance from HOME (origin) */
@@ -19,6 +20,12 @@ export function newState(): State {
     reserve[id] = w.reserveStart;
     mags[id] = w.mag;
   }
+
+  // which weapons this run can use: starters always, plus meta-unlocked ones
+  const meta = loadMeta();
+  const owned: Record<string, boolean> = {};
+  for (const id of STARTER_WEAPONS) owned[id] = true;
+  for (const id of Object.keys(meta.unlocked)) if (meta.unlocked[id]) owned[id] = true;
 
   // HOME openings start fully boarded; POI walls join the collision set
   const barricades: Barricade[] = HOME.openings.map((o) => ({
@@ -90,6 +97,8 @@ export function newState(): State {
     dmgMul: 1,
     fireRateMul: 1,
     reserveMul: 1,
+    owned,
+    wlevel: {},
     hash: new SpatialHash(64),
     hitstopT: 0,
     flashT: 0,

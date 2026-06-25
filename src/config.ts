@@ -65,4 +65,14 @@ export const CONFIG = {
     tierDist: 500, // every this many world units from HOME raises the loot tier
     maxTier: 3,
   },
+  arsenal: {
+    maxLevel: 3, // weapon upgrade levels per run
+    dmgPerLevel: 0.15, // +15% damage per level
+    magPerLevel: 0.2, // +20% magazine per level
+    levelBaseCost: 60, // credits for a weapon's first upgrade
+    levelStep: 45, // each further level costs this much more
+    perkCost: 80, // credits for a field-upgrade perk
+    salvagePerDay: 8, // SALVAGE banked per day survived
+    salvagePerKill: 0.15, // SALVAGE banked per kill
+  },
 };

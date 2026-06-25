@@ -290,6 +290,10 @@ export interface State {
   fireRateMul: number;
   /** run-scoped multiplier on every weapon's spare-ammo capacity */
   reserveMul: number;
+  /** which weapons are available this run (starters + meta-unlocked) */
+  owned: Record<string, boolean>;
+  /** run-scoped upgrade level per weapon (resets each run) */
+  wlevel: Record<string, number>;
   hash: SpatialHashLike;
   hitstopT: number;
   flashT: number;
