@@ -13,6 +13,9 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     shape: SHAPE.circle,
     glow: [0.35, 0.85, 0.3],
     eye: [1.0, 0.92, 0.4],
+    sense: 520,
+    wander: 0.6, // shambles, drifts off course
+    separation: 1.0,
   },
   runner: {
     hp: 35,
@@ -25,6 +28,11 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     shape: SHAPE.tri,
     glow: [1.0, 0.65, 0.15],
     eye: [1.0, 1.0, 0.6],
+    sense: 660,
+    wander: 0.3,
+    lunge: 2.3, // periodic dash toward the player
+    lungePeriod: 2.4,
+    separation: 1.0,
   },
   brute: {
     hp: 260,
@@ -37,5 +45,8 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     shape: SHAPE.hex,
     glow: [1.0, 0.18, 0.16],
     eye: [1.0, 0.35, 0.2],
+    sense: 900,
+    wander: 0.08, // relentless, near-straight
+    separation: 0.15, // plows through the crowd
   },
 };

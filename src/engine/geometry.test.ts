@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { circlePushFromSegment, closestPointOnSegment, segmentHitsSegment } from "./geometry";
+import {
+  circlePush,
+  circlePushFromSegment,
+  closestPointOnSegment,
+  segmentHitsSegment,
+} from "./geometry";
 
 describe("closestPointOnSegment", () => {
   it("projects onto the interior of the segment", () => {
@@ -31,6 +36,29 @@ describe("circlePushFromSegment", () => {
     const p = circlePushFromSegment(5, 2, 5, seg);
     const ny = 2 + (p?.dy ?? 0);
     expect(Math.abs(ny)).toBeGreaterThanOrEqual(5 - 1e-6);
+  });
+});
+
+describe("circlePush", () => {
+  it("returns null when circles do not overlap", () => {
+    expect(circlePush(0, 0, 5, 20, 0, 5)).toBeNull();
+  });
+  it("pushes A out of B along the centre line", () => {
+    // centres 6 apart, radii 5+5=10 → overlap 4, push +x
+    const p = circlePush(6, 0, 5, 0, 0, 5);
+    expect(p?.dx).toBeCloseTo(4);
+    expect(p?.dy).toBeCloseTo(0);
+  });
+  it("after applying half to each the circles just touch", () => {
+    const p = circlePush(6, 0, 5, 0, 0, 5);
+    const ax = 6 + (p?.dx ?? 0) / 2;
+    const bx = 0 - (p?.dx ?? 0) / 2;
+    expect(Math.abs(ax - bx)).toBeCloseTo(10);
+  });
+  it("separates coincident circles along a fallback axis", () => {
+    const p = circlePush(0, 0, 4, 0, 0, 4);
+    expect(p).not.toBeNull();
+    expect(Math.hypot(p?.dx ?? 0, p?.dy ?? 0)).toBeCloseTo(8);
   });
 });
 

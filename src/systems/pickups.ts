@@ -30,18 +30,6 @@ export function dropFromKill(state: State, x: number, y: number, big: boolean): 
   }
 }
 
-/** Scatter a few crates around the player at the start of a wave (scavenge bait). */
-export function scatterPickups(state: State, count: number): void {
-  const p = state.player;
-  for (let i = 0; i < count; i++) {
-    const ang = rand(0, Math.PI * 2);
-    const dist = rand(220, 620);
-    const roll = Math.random();
-    const defId = roll < 0.18 ? "battery" : roll < 0.32 ? "health" : "ammo";
-    spawnPickup(state, p.x + Math.cos(ang) * dist, p.y + Math.sin(ang) * dist, defId);
-  }
-}
-
 /** Decay pickups and auto-collect any the player walks over. */
 export function sysPickups(state: State, dt: number): void {
   const P = state.pickups;

@@ -1,8 +1,14 @@
 import { CONFIG } from "./config";
-import { SHELTER } from "./data/shelter";
+import { HOME, POIS } from "./data/map";
 import { WEAPONS, WEAPON_ORDER } from "./data/weapons";
+import { clamp } from "./engine/math";
 import { SpatialHash } from "./engine/spatialHash";
-import type { Barricade, State, WeaponDef } from "./types";
+import type { Barricade, Cache, Segment, State, WeaponDef } from "./types";
+
+/** loot tier rises with distance from HOME (origin) */
+function tierFor(x: number, y: number): number {
+  return clamp(Math.round(Math.hypot(x, y) / CONFIG.cache.tierDist), 1, CONFIG.cache.maxTier);
+}
 
 export function newState(): State {
   // per-weapon spare ammo and magazine state, seeded from the weapon table
@@ -14,12 +20,26 @@ export function newState(): State {
     mags[id] = w.mag;
   }
 
-  // boardable openings start fully boarded
-  const barricades: Barricade[] = SHELTER.openings.map((o) => ({
+  // HOME openings start fully boarded; POI walls join the collision set
+  const barricades: Barricade[] = HOME.openings.map((o) => ({
     ...o,
     hp: CONFIG.siege.boardMaxHp,
     maxHp: CONFIG.siege.boardMaxHp,
+    flash: 0,
   }));
+  const walls: Segment[] = [...HOME.walls, ...POIS.flatMap((p) => p.walls)];
+
+  // a cache in each POI, plus a low-tier one just outside HOME for the early game
+  const caches: Cache[] = [
+    ...POIS.map((p) => ({
+      x: p.cache.x,
+      y: p.cache.y,
+      looted: false,
+      searchT: 0,
+      tier: tierFor(p.cache.x, p.cache.y),
+    })),
+    { x: 0, y: 300, looted: false, searchT: 0, tier: 1 },
+  ];
 
   return {
     running: false,
@@ -57,8 +77,9 @@ export function newState(): State {
     particles: [],
     texts: [],
     decals: [],
-    walls: SHELTER.walls,
+    walls,
     barricades,
+    caches,
     phase: "day",
     day: 1,
     phaseT: CONFIG.siege.dayDuration,

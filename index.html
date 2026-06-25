@@ -12,6 +12,8 @@
     --blood:#ff4d4d;
     --ink:#d6e6d0;
     --dim:#5a6b58;
+    --line:#1b2420;
+    --display:"Haettenschweiler","Arial Narrow","Oswald","Impact",system-ui,sans-serif;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;
@@ -119,18 +121,33 @@
     animation:fadeIn .35s ease-out;}
   @keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
   .overlay.hidden{display:none;}
-  .eyebrow{font-size:11px;letter-spacing:.5em;color:var(--toxic);text-transform:uppercase;}
-  .overlay h1{margin:6px 0 0;font-size:clamp(34px,7vw,68px);font-weight:700;
-    letter-spacing:.04em;color:var(--ink);text-shadow:0 0 24px rgba(125,255,79,.25);}
-  .overlay p{margin:2px 0;color:var(--dim);font-size:13px;letter-spacing:.04em;max-width:460px;}
+  .eyebrow{display:inline-flex;align-items:center;gap:10px;
+    font-size:11px;letter-spacing:.42em;color:var(--toxic);text-transform:uppercase;}
+  .eyebrow .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);
+    box-shadow:0 0 10px var(--amber);animation:pulse 1.6s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+  .overlay h1{margin:6px 0 0;font-family:var(--display);font-size:clamp(34px,7vw,68px);
+    font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);
+    text-shadow:0 0 24px rgba(125,255,79,.25);text-wrap:balance;}
+  /* printed-stencil wordmark fill (specificity beats .overlay h1) */
+  .overlay h1.wordmark{font-size:clamp(58px,13vw,156px);line-height:.84;letter-spacing:.05em;
+    color:transparent;-webkit-background-clip:text;background-clip:text;
+    background:repeating-linear-gradient(0deg,#a6ff7f 0 3px,#5fbf38 3px 5px);
+    filter:drop-shadow(0 0 26px rgba(125,255,79,.35)) drop-shadow(0 2px 0 rgba(0,0,0,.6));}
+  .overlay p{margin:2px 0;color:var(--dim);font-size:13px;letter-spacing:.04em;max-width:52ch;line-height:1.7;}
   .controls{margin-top:14px;display:grid;grid-template-columns:auto auto;gap:4px 14px;
     font-size:12px;color:var(--ink);}
   .controls b{color:var(--toxic);font-weight:600;}
-  .btn{pointer-events:auto;margin-top:22px;padding:13px 40px;cursor:pointer;
-    border:1px solid var(--toxic);background:transparent;color:var(--toxic);
-    font-family:inherit;font-size:14px;letter-spacing:.25em;text-transform:uppercase;
-    transition:background .12s,color .12s,box-shadow .12s;}
-  .btn:hover{background:var(--toxic);color:var(--bg);box-shadow:0 0 24px rgba(125,255,79,.5);}
+  .btn{pointer-events:auto;margin-top:24px;cursor:pointer;border:0;
+    font-family:var(--display);font-weight:800;font-size:clamp(20px,2.6vw,30px);
+    letter-spacing:.22em;text-transform:uppercase;color:var(--bg);background:var(--toxic);
+    padding:13px 46px;clip-path:polygon(0 0,100% 0,100% 100%,12px 100%,0 calc(100% - 12px));
+    box-shadow:0 0 0 1px var(--toxic),0 0 30px rgba(125,255,79,.4);
+    transition:transform .1s ease,background .12s,box-shadow .15s;}
+  .btn:hover{transform:translateY(-2px);background:#9bff6e;
+    box-shadow:0 0 0 1px var(--toxic),0 0 52px rgba(125,255,79,.6);}
+  .btn:active{transform:translateY(0);}
+  .btn:focus-visible{outline:3px solid var(--amber);outline-offset:4px;}
   .choices{display:flex;gap:14px;margin-top:18px;flex-wrap:wrap;justify-content:center;}
   .choice{pointer-events:auto;cursor:pointer;width:190px;padding:18px 14px;
     border:1px solid var(--dim);background:rgba(0,0,0,.4);text-align:center;
@@ -146,6 +163,38 @@
 
   #mute{position:fixed;right:14px;top:12px;z-index:7;font-size:10px;letter-spacing:.18em;
     color:var(--dim);pointer-events:none;text-transform:uppercase;}
+
+  /* ---- title screen: torchlit containment identity ---- */
+  #start{isolation:isolate;overflow:hidden;animation:boot .9s steps(1,end) both;}
+  @keyframes boot{0%{opacity:0;}8%{opacity:.9;}12%{opacity:.15;}18%{opacity:1;}
+    26%{opacity:.4;}32%{opacity:1;}100%{opacity:1;}}
+  /* hidden hazard hatch, revealed where the torch sweeps (negative z = behind content) */
+  #start .grime{position:absolute;inset:0;z-index:-3;pointer-events:none;
+    background:repeating-linear-gradient(135deg,transparent 0 26px,rgba(125,255,79,.03) 26px 28px);}
+  #start .torch{position:absolute;inset:0;z-index:-2;pointer-events:none;mix-blend-mode:screen;
+    background:radial-gradient(circle 300px at var(--mx,50%) var(--my,42%),
+      rgba(125,255,79,.13),rgba(125,255,79,.04) 40%,transparent 68%);transition:background .08s linear;}
+  #start .vig{position:absolute;inset:0;z-index:-1;pointer-events:none;
+    background:radial-gradient(circle at 50% 44%,transparent 40%,rgba(0,0,0,.6) 100%);}
+  #start .frame{position:absolute;width:26px;height:26px;border:2px solid var(--toxic);
+    opacity:.5;pointer-events:none;}
+  #start .frame.tl{top:clamp(16px,3vw,34px);left:clamp(16px,3vw,34px);border-right:0;border-bottom:0;}
+  #start .frame.tr{top:clamp(16px,3vw,34px);right:clamp(16px,3vw,34px);border-left:0;border-bottom:0;}
+  #start .frame.bl{bottom:clamp(16px,3vw,34px);left:clamp(16px,3vw,34px);border-right:0;border-top:0;}
+  #start .frame.br{bottom:clamp(16px,3vw,34px);right:clamp(16px,3vw,34px);border-left:0;border-top:0;}
+  #start .startfoot{position:absolute;left:0;right:0;bottom:clamp(18px,3vw,34px);
+    display:flex;align-items:center;gap:16px;padding:0 clamp(40px,8vw,90px);}
+  .tape{flex:1;height:14px;opacity:.5;
+    background:repeating-linear-gradient(135deg,var(--amber) 0 14px,#1a1305 14px 28px);
+    -webkit-mask:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);
+    mask:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);}
+  .build{font-size:10px;letter-spacing:.26em;color:var(--dim);text-transform:uppercase;
+    white-space:nowrap;font-variant-numeric:tabular-nums;}
+
+  @media (prefers-reduced-motion:reduce){
+    #start,.eyebrow .dot,#hud.low #hpbar-wrap,#battery.low #batbar{animation:none;}
+    #start .torch{transition:none;}
+  }
 </style>
 </head>
 <body>
@@ -202,22 +251,28 @@
 </div>
 
 <div id="start" class="overlay">
-  <div class="eyebrow">Containment Breach &middot; Sector 7</div>
-  <h1>QUARANTINE</h1>
-  <p>Top-down survival horror. By day, scavenge and board up the shelter; by night, hole up inside and hold off the horde through the windows. Your flashlight only lights where you aim and its battery runs down. Ammo is finite, healing is deliberate.</p>
+  <div class="grime"></div><div class="torch"></div><div class="vig"></div>
+  <span class="frame tl"></span><span class="frame tr"></span>
+  <span class="frame bl"></span><span class="frame br"></span>
+
+  <div class="eyebrow"><span class="dot"></span>Containment Breach &middot; Sector 7</div>
+  <h1 class="wordmark">QUARANTINE</h1>
+  <p>Top-down survival horror. By day, venture out to the ruins and search caches for supplies past the wandering dead; by night, hole up in the shelter and hold the horde off through the boarded windows. Your flashlight only lights where you aim and its battery runs down. Ammo is finite, healing is deliberate.</p>
   <div class="controls">
     <span><b>WASD</b> move</span><span><b>Mouse</b> aim / look</span>
     <span><b>Click</b> fire (hold)</span><span><b>R</b> reload</span>
     <span><b>1 2 3</b> guns &middot; <b>4</b> knife</span><span><b>F</b> flashlight</span>
-    <span><b>H</b> use medkit</span><span><b>E</b> repair barricade</span>
+    <span><b>H</b> use medkit</span><span><b>E</b> repair / search (hold)</span>
     <span><b>Enter</b> start night early</span><span><b>Shift</b> sprint</span>
     <span><b>Esc/P</b> pause</span><span><b>M</b> mute</span>
   </div>
   <button class="btn" id="startBtn">Deploy</button>
+
+  <div class="startfoot"><div class="tape"></div><div class="build">Build Sector-7 &middot; v0.4</div></div>
 </div>
 
 <div id="shop" class="overlay hidden">
-  <div class="eyebrow">Wave <span id="shop-wave">1</span> cleared</div>
+  <div class="eyebrow"><span class="dot"></span>Night <span id="shop-wave">1</span> survived</div>
   <h1 style="font-size:clamp(26px,5vw,44px)">Field Upgrade</h1>
   <p>Choose one.</p>
   <div class="choices" id="choices"></div>
@@ -231,12 +286,24 @@
 </div>
 
 <div id="over" class="overlay hidden">
-  <div class="eyebrow">Signal Lost</div>
+  <div class="eyebrow"><span class="dot" style="background:var(--blood);box-shadow:0 0 10px var(--blood)"></span>Signal Lost</div>
   <h1 class="big">OVERRUN</h1>
   <p>You survived to day <b id="over-wave" style="color:var(--ink)">1</b> &middot; <span id="over-kills">0</span> neutralized &middot; <span id="over-money">0</span> credits earned</p>
   <button class="btn" id="restartBtn">Redeploy</button>
 </div>
 
+<script>
+  // title-screen flashlight: the torch pool follows the cursor while #start is shown
+  (function () {
+    var s = document.getElementById("start");
+    if (!s) return;
+    addEventListener("pointermove", function (e) {
+      if (s.classList.contains("hidden")) return;
+      s.style.setProperty("--mx", ((e.clientX / innerWidth) * 100).toFixed(1) + "%");
+      s.style.setProperty("--my", ((e.clientY / innerHeight) * 100).toFixed(1) + "%");
+    }, { passive: true });
+  })();
+</script>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

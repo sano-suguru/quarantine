@@ -8,6 +8,7 @@ import { Input } from "../input";
 import type { Player, State, WeaponDef } from "../types";
 import { ammoTransfer } from "./ammo";
 import { killZombie } from "./bullets";
+import { lootCache } from "./caches";
 import { fxDamageText, fxImpact, fxMuzzle } from "./fx";
 
 export function sysPlayer(state: State, dt: number): void {
@@ -25,6 +26,7 @@ export function sysPlayer(state: State, dt: number): void {
     p.hp = Math.min(p.maxHp, p.hp + (CONFIG.heal.amount / CONFIG.heal.duration) * dt);
   }
 
+  const moving = movementPressed();
   let dx = 0;
   let dy = 0;
   if (!healing) {
@@ -51,9 +53,8 @@ export function sysPlayer(state: State, dt: number): void {
     }
   }
 
-  // repair the nearest damaged barricade you're standing by (E, costs credits)
-  if (p.repairCd > 0) p.repairCd -= dt;
-  if (Input.keys.has("KeyE") && p.repairCd <= 0) tryRepair(state, p);
+  // E = context interact: repair a barricade you're next to, else search a cache
+  interact(state, p, dt, healing, moving);
 
   const half = Renderer.worldToScreenHalf();
   const cv = document.getElementById("game") as HTMLCanvasElement;
@@ -195,26 +196,79 @@ function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
   Audio.melee();
 }
 
-/** Repair the closest damaged barricade within reach, paying credits for it. */
-function tryRepair(state: State, p: Player): void {
+/** Any movement key currently held? (input-based so a shove can't cancel a search) */
+function movementPressed(): boolean {
+  return (
+    Input.keys.has("KeyW") ||
+    Input.keys.has("KeyS") ||
+    Input.keys.has("KeyA") ||
+    Input.keys.has("KeyD") ||
+    Input.keys.has("ArrowUp") ||
+    Input.keys.has("ArrowDown") ||
+    Input.keys.has("ArrowLeft") ||
+    Input.keys.has("ArrowRight")
+  );
+}
+
+/**
+ * Hold E to interact with the single nearest thing: a damaged barricade (repair,
+ * costs credits, rate-limited) takes priority; otherwise an unsearched cache
+ * (search while standing still, day only). Anything not actively searched resets.
+ */
+function interact(state: State, p: Player, dt: number, healing: boolean, moving: boolean): void {
+  if (p.repairCd > 0) p.repairCd -= dt;
   const reach = CONFIG.siege.interactRadius;
-  let best: (typeof state.barricades)[number] | null = null;
-  let bestD = reach;
+  const holding = Input.keys.has("KeyE");
+
+  let bar: (typeof state.barricades)[number] | null = null;
+  let barD = reach;
   for (const b of state.barricades) {
     if (b.hp >= b.maxHp) continue;
     const mx = (b.x1 + b.x2) / 2;
     const my = (b.y1 + b.y2) / 2;
     const d = len(mx - p.x, my - p.y);
-    if (d < bestD) {
-      bestD = d;
-      best = b;
+    if (d < barD) {
+      barD = d;
+      bar = b;
     }
   }
-  if (!best || state.money < CONFIG.siege.repairCost) return;
-  state.money -= CONFIG.siege.repairCost;
-  best.hp = Math.min(best.maxHp, best.hp + CONFIG.siege.repairAmount);
-  p.repairCd = CONFIG.siege.repairCd;
-  Audio.repair();
+
+  let cache: (typeof state.caches)[number] | null = null;
+  let cacheD = reach;
+  if (state.phase === "day") {
+    for (const c of state.caches) {
+      if (c.looted) continue;
+      const d = len(c.x - p.x, c.y - p.y);
+      if (d < cacheD) {
+        cacheD = d;
+        cache = c;
+      }
+    }
+  }
+
+  let searching: (typeof state.caches)[number] | null = null;
+  if (holding && !healing) {
+    if (bar) {
+      // repair takes priority over searching
+      if (p.repairCd <= 0 && state.money >= CONFIG.siege.repairCost) {
+        state.money -= CONFIG.siege.repairCost;
+        bar.hp = Math.min(bar.maxHp, bar.hp + CONFIG.siege.repairAmount);
+        p.repairCd = CONFIG.siege.repairCd;
+        Audio.repair();
+      }
+    } else if (cache && !moving) {
+      cache.searchT += dt;
+      searching = cache;
+      if (cache.searchT >= CONFIG.cache.searchTime) {
+        lootCache(state, cache.x, cache.y, cache.tier);
+        cache.looted = true;
+        cache.searchT = 0;
+        Audio.pickup();
+      }
+    }
+  }
+  // any cache not actively being searched loses its progress
+  for (const c of state.caches) if (c !== searching && c.searchT > 0) c.searchT = 0;
 }
 
 function weapon(id: string): WeaponDef {

@@ -1,20 +1,56 @@
 import { CONFIG } from "../config";
 import { ENEMY_TYPES } from "../data/enemies";
 import { waveDef } from "../data/waves";
-import { clamp, rand } from "../engine/math";
+import { circlePushFromSegment } from "../engine/geometry";
+import { clamp, len, rand } from "../engine/math";
 import { Renderer } from "../engine/renderer";
 import type { State } from "../types";
 
-export function spawnZombie(state: State, type: string, hpScale: number, spdScale: number): void {
+/** Is this point clear of every shelter/POI wall (with a little margin)? */
+function clearOfWalls(state: State, x: number, y: number, r: number): boolean {
+  for (const w of state.walls) {
+    if (circlePushFromSegment(x, y, r, w)) return false;
+  }
+  return true;
+}
+
+/**
+ * Spawn one zombie. `chasing` decides whether it heads straight in (night horde)
+ * or roams until it senses the player (daytime stragglers). When `aroundPlayer`
+ * is false it can appear anywhere on the map (roamers). Positions are rejection-
+ * sampled so nothing spawns inside a wall.
+ */
+export function spawnZombie(
+  state: State,
+  type: string,
+  hpScale: number,
+  spdScale: number,
+  opts: { chasing?: boolean; aroundPlayer?: boolean } = {},
+): void {
   const t = ENEMY_TYPES[type] as (typeof ENEMY_TYPES)[string];
+  const aroundPlayer = opts.aroundPlayer ?? true;
   const half = Renderer.worldToScreenHalf();
   const ringR = Math.max(half.x, half.y) + rand(60, 220);
-  const ang = rand(0, Math.PI * 2);
-  const px = state.player.x + Math.cos(ang) * ringR;
-  const py = state.player.y + Math.sin(ang) * ringR;
+
+  let x = state.player.x;
+  let y = state.player.y;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    if (aroundPlayer) {
+      const ang = rand(0, Math.PI * 2);
+      x = clamp(state.player.x + Math.cos(ang) * ringR, -CONFIG.arena, CONFIG.arena);
+      y = clamp(state.player.y + Math.sin(ang) * ringR, -CONFIG.arena, CONFIG.arena);
+    } else {
+      x = rand(-CONFIG.arena, CONFIG.arena);
+      y = rand(-CONFIG.arena, CONFIG.arena);
+    }
+    // roamers also keep their distance from the player so they don't pop in view
+    const farEnough = aroundPlayer || len(x - state.player.x, y - state.player.y) > 600;
+    if (farEnough && clearOfWalls(state, x, y, t.radius + 6)) break;
+  }
+
   state.zombies.push({
-    x: clamp(px, -CONFIG.arena, CONFIG.arena),
-    y: clamp(py, -CONFIG.arena, CONFIG.arena),
+    x,
+    y,
     r: t.radius,
     hp: t.hp * hpScale,
     maxHp: t.hp * hpScale,
@@ -33,6 +69,15 @@ export function spawnZombie(state: State, type: string, hpScale: number, spdScal
     flash: 0,
     spawnT: 0.35,
     wob: rand(0, Math.PI * 2),
+    sense: t.sense,
+    wander: t.wander ?? 0,
+    lunge: t.lunge ?? 0,
+    lungePeriod: t.lungePeriod ?? 0,
+    separation: t.separation ?? 1,
+    chasing: opts.chasing ?? true,
+    lungeCd: rand(0, t.lungePeriod ?? 0),
+    lungeT: 0,
+    wanderDir: rand(0, Math.PI * 2),
   });
 }
 

@@ -36,6 +36,16 @@ export interface EnemyType {
   shape: number;
   glow: [number, number, number];
   eye: [number, number, number];
+  /** aggro radius: zombies beyond it wander instead of chasing (daytime gating) */
+  sense: number;
+  /** heading-drift amount while wandering (0 = beeline) */
+  wander?: number;
+  /** periodic lunge speed multiplier (e.g. runner dash); omit for none */
+  lunge?: number;
+  /** seconds between lunges */
+  lungePeriod?: number;
+  /** how much the steering separation force affects this type (brute ≈ 0) */
+  separation?: number;
 }
 
 export interface Upgrade {
@@ -103,6 +113,20 @@ export interface Zombie {
   flash: number;
   spawnT: number;
   wob: number;
+  /** behaviour fields copied from EnemyType for per-instance steering */
+  sense: number;
+  wander: number;
+  lunge: number;
+  lungePeriod: number;
+  separation: number;
+  /** latched once aggroed (or at night); never reverts → guarantees the night clears */
+  chasing: boolean;
+  /** countdown to the next lunge */
+  lungeCd: number;
+  /** remaining duration of the current lunge burst */
+  lungeT: number;
+  /** current wander heading (radians), drifts over time */
+  wanderDir: number;
 }
 
 export interface Bullet {
@@ -192,6 +216,20 @@ export interface Segment {
 export interface Barricade extends Segment {
   hp: number;
   maxHp: number;
+  /** white hit-flash timer for damage feedback */
+  flash: number;
+}
+
+/** A searchable loot container out in the world (daytime scavenging). */
+export interface Cache {
+  x: number;
+  y: number;
+  /** already searched this day */
+  looted: boolean;
+  /** search progress (seconds) while the player holds interact nearby */
+  searchT: number;
+  /** loot tier (higher = richer); set by distance from home */
+  tier: number;
 }
 
 /** Day = lit scavenge/repair window; night = the dark horde siege. */
@@ -236,6 +274,8 @@ export interface State {
   walls: Segment[];
   /** boardable openings (block zombies only; repairable, destructible) */
   barricades: Barricade[];
+  /** searchable loot caches across the map (daytime scavenging) */
+  caches: Cache[];
   /** day/night siege phase */
   phase: SiegePhase;
   /** current day number (drives night horde intensity) */

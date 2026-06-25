@@ -44,7 +44,6 @@ export const CONFIG = {
     dropChance: 0.16, // base chance a slain zombie drops an ammo pickup
     bruteDropChance: 0.7, // brutes are far more generous
     healDropChance: 0.05, // chance (when no ammo dropped) of a medkit instead
-    scatterPerWave: 3, // ammo/med crates scattered around the player each wave
     pickupRadius: 30, // auto-pickup distance (added to player radius)
     pickupLife: 30, // seconds a ground pickup persists before decaying
     ammoMagMul: 1, // an ammo pickup grants this many mags of the current gun
@@ -58,6 +57,12 @@ export const CONFIG = {
     repairAmount: 40, // hp restored per repair press
     repairCost: 15, // credits per repair
     repairCd: 0.35, // seconds between repair presses
-    interactRadius: 70, // how close you must be to a barricade to repair it
+    interactRadius: 70, // how close you must be to interact (repair / search)
+    roamersPerDay: 5, // wandering zombies seeded across the map each day
+  },
+  cache: {
+    searchTime: 1.5, // seconds of holding interact (and standing still) to loot
+    tierDist: 500, // every this many world units from HOME raises the loot tier
+    maxTier: 3,
   },
 };

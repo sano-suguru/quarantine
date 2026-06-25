@@ -136,8 +136,9 @@ export function draw(): void {
     R.circle(d.x, d.y, d.r, d.color[0], d.color[1], d.color[2], a);
   }
 
-  // --- shelter: stone walls + boarded openings ---
+  // --- shelter: stone walls + boarded openings, and world loot caches ---
   drawShelter(R);
+  drawCaches(R);
 
   // --- normal particles (shards / smoke) ---
   for (const pt of state.particles) {
@@ -332,12 +333,61 @@ function drawSeg(
   R.rect(cx, cy, Math.hypot(dx, dy) + thick, thick, Math.atan2(dy, dx), r, g, b, a);
 }
 
+/** draw the f-fraction of a segment from its start, as a thin bar (HP indicator) */
+function drawSegFrac(
+  R: typeof Renderer,
+  s: { x1: number; y1: number; x2: number; y2: number },
+  f: number,
+  r: number,
+  g: number,
+  b: number,
+): void {
+  const fx = s.x1 + (s.x2 - s.x1) * f;
+  const fy = s.y1 + (s.y2 - s.y1) * f;
+  drawSeg(R, { x1: s.x1, y1: s.y1, x2: fx, y2: fy }, 3, r, g, b, 0.95);
+}
+
 function drawShelter(R: typeof Renderer): void {
   for (const w of state.walls) drawSeg(R, w, 14, 0.32, 0.34, 0.33);
   for (const bar of state.barricades) {
     if (bar.hp <= 0) continue;
-    const f = bar.hp / bar.maxHp; // wood darkens + thins as it splinters
-    drawSeg(R, bar, 5 + 6 * f, 0.5 + 0.2 * f, 0.34 + 0.12 * f, 0.16 + 0.06 * f);
+    const f = bar.hp / bar.maxHp;
+    const fl = bar.flash > 0 ? bar.flash / 0.12 : 0;
+    // healthy wood → splintered red as it takes damage, flashing white on a hit
+    let r = 0.55 + (1 - f) * 0.35;
+    let g = 0.4 * f + 0.06;
+    let b = 0.2 * f + 0.04;
+    r += (1 - r) * fl;
+    g += (1 - g) * fl;
+    b += (1 - b) * fl;
+    drawSeg(R, bar, 4 + 7 * f, r, g, b);
+    // overlaid HP bar so damage is unmistakable
+    if (f < 1) {
+      drawSeg(R, bar, 3, 0.05, 0.05, 0.05, 0.8); // dark track
+      drawSegFrac(R, bar, f, 1 - f, 0.3 + 0.6 * f, 0.15); // red→green fill
+    }
+  }
+}
+
+function drawCaches(R: typeof Renderer): void {
+  for (const c of state.caches) {
+    if (c.looted) {
+      // emptied: a dim open crate
+      R.rect(c.x, c.y, 20, 16, 0, 0.18, 0.16, 0.12, 1);
+      R.ring(c.x, c.y, 12, 0.1, 0.09, 0.07, 0.6);
+      continue;
+    }
+    const bob = Math.sin(state.time * 2.5 + c.x) * 1.5;
+    R.glow(c.x, c.y + bob, 26, 0.7, 0.6, 0.3, 0.4);
+    R.rect(c.x, c.y + bob, 22, 17, 0, 0.55, 0.46, 0.28, 1);
+    R.rect(c.x, c.y + bob, 22, 4, 0, 0.4, 0.33, 0.2, 1); // lid line
+    R.ring(c.x, c.y + bob, 13, 0.9, 0.8, 0.4, 0.7);
+    // search progress bar
+    if (c.searchT > 0) {
+      const f = Math.min(1, c.searchT / CONFIG.cache.searchTime);
+      R.rect(c.x, c.y - 20, 30, 4, 0, 0.05, 0.05, 0.05, 0.8);
+      R.rect(c.x - (30 * (1 - f)) / 2, c.y - 20, 30 * f, 4, 0, 0.3, 1, 0.45, 1);
+    }
   }
 }
 
@@ -393,8 +443,11 @@ export function updateHUD(): void {
     phaseEl.classList.add("night");
   }
 
-  // contextual repair prompt when standing by a damaged barricade
-  el("prompt").classList.toggle("show", canRepairNearby());
+  // contextual interact prompt (repair barricade / search cache)
+  const ip = interactPrompt();
+  const promptEl = el("prompt");
+  promptEl.textContent = ip ?? "";
+  promptEl.classList.toggle("show", ip !== null);
 
   el("money").textContent = String(state.money);
   el("remaining").textContent =
@@ -542,18 +595,25 @@ function weapon(id: string): WeaponDef {
   return WEAPONS[id] as WeaponDef;
 }
 
-/** Is the player next to a damaged barricade they can afford to repair? */
-function canRepairNearby(): boolean {
-  if (state.money < CONFIG.siege.repairCost) return false;
+/** Context interact hint for the HUD: repair a barricade (priority) or search a cache. */
+function interactPrompt(): string | null {
   const p = state.player;
   const reach = CONFIG.siege.interactRadius;
   for (const b of state.barricades) {
     if (b.hp >= b.maxHp) continue;
     const mx = (b.x1 + b.x2) / 2;
     const my = (b.y1 + b.y2) / 2;
-    if (Math.hypot(mx - p.x, my - p.y) < reach) return true;
+    if (Math.hypot(mx - p.x, my - p.y) < reach) {
+      return state.money >= CONFIG.siege.repairCost ? "[E] repair" : "[E] repair — no credits";
+    }
   }
-  return false;
+  if (state.phase === "day") {
+    for (const c of state.caches) {
+      if (c.looted) continue;
+      if (Math.hypot(c.x - p.x, c.y - p.y) < reach) return "[E] hold to search";
+    }
+  }
+  return null;
 }
 
 /** Safe-room resupply: top up spare ammo, the battery, and medkits between waves. */

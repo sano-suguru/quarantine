@@ -48,6 +48,36 @@ export function circlePushFromSegment(
   return { dx: nx * push, dy: ny * push };
 }
 
+/**
+ * If two circles overlap, return the vector that pushes circle A out of B
+ * (full separation distance). Otherwise null. Callers can apply half to each
+ * side for a symmetric resolve.
+ */
+export function circlePush(
+  ax: number,
+  ay: number,
+  ar: number,
+  bx: number,
+  by: number,
+  br: number,
+): { dx: number; dy: number } | null {
+  let nx = ax - bx;
+  let ny = ay - by;
+  const d = Math.hypot(nx, ny);
+  const min = ar + br;
+  if (d >= min) return null;
+  const push = min - d;
+  if (d > 1e-6) {
+    nx /= d;
+    ny /= d;
+  } else {
+    // exactly coincident: pick an arbitrary axis so they still separate
+    nx = 1;
+    ny = 0;
+  }
+  return { dx: nx * push, dy: ny * push };
+}
+
 /** Whether segment AB intersects segment CD (proper or touching). */
 export function segmentHitsSegment(
   ax: number,
