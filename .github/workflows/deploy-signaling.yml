@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # wrangler-action auto-detects signaling/bun.lock and installs deps with bun, so the
+      # runner needs bun on PATH (also used by the game build step added for Static Assets).
+      - uses: oven-sh/setup-bun@v2
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v4
         with:
