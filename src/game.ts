@@ -151,7 +151,7 @@ export function draw(): void {
   // one aimed flashlight per living player — teammates' cones light the dark too
   R.beginLights();
   for (const pl of state.players) {
-    if (pl.hp <= 0) continue;
+    if (pl.hp <= 0 || pl.absent) continue;
     const intensity = flashlightIntensity(
       pl.battery / flc.batteryMax,
       pl.lightOn,
@@ -295,7 +295,7 @@ export function draw(): void {
 
   // --- players (local in TOXIC, teammates in their palette color + overhead HP) ---
   for (const pl of state.players) {
-    if (pl.hp <= 0) drawDownedPlayer(R, pl);
+    if (pl.hp <= 0 || pl.absent) drawDownedPlayer(R, pl);
     else drawPlayer(R, pl, pl.id === state.localId);
   }
 
@@ -878,6 +878,10 @@ function resupply(): void {
  * the HUD. localId + owned/wlevel are filled in by the host's Hello.
  */
 export function startClientGame(): void {
+  // Defense-in-depth: `state = newState()` is destructive. A reconnect reuses the existing
+  // Client (rebind), but if any path ever constructed a second Client mid-run its first
+  // snapshot would wipe the live game — no-op here so only the first client boot builds state.
+  if (state.running && Net.mode === "client") return;
   state = newState();
   state.running = true;
   lastWeapon = "";

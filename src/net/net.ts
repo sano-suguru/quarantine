@@ -13,6 +13,9 @@ export type NetMsg =
       localId: number;
       owned: Record<string, boolean>;
       wlevel: Record<string, number>;
+      /** per-player reconnect token (P4): client stores {localId, nonce} and replays it on
+       *  rejoin so the host re-attaches to the same player slot. Optional for back-compat. */
+      nonce?: string;
     }
   | { t: "input"; input: PlayerInput; seq: number }
   | { t: "ping"; id: number } // client→host RTT probe (rel channel); host echoes pong

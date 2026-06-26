@@ -162,6 +162,10 @@ export class Room {
   private host: WebSocket | null = null;
   private clients = new Map<number, WebSocket>();
   private nextPeerId = 1;
+  // a host has connected at some point this DO's lifetime. Lets a reconnecting client tell
+  // "host left, session over" (hadHost && !host → nohost) from the legitimate startup race
+  // where a client joins before the host arrives (!hadHost → wait for the retroactive join).
+  private hadHost = false;
 
   async fetch(req: Request): Promise<Response> {
     const role = new URL(req.url).searchParams.get("role");
@@ -190,6 +194,7 @@ export class Room {
       return;
     }
     this.host = ws;
+    this.hadHost = true;
     // clients who joined before the host arrived get their join notice now (retroactive)
     for (const peerId of this.clients.keys()) this.send(ws, { t: "join", peerId });
     ws.addEventListener("message", (e) => {
@@ -215,6 +220,14 @@ export class Room {
   }
 
   private attachClient(ws: WebSocket): void {
+    // a reconnecting client whose host has already left: tell it the session is over (terminal)
+    // instead of letting it wait for an offer that will never come. Scoped to hadHost so the
+    // client-before-host startup race still works (that client waits for the retroactive join).
+    if (this.hadHost && !this.host) {
+      this.send(ws, { t: "nohost" });
+      ws.close();
+      return;
+    }
     if (this.clients.size >= 3) {
       this.send(ws, { t: "full" });
       ws.close();

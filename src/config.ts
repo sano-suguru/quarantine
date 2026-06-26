@@ -27,6 +27,17 @@ export const CONFIG = {
     iceGatherMaxMs: 8000, // hard cap before shipping whatever candidates we have (backstop)
     iceGatherGraceMs: 1200, // STUN-only: after the first reflexive candidate, wait this then go
     p2pOpenTimeoutMs: 15000, // client lobby: if the P2P link never opens, surface a failure
+    // Client auto-reconnect (P4). The client triggers a reconnect when BOTH data channels go
+    // quiet (no snapshot AND no rel pong) for snapStarvationMs — a true loss, not a snap-only
+    // blip (host keeps broadcasting through pause/shop, so a quiet snap path = the link died).
+    // The host keeps a dropped player's body (gear/hp/pos) "absent" for graceMs so a quick
+    // rejoin re-attaches in place (no respawn); past graceMs the body is removed → fresh respawn.
+    reconnect: {
+      snapStarvationMs: 2500, // both channels silent this long while running → reconnect
+      backoffMs: [1000, 2000, 4000, 8000], // per-attempt delay; length = max attempts
+      graceMs: 20000, // host holds a dropped player's body this long (> backoff total) for re-attach
+      rejoinClaimTimeoutMs: 1000, // host waits this for the client's first rel (join/rejoin) before assuming fresh
+    },
   },
   player: { radius: 16, speed: 230, sprint: 1.55, maxHp: 100 },
   cam: { lerp: 8, shakeDecay: 8 },

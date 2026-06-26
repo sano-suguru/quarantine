@@ -189,7 +189,7 @@ export function sysAI(state: State, dt: number): void {
     z.y += by[i] as number;
     // each player is a solid obstacle: shove the zombie out (players stay put)
     for (const pl of state.players) {
-      if (pl.hp <= 0) continue;
+      if (pl.hp <= 0 || pl.absent) continue;
       const pp = circlePush(z.x, z.y, z.r, pl.x, pl.y, pl.r);
       if (pp) {
         z.x += pp.dx;

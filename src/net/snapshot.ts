@@ -55,6 +55,8 @@ export interface SnapPlayer {
   iframe: number;
   dryT: number;
   medkits: number;
+  /** disconnected, body held for reconnect (P4) — drawn as a faded ghost on other clients */
+  absent: boolean;
 }
 
 export interface SnapZombie {
@@ -153,6 +155,7 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
       iframe: p.iframe,
       dryT: p.dryT,
       medkits: p.medkits,
+      absent: p.absent,
     })),
     zombies: state.zombies.map((z) => ({
       id: z.id,
@@ -286,6 +289,7 @@ export function applySnapshot(
     p.iframe = sp.iframe;
     p.dryT = sp.dryT;
     p.medkits = sp.medkits;
+    p.absent = sp.absent;
     next.push(p);
   }
   state.players = next;
@@ -480,7 +484,7 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.f32(p.iframe);
     w.f32(p.dryT);
     w.u8(p.medkits);
-    w.u8(p.lightOn ? 1 : 0);
+    w.u8((p.lightOn ? 1 : 0) | (p.absent ? 2 : 0)); // flag byte: bit0 lightOn, bit1 absent
   }
 
   // zombies (quantized)
@@ -580,7 +584,9 @@ export function decode(buf: ArrayBuffer): Snapshot {
     const iframe = r.f32();
     const dryT = r.f32();
     const medkits = r.u8();
-    const lightOn = r.u8() === 1;
+    const pflags = r.u8();
+    const lightOn = (pflags & 1) === 1;
+    const absent = (pflags & 2) !== 0;
     players.push({
       id,
       x,
@@ -603,6 +609,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
       iframe,
       dryT,
       medkits,
+      absent,
     });
   }
 

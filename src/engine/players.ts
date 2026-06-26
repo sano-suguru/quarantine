@@ -46,6 +46,7 @@ export function makePlayer(id: number, x: number, y: number, name = `P${id + 1}`
     medkits: CONFIG.heal.startMedkits,
     healT: 0,
     repairCd: 0,
+    absent: false,
   };
 }
 
@@ -90,7 +91,7 @@ export function nearestPlayer(state: State, x: number, y: number): Player | null
   let best: Player | null = null;
   let bestD = Number.POSITIVE_INFINITY;
   for (const p of state.players) {
-    if (p.hp <= 0) continue;
+    if (p.hp <= 0 || p.absent) continue; // absent (disconnected, body held) = not a target
     const d = (p.x - x) ** 2 + (p.y - y) ** 2;
     if (d < bestD) {
       bestD = d;
@@ -100,9 +101,11 @@ export function nearestPlayer(state: State, x: number, y: number): Player | null
   return best;
 }
 
-/** Any player still standing? (false = whole party wiped → game over) */
+/** Any player still standing? (false = whole party wiped → game over). Absent players
+ *  (disconnected, body held for reconnect) don't count — a frozen body must not keep the
+ *  run alive, nor should the host wait on a player who may never return. */
 export function anyAlive(state: State): boolean {
-  return state.players.some((p) => p.hp > 0);
+  return state.players.some((p) => p.hp > 0 && !p.absent);
 }
 
 export function addPlayer(state: State, id: number, x: number, y: number, name?: string): Player {

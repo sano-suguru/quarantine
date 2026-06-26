@@ -15,6 +15,7 @@ function populated(): State {
   s.kills = 9;
   addPlayer(s, 1, 250, -120);
   (s.players[1] as State["players"][number]).hp = 64;
+  (s.players[1] as State["players"][number]).absent = true; // disconnected, body held (P4)
   spawnZombie(s, "walker", 1, 1);
   spawnZombie(s, "runner", 1.5, 1.2);
   spawnZombie(s, "brute", 2, 1);
@@ -64,6 +65,11 @@ describe("snapshot binary round-trip", () => {
     expect(back.players[1]?.id).toBe(1);
     expect(back.players[1]?.hp).toBeCloseTo(64, 5);
     expect(back.players[1]?.x).toBeCloseTo(250, 3);
+
+    // absent flag (packed into the player flag byte alongside lightOn) survives the round-trip,
+    // and the byte-packing doesn't bleed into the neighbouring player
+    expect(back.players[1]?.absent).toBe(true);
+    expect(back.players[0]?.absent).toBe(false);
 
     // zombie positions within quantization tolerance, ids + type intact
     for (const a of snap.zombies) {

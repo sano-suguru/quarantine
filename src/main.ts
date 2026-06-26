@@ -25,7 +25,7 @@ import { Client } from "./net/client";
 import { Host } from "./net/host";
 import { sampleLocalInput } from "./net/localInput";
 import { Net } from "./net/net";
-import { hostRoom, joinRoom } from "./net/signaling";
+import { hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
 import { NETLOG, createClientLink, createHostLink } from "./net/transport";
 import { sysCamera } from "./systems/camera";
@@ -36,12 +36,70 @@ import { el, hide, show } from "./ui";
 // (no day countdown / no spawns) until the host presses Start — see wireCoop()/frame().
 let hostStarted = false;
 
+// client reconnect (P4): the room code to rejoin on a drop (null = solo / host / manual-SDP,
+// none of which can auto-reconnect), and a re-entrancy guard so the watchdog fires one loop.
+let coopRoomCode: string | null = null;
+let reconnecting = false;
+
+/** Stored reconnect identity for a room (written from each Hello; replayed on rejoin). */
+function loadRejoinToken(code: string): { pid: number; nonce: string } | null {
+  try {
+    const s = sessionStorage.getItem(`q_rejoin_${code}`);
+    return s ? (JSON.parse(s) as { pid: number; nonce: string }) : null;
+  } catch {
+    return null;
+  }
+}
+
+const delayMs = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Drive the reconnect loop after the client's link goes silent. Suspends the existing Client
+ * (keeping the running game view), then backs off through rejoinRoom attempts. On a re-open we
+ * rebind the SAME Client to the new link (replaying our rejoin token so the host re-attaches our
+ * held body); a terminal result (host gone) or an exhausted ladder ends the session → title.
+ */
+async function reconnectClient(code: string): Promise<void> {
+  if (reconnecting) return;
+  reconnecting = true;
+  Net.client?.suspend();
+  const overlay = el("reconnect");
+  const sub = el("reconnect-sub");
+  overlay.classList.add("show");
+  const ladder = CONFIG.net.reconnect.backoffMs;
+  for (let i = 0; i < ladder.length; i++) {
+    sub.textContent = `attempt ${i + 1} of ${ladder.length}…`;
+    const res = await rejoinRoom(code);
+    if (res.status === "open") {
+      Net.client?.rebind(res.link, loadRejoinToken(code));
+      overlay.classList.remove("show");
+      reconnecting = false;
+      return;
+    }
+    if (res.status === "nohost" || res.status === "hostgone" || res.status === "full") break;
+    // retryable (timeout/unreachable): the host may be briefly unreachable (NAT blip) — back off
+    await delayMs(ladder[i] ?? 1000);
+  }
+  // gave up: end the client session and return to title (method C: no host = no session)
+  overlay.classList.remove("show");
+  reconnecting = false;
+  coopRoomCode = null;
+  Net.mode = "single";
+  Net.host = null;
+  Net.client = null;
+  hostStarted = false;
+  toTitle();
+}
+
 function main(): void {
   const canvas = el<HTMLCanvasElement>("game");
   Renderer.init(canvas);
   Input.init(canvas);
 
-  el("startBtn").onclick = startGame;
+  el("startBtn").onclick = () => {
+    coopRoomCode = null; // solo: no room to reconnect to (don't arm the client watchdog)
+    startGame();
+  };
   el("restartBtn").onclick = toTitle;
   el("deployBtn").onclick = shopDeploy;
   renderArsenal(); // populate the title-screen arsenal panel on first load
@@ -61,6 +119,17 @@ function main(): void {
     if (e.code === "KeyM") {
       Audio.toggleMute();
       refreshMute();
+      return;
+    }
+    // ?netlog test hooks for the reconnect path: J drops the client link (→ full reconnect),
+    // K pauses host broadcasts ~4s (→ snap-only stall, which the rel-health gate must NOT
+    // reconnect on). Gated on NETLOG so they're inert in normal play.
+    if (NETLOG && e.code === "KeyJ" && Net.mode === "client") {
+      Net.client?.debugDrop();
+      return;
+    }
+    if (NETLOG && e.code === "KeyK" && Net.mode === "host") {
+      Net.host?.pauseBroadcast(4000);
       return;
     }
     if (state.inShop) {
@@ -110,6 +179,7 @@ function main(): void {
       hNet = 0;
       Net.host?.broadcast(tick++);
     }
+    Net.host?.tickGrace(now); // retire held bodies of clients who never reconnected (P4)
   });
 
   // --- render loop (rAF): draws always; runs single-player sim + client input/camera.
@@ -140,6 +210,18 @@ function main(): void {
         clientAmbience(dt); // dread / heartbeat / groan from the snapshot world
       }
       if (live) sysCamera(st, dt);
+      // reconnect watchdog: both channels silent past snapStarvationMs = a dead link → reconnect.
+      // Armed only for room-code sessions (manual-SDP has no code to rejoin with) and while a run
+      // is live; the host keeps broadcasting through pause/shop so quiet snaps mean a real drop.
+      if (
+        coopRoomCode &&
+        !reconnecting &&
+        st.running &&
+        Net.client &&
+        now - Net.client.lastActivityMs() > CONFIG.net.reconnect.snapStarvationMs
+      ) {
+        void reconnectClient(coopRoomCode);
+      }
     }
     // host: rendering only here; sim + broadcast run on the worker tick
 
@@ -166,8 +248,8 @@ function main(): void {
       }
     }
 
-    // custom crosshair (hidden while downed — you're spectating, not aiming)
-    if (st.running && !st.paused && localPlayer(st).hp > 0) {
+    // custom crosshair (hidden while downed — you're spectating, not aiming — or reconnecting)
+    if (st.running && !st.paused && !reconnecting && localPlayer(st).hp > 0) {
       const me = localPlayer(st);
       cross.style.opacity = "1";
       cross.style.transform = `translate(${Input.mouseX}px,${Input.mouseY}px)`;
@@ -266,6 +348,7 @@ function wireCoop(): void {
     Net.host = null;
     Net.client = null;
     hostStarted = false;
+    coopRoomCode = null; // disarm the reconnect watchdog
     hide("lobby");
     show("start");
   };
@@ -370,7 +453,17 @@ function wireCoop(): void {
       try {
         const link = await joinRoom(code);
         Net.mode = "client";
-        Net.client = new Client(link);
+        coopRoomCode = code; // arm the reconnect watchdog for this room
+        Net.client = new Client(link, undefined, {
+          // persist our reconnect identity each Hello so a drop can rejoin the same slot
+          onIdentity: (pid, nonce) => {
+            try {
+              sessionStorage.setItem(`q_rejoin_${code}`, JSON.stringify({ pid, nonce }));
+            } catch {
+              /* sessionStorage unavailable — reconnect just falls back to a fresh slot */
+            }
+          },
+        });
         setSquad([{ pid: 1, label: "You" }]);
         setStatus("establishing P2P link…", true);
         // joinRoom resolves when our ANSWER is sent, NOT when the P2P link actually opens. A

@@ -101,6 +101,10 @@ export interface Player {
   healT: number;
   /** cooldown between barricade repair presses */
   repairCd: number;
+  /** co-op (P4): true while this player's client is disconnected and the host is holding the
+   *  body for a possible reconnect. An absent player is inert — not a zombie target, not
+   *  counted by anyAlive, no input sim — and rendered as a faded ghost. Always false in SP. */
+  absent: boolean;
 }
 
 export interface Zombie {

@@ -16,7 +16,17 @@ type SignalMsg =
   | { t: "answer"; from: number; code: string }
   | { t: "full" }
   | { t: "hostgone" }
+  | { t: "nohost" } // reconnect: the room had a host but it's gone now → session over (terminal)
   | { t: "error"; reason?: string };
+
+/** Outcome of a reconnect attempt (rejoinRoom). `open` = P2P re-established; the rest are
+ *  why we couldn't: `nohost`/`hostgone`/`full` are terminal (stop), `timeout` is retryable. */
+export type RejoinResult =
+  | { status: "open"; link: PeerLink }
+  | { status: "nohost" }
+  | { status: "hostgone" }
+  | { status: "full" }
+  | { status: "timeout" };
 
 /**
  * ws:// for plain http (incl. localhost dev), wss:// when the page is served over https.
@@ -109,5 +119,60 @@ export function joinRoom(code: string): Promise<PeerLink> {
     ws.addEventListener("error", () => {
       if (!settled) reject(new Error("signaling unreachable"));
     });
+  });
+}
+
+/**
+ * Reconnect a dropped client to the same room (P4). Unlike joinRoom (which resolves the instant
+ * our answer is sent and throws on failure), this waits for the P2P link to actually OPEN before
+ * reporting success, and returns a discriminated result so the caller can tell a terminal failure
+ * (host gone → stop) from a retryable one (timeout → back off and try again). The host is still on
+ * its signaling socket the whole session, so a live host answers our re-join with a fresh offer;
+ * a dead room replies `nohost` (see signaling/room.ts).
+ */
+export function rejoinRoom(code: string): Promise<RejoinResult> {
+  return new Promise((resolve) => {
+    const ws = new WebSocket(roomUrl(code, "client"));
+    let settled = false;
+    const done = (r: RejoinResult): void => {
+      if (settled) return;
+      settled = true;
+      try {
+        if (r.status !== "open") ws.close(); // an `open` result closed the socket itself
+      } catch {
+        /* already closing */
+      }
+      resolve(r);
+    };
+    // per-attempt cap: if the link never opens (NAT/relay stall), report timeout → caller backs off
+    const timer = setTimeout(() => done({ status: "timeout" }), CONFIG.net.p2pOpenTimeoutMs);
+    const finish = (r: RejoinResult): void => {
+      clearTimeout(timer);
+      done(r);
+    };
+    ws.addEventListener("message", (e) => {
+      const m = JSON.parse(e.data as string) as SignalMsg;
+      if (m.t === "offer") {
+        void (async () => {
+          try {
+            const { link, answer } = await createClientLink(m.code);
+            ws.send(JSON.stringify({ t: "answer", code: answer }));
+            link.onOpen(() => {
+              ws.close(); // signaling no longer needed once P2P is up
+              finish({ status: "open", link });
+            });
+          } catch {
+            finish({ status: "timeout" });
+          }
+        })();
+      } else if (m.t === "nohost") {
+        finish({ status: "nohost" });
+      } else if (m.t === "hostgone") {
+        finish({ status: "hostgone" });
+      } else if (m.t === "full") {
+        finish({ status: "full" });
+      }
+    });
+    ws.addEventListener("error", () => finish({ status: "timeout" }));
   });
 }

@@ -48,7 +48,7 @@ export function sysPlayer(state: State, dt: number): void {
   // search, and a cache only loses progress when NOBODY is on it — see reset below)
   const searched = new Set<Cache>();
   for (const p of state.players) {
-    if (p.hp > 0) sysPlayerOne(state, p, dt, searched);
+    if (p.hp > 0 && !p.absent) sysPlayerOne(state, p, dt, searched);
   }
   // a cache not searched by anyone this tick loses its progress
   for (const c of state.caches) if (!searched.has(c) && c.searchT > 0) c.searchT = 0;

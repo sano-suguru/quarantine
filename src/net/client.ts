@@ -60,15 +60,36 @@ export class Client {
   private gaps: number[] = []; // recent missed-tick counts between accepted snaps (rolling loss %)
   private freezeFrames = 0; // frames where the render time outran the newest snapshot
   private totalFrames = 0;
+  // reconnect (P4): `live` gates send/render/callbacks while suspended between links;
+  // lastSnapAt/lastRelAt drive the main-loop starvation watchdog (a true drop = BOTH go quiet).
+  private live = true;
+  private lastSnapAt = 0;
+  private lastRelAt = 0;
 
   constructor(
     private link: PeerLink,
     private onStart?: () => void,
+    private hooks: {
+      /** persist our reconnect identity (localId + nonce from Hello) so rebind can replay it */
+      onIdentity?: (pid: number, nonce: string) => void;
+      /** token to claim on the next P2P open: rejoin (reconnect) vs a fresh join */
+      rejoin?: { pid: number; nonce: string } | null;
+    } = {},
   ) {
+    this.wire(link);
+  }
+
+  /** Wire snapshot/rel/open handlers onto `link`. Called for the initial link and again by
+   *  rebind() on a reconnected link — so a dropped client resumes the SAME Client instance
+   *  (never re-running the destructive startClientGame). */
+  private wire(link: PeerLink): void {
     link.onRel((m) => {
+      if (!this.live) return;
+      this.lastRelAt = performance.now();
       const msg = m as NetMsg;
       if (msg.t === "hello") {
         this.hello = { localId: msg.localId, owned: msg.owned, wlevel: msg.wlevel };
+        this.hooks.onIdentity?.(msg.localId, msg.nonce ?? "");
         if (this.started) clientApplyHello(msg.localId, msg.owned, msg.wlevel);
       } else if (msg.t === "gameover") {
         clientGameOver(msg.salvage, msg.day, msg.kills, msg.money);
@@ -82,6 +103,7 @@ export class Client {
       }
     });
     link.onSnap((b) => {
+      if (!this.live) return;
       if (this.started && !getState().running) return; // run ended: stop fx/audio behind the debrief
       const snap = decode(b);
       // unreliable/unordered channel: drop a stale/reordered snapshot so interpolation never runs
@@ -95,6 +117,7 @@ export class Client {
         if (this.gaps.length > 40) this.gaps.shift();
       }
       this.lastTick = snap.tick;
+      this.lastSnapAt = performance.now();
       if (!this.started) {
         startClientGame(); // host has deployed — leave the lobby, show the game
         this.started = true;
@@ -107,6 +130,65 @@ export class Client {
       if (this.prev) this.effects(this.prev, snap);
       this.prev = snap;
     });
+    // every P2P open, claim our identity so the host can re-attach (rejoin) or assign a slot (join)
+    link.onOpen(() => {
+      const r = this.hooks.rejoin;
+      link.sendRel(r ? { t: "rejoin", pid: r.pid, nonce: r.nonce } : { t: "join" });
+    });
+  }
+
+  /** Pause all net activity (send/render/callbacks) and drop stale prediction/buffers while the
+   *  reconnect loop runs. Closes the dead link so its callbacks can't fire on the shared instance. */
+  suspend(): void {
+    this.live = false;
+    try {
+      this.link.close();
+    } catch {
+      /* already closing */
+    }
+    this.resetNet();
+  }
+
+  /** Reconnected: bind to the new link, replay our identity token on open, resume. Keeps
+   *  `started`/`seq`/`hello` so the running game view continues; only the transport is swapped. */
+  rebind(link: PeerLink, rejoin: { pid: number; nonce: string } | null): void {
+    this.link = link;
+    this.hooks.rejoin = rejoin;
+    this.resetNet();
+    // fresh activity stamps so the watchdog gives the new link time before re-triggering
+    const now = performance.now();
+    this.lastSnapAt = now;
+    this.lastRelAt = now;
+    this.live = true;
+    this.wire(link);
+  }
+
+  /** Clear per-link prediction/interp buffers (kept across a reconnect would replay stale state:
+   *  a phantom kill burst from prev→next diffing, or easing the predicted body across the map). */
+  private resetNet(): void {
+    this.buf = [];
+    this.prev = null;
+    this.ghosts = [];
+    this.predInit = false;
+    this.lastTick = -1;
+    this.firedThisHoldLocal = false;
+    this.fireCdLocal = 0;
+    this.pingSent.clear();
+  }
+
+  /** Most-recent activity on EITHER channel. The watchdog reconnects only when both have been
+   *  silent (no snap AND no pong) — a snap-only stall is a lossy path, not a dead link. */
+  lastActivityMs(): number {
+    return Math.max(this.lastSnapAt, this.lastRelAt);
+  }
+
+  /** Test hook (?netlog): force-drop the P2P link to exercise the reconnect path. */
+  debugDrop(): void {
+    try {
+      this.link.close();
+    } catch {
+      /* already closing */
+    }
   }
 
   /** Reproduce hit/kill/hurt fx + audio from the prev→next snapshot diff (none of these
@@ -143,6 +225,7 @@ export class Client {
 
   /** Send this frame's local input to the host (reliable, sequenced). */
   send(input: PlayerInput): void {
+    if (!this.live) return; // suspended during a reconnect — don't ship to a dead/closing link
     const msg: NetMsg = { t: "input", input, seq: this.seq++ };
     this.link.sendRel(msg);
   }
@@ -230,7 +313,7 @@ export class Client {
    * with the client-predicted position/aim. `inp` is this frame's input (null if paused).
    */
   render(nowMs: number, inp: PlayerInput | null, dt: number): void {
-    if (!this.started || this.buf.length === 0) return;
+    if (!this.live || !this.started || this.buf.length === 0) return;
 
     // RTT probe: ping the host on the reliable channel ~1×/s (the host echoes pong). Measures
     // the actual DataChannel path latency — what gameplay feels — not STUN consent RTT.
