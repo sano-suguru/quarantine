@@ -160,7 +160,7 @@ function main(): void {
           netAcc = 0;
           const s = Net.client?.netStats();
           if (s) {
-            netstat.textContent = `RTT ${s.rtt}ms · jit ${s.jitter}ms · buf ${s.buf} · snap ${s.interval}ms`;
+            netstat.textContent = `RTT ${s.rtt}ms · loss ${s.loss}% · reord ${s.reorders} · frz ${s.freeze}% · jit ${s.jitter}ms · snap ${s.interval}ms`;
           }
         }
       }

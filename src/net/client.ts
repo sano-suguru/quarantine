@@ -55,6 +55,11 @@ export class Client {
   private pingId = 0;
   private pingSent = new Map<number, number>();
   private pingAcc = 0;
+  private lastTick = -1; // highest snapshot tick applied (drops stale/reordered snaps)
+  private reorders = 0; // count of dropped out-of-order snaps
+  private gaps: number[] = []; // recent missed-tick counts between accepted snaps (rolling loss %)
+  private freezeFrames = 0; // frames where the render time outran the newest snapshot
+  private totalFrames = 0;
 
   constructor(
     private link: PeerLink,
@@ -79,6 +84,17 @@ export class Client {
     link.onSnap((b) => {
       if (this.started && !getState().running) return; // run ended: stop fx/audio behind the debrief
       const snap = decode(b);
+      // unreliable/unordered channel: drop a stale/reordered snapshot so interpolation never runs
+      // backwards and prev→next fx-diffing doesn't misfire on an older frame.
+      if (snap.tick <= this.lastTick) {
+        this.reorders++;
+        return;
+      }
+      if (this.lastTick >= 0) {
+        this.gaps.push(snap.tick - this.lastTick - 1); // missed ticks since the last accepted snap
+        if (this.gaps.length > 40) this.gaps.shift();
+      }
+      this.lastTick = snap.tick;
       if (!this.started) {
         startClientGame(); // host has deployed — leave the lobby, show the game
         this.started = true;
@@ -142,8 +158,20 @@ export class Client {
     this.link.sendRel({ t: "nightStart" });
   }
 
-  /** Net diagnostics for the ?netlog HUD: RTT (rel ping/pong), snapshot interval + jitter, buffer. */
-  netStats(): { rtt: number; interval: number; jitter: number; buf: number } {
+  /**
+   * Net diagnostics for the ?netlog HUD. RTT (rel ping/pong EWMA), snapshot interval + jitter,
+   * rolling loss % (missed ticks between accepted snaps), out-of-order drops, and freeze rate
+   * (frames the render time outran the newest snapshot). Reading resets the frame-rate counters,
+   * so freeze % is "since the last HUD read".
+   */
+  netStats(): {
+    rtt: number;
+    interval: number;
+    jitter: number;
+    loss: number;
+    reorders: number;
+    freeze: number;
+  } {
     const ats = this.buf.map((b) => b.at);
     let mean = 0;
     let jitter = 0;
@@ -156,11 +184,18 @@ export class Client {
       const v = deltas.reduce((s, d) => s + (d - mean) ** 2, 0) / deltas.length;
       jitter = Math.sqrt(v);
     }
+    const lost = this.gaps.reduce((a, b) => a + b, 0);
+    const loss = this.gaps.length ? Math.round((lost / (lost + this.gaps.length)) * 100) : 0;
+    const freeze = this.totalFrames ? Math.round((this.freezeFrames / this.totalFrames) * 100) : 0;
+    this.freezeFrames = 0;
+    this.totalFrames = 0;
     return {
       rtt: Math.round(this.rttMs),
       interval: Math.round(mean),
       jitter: Math.round(jitter),
-      buf: this.buf.length,
+      loss,
+      reorders: this.reorders,
+      freeze,
     };
   }
 
@@ -213,6 +248,12 @@ export class Client {
 
     const rt = nowMs - CONFIG.net.interpDelayMs;
     const buf = this.buf;
+
+    // freeze = the render time outran the newest snapshot (no future frame to interpolate toward →
+    // remote entities hold still). Tracked as a rate to gauge loss/jitter impact in the ?netlog HUD.
+    this.totalFrames++;
+    const newestAt = buf[buf.length - 1]?.at ?? 0;
+    if (rt >= newestAt) this.freezeFrames++;
 
     let a = buf[0] as (typeof buf)[number];
     for (const s of buf) if (s.at <= rt) a = s;

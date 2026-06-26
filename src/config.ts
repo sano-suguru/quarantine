@@ -9,8 +9,7 @@ export const CONFIG = {
     interpDelayMs: 100, // render remote entities this far in the past
     smoothCorrect: 0.2, // reconciliation lerp factor
     snapTeleportThresh: 80, // px error above which we hard-snap instead of lerp
-    maxExtrapolateMs: 120, // cap on dead-reckoning when snapshots stall
-    bufferTargetCount: 2, // target snapshot buffer depth
+    maxExtrapolateMs: 120, // cap on dead-reckoning when snapshots stall (used if extrapolation is enabled)
     // client-predicted "ghost" tracer lifetime (visual only). ~interpDelayMs/1000 so the
     // ghost fades just as the host-authoritative bullet (drawn ~interpDelay in the past)
     // becomes visible — minimizing the double-tracer window. Tune by feel.
