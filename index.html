@@ -152,7 +152,7 @@
     font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);
     text-shadow:0 0 24px rgba(125,255,79,.25);text-wrap:balance;}
   /* printed-stencil wordmark fill (specificity beats .overlay h1) */
-  .overlay h1.wordmark{font-size:clamp(58px,13vw,156px);line-height:.84;letter-spacing:.05em;
+  .overlay h1.wordmark{font-size:clamp(44px, min(12vw,17dvh), 156px);line-height:.84;letter-spacing:.05em;
     color:transparent;-webkit-background-clip:text;background-clip:text;
     background:repeating-linear-gradient(0deg,#a6ff7f 0 3px,#5fbf38 3px 5px);
     filter:drop-shadow(0 0 26px rgba(125,255,79,.35)) drop-shadow(0 2px 0 rgba(0,0,0,.6));}
@@ -192,7 +192,7 @@
     color:var(--dim);pointer-events:none;text-transform:uppercase;}
 
   /* ---- title screen: torchlit containment identity ---- */
-  #start{isolation:isolate;overflow:hidden;animation:boot .9s steps(1,end) both;}
+  #start{isolation:isolate;overflow:hidden;animation:boot .9s steps(1,end) both;justify-content:safe center;}
   @keyframes boot{0%{opacity:0;}8%{opacity:.9;}12%{opacity:.15;}18%{opacity:1;}
     26%{opacity:.4;}32%{opacity:1;}100%{opacity:1;}}
   /* hidden hazard hatch, revealed where the torch sweeps (negative z = behind content) */
@@ -224,7 +224,7 @@
   .ars-head{font-size:10px;letter-spacing:.26em;color:var(--dim);text-transform:uppercase;
     margin-bottom:8px;}
   .ars-head b{color:var(--amber);font-variant-numeric:tabular-nums;}
-  #arsenal-list{display:flex;flex-direction:column;gap:5px;}
+  #arsenal-list{display:flex;flex-direction:column;gap:5px;max-height:clamp(120px,28vh,320px);overflow-y:auto;}
   .arow{display:flex;align-items:center;justify-content:space-between;gap:12px;
     padding:6px 9px;border:1px solid transparent;font-size:12px;}
   .arow:not(.owned):not(.off){pointer-events:auto;cursor:pointer;border-color:var(--line);}
@@ -235,6 +235,36 @@
   .arow.off{opacity:.4;}
   .arow.off .aprice{color:var(--dim);}
 
+  /* ---- title screen: fit short viewports without scrolling ---- */
+  /* step 1: compact spacing + lower arsenal cap + smaller wordmark                  */
+  @media (max-height:820px){
+    .overlay h1.wordmark{font-size:clamp(40px, min(10vw,13dvh), 120px);}
+    #start p{line-height:1.45;}
+    #start .controls{margin-top:8px;gap:3px 12px;}
+    #arsenal{margin-top:10px;padding:8px 11px;}
+    #arsenal .ars-head{margin-bottom:5px;}
+    #arsenal-list{max-height:clamp(80px,16vh,200px);}
+    #start .btn{margin-top:14px;}
+    #start .startfoot{bottom:clamp(8px,1.5vw,18px);}
+    #start{padding-bottom:44px;}
+  }
+  /* step 2: tightest compression for very short screens (eg. 1366×640 laptop)       */
+  @media (max-height:640px){
+    .overlay h1.wordmark{font-size:clamp(36px, min(8vw,9dvh), 80px);}
+    #start p{font-size:11px;line-height:1.35;}
+    #start .controls{font-size:10.5px;margin-top:5px;gap:2px 10px;}
+    #arsenal{margin-top:6px;padding:5px 9px;}
+    #arsenal .ars-head{margin-bottom:3px;}
+    #arsenal-list{max-height:clamp(64px,10vh,130px);}
+    #start .btn{margin-top:8px;padding:10px 36px;}
+    #start .startfoot{opacity:0;pointer-events:none;}
+    #start{padding-bottom:8px;}
+  }
+  /* guard: landscape tablets / wide-low screens keep description text readable     */
+  @media (max-height:640px) and (min-aspect-ratio:3/2){
+    #start p{font-size:12px;line-height:1.4;}
+    #start .controls{font-size:11px;gap:3px 12px;}
+  }
   @media (prefers-reduced-motion:reduce){
     #start,.eyebrow .dot,#hud.low #hpbar-wrap,#battery.low #batbar{animation:none;}
     #start .torch{transition:none;}
