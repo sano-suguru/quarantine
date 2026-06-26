@@ -18,10 +18,17 @@ type SignalMsg =
   | { t: "hostgone" }
   | { t: "error"; reason?: string };
 
-/** ws:// for plain http (incl. localhost), wss:// when the page is served over https. */
+/**
+ * ws:// for plain http (incl. localhost dev), wss:// when the page is served over https.
+ * In the production single-Worker deploy the signaling relay is the page's *own origin*, so
+ * derive the host from `location.host`; over http (localhost dev = `bun run signal`) fall back
+ * to `CONFIG.net.signalUrl`. This removes any need to bake the deployed host into config.
+ */
 function roomUrl(code: string, role: "host" | "client"): string {
-  const scheme = location.protocol === "https:" ? "wss" : "ws";
-  return `${scheme}://${CONFIG.net.signalUrl}/room/${encodeURIComponent(code)}?role=${role}`;
+  const https = location.protocol === "https:";
+  const scheme = https ? "wss" : "ws";
+  const host = https ? location.host : CONFIG.net.signalUrl;
+  return `${scheme}://${host}/room/${encodeURIComponent(code)}?role=${role}`;
 }
 
 export interface HostRoom {
