@@ -12,9 +12,6 @@
 
 import { CONFIG } from "../config";
 
-// STUN-only by default; a TURN entry can be added via CONFIG.net.iceServers without code change.
-const ICE: RTCConfiguration = { iceServers: CONFIG.net.iceServers };
-
 type Role = "host" | "client";
 
 /* ------------------------------ ICE diagnostics ------------------------------ */
@@ -204,12 +201,43 @@ function createLinkState(
   return { link, attach };
 }
 
-/** True if any configured ICE server is a TURN relay (turn:/turns:). */
-function hasTurnConfigured(): boolean {
-  return CONFIG.net.iceServers.some((s) => {
+/** True if any of these ICE servers is a TURN relay (turn:/turns:). */
+function iceHasTurn(servers: RTCIceServer[]): boolean {
+  return servers.some((s) => {
     const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
     return urls.some((u) => u.startsWith("turn:") || u.startsWith("turns:"));
   });
+}
+
+/**
+ * Resolve ICE servers for a new PeerConnection: static STUN (CONFIG) plus, in the production
+ * (https) deploy, ephemeral TURN creds minted by the signaling Worker's `/turn` route (covers
+ * UDP-blocked / symmetric-NAT peers — incl. TURNS over 443). Cached per session; falls back to
+ * STUN-only when `/turn` is unavailable (dev, or TURN key not configured) so STUN-reachable peers
+ * still connect.
+ */
+let cachedIce: RTCIceServer[] | null = null;
+async function resolveIceServers(): Promise<RTCIceServer[]> {
+  if (cachedIce) return cachedIce;
+  const base = CONFIG.net.iceServers;
+  try {
+    if (typeof location !== "undefined" && location.protocol === "https:") {
+      const res = await fetch("/turn", { method: "POST" });
+      if (res.ok) {
+        const data = (await res.json()) as { iceServers?: RTCIceServer[] };
+        if (Array.isArray(data.iceServers) && data.iceServers.length > 0) {
+          cachedIce = [...base, ...data.iceServers];
+          nlog("client", "TURN creds fetched", `${data.iceServers.length} server group(s)`);
+          return cachedIce;
+        }
+      }
+      nlog("client", "no TURN creds (/turn empty or unavailable) — STUN only");
+    }
+  } catch {
+    /* fall back to STUN-only */
+  }
+  cachedIce = base;
+  return cachedIce;
 }
 
 /**
@@ -224,9 +252,8 @@ function hasTurnConfigured(): boolean {
  *     one, so wait for "complete" up to the hard cap (the cap must out-wait TURN allocation);
  *   - hard cap backstops a server that never answers.
  */
-function waitIceComplete(pc: RTCPeerConnection, role: Role): Promise<void> {
+function waitIceComplete(pc: RTCPeerConnection, role: Role, wantRelay: boolean): Promise<void> {
   if (pc.iceGatheringState === "complete") return Promise.resolve();
-  const wantRelay = hasTurnConfigured();
   return new Promise((resolve) => {
     let settled = false;
     let graceSet = false;
@@ -262,14 +289,15 @@ export async function createHostLink(): Promise<{
   offer: string;
   accept: (answerCode: string) => Promise<void>;
 }> {
-  const pc = new RTCPeerConnection(ICE);
+  const servers = await resolveIceServers();
+  const pc = new RTCPeerConnection({ iceServers: servers });
   wireDiag(pc, "host");
   const { link, attach } = createLinkState(pc, "host");
   // host creates the channels up front and attaches them immediately
   attach(pc.createDataChannel("snap", { ordered: false, maxRetransmits: 0 }));
   attach(pc.createDataChannel("rel", { ordered: true }));
   await pc.setLocalDescription(await pc.createOffer());
-  await waitIceComplete(pc, "host");
+  await waitIceComplete(pc, "host", iceHasTurn(servers));
   const offer = await encodeSDP(pc.localDescription as RTCSessionDescription);
   const accept = async (answerCode: string): Promise<void> => {
     await pc.setRemoteDescription(await decodeSDP(answerCode));
@@ -281,7 +309,8 @@ export async function createHostLink(): Promise<{
 export async function createClientLink(
   offerCode: string,
 ): Promise<{ link: PeerLink; answer: string }> {
-  const pc = new RTCPeerConnection(ICE);
+  const servers = await resolveIceServers();
+  const pc = new RTCPeerConnection({ iceServers: servers });
   wireDiag(pc, "client");
   const { link, attach } = createLinkState(pc, "client");
   // client's channels arrive only after the connection is up (i.e. after the host
@@ -289,7 +318,7 @@ export async function createClientLink(
   pc.addEventListener("datachannel", (e) => attach(e.channel));
   await pc.setRemoteDescription(await decodeSDP(offerCode));
   await pc.setLocalDescription(await pc.createAnswer());
-  await waitIceComplete(pc, "client");
+  await waitIceComplete(pc, "client", iceHasTurn(servers));
   const answer = await encodeSDP(pc.localDescription as RTCSessionDescription);
   return { link, answer }; // return immediately; channels bind on connect
 }

@@ -13,11 +13,17 @@
 
 export interface Env {
   ROOM: DurableObjectNamespace;
+  // Cloudflare Realtime TURN key (set as Worker secrets; absent => /turn returns STUN-only).
+  TURN_KEY_ID?: string;
+  TURN_TOKEN?: string;
 }
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    // Mint short-lived ICE servers (incl. TURN/TURNS) for clients behind UDP-blocking / symmetric
+    // NAT. The TURN key secret never leaves the Worker; clients only ever see ephemeral creds.
+    if (url.pathname === "/turn" && req.method === "POST") return turnIceServers(env);
     const match = url.pathname.match(/^\/room\/([^/]+)$/);
     if (!match) return new Response("not found", { status: 404 });
     if (req.headers.get("Upgrade") !== "websocket") {
@@ -29,6 +35,37 @@ export default {
     return env.ROOM.get(id).fetch(req);
   },
 };
+
+/**
+ * Ask Cloudflare Realtime TURN for a set of ephemeral ICE servers and relay them to the client.
+ * Returns `{ iceServers: [] }` when the TURN key isn't configured, so the game falls back to
+ * STUN-only without erroring. JSON shape matches RTCConfiguration.iceServers.
+ */
+async function turnIceServers(env: Env): Promise<Response> {
+  const json = (body: unknown, status = 200): Response =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
+  if (!env.TURN_KEY_ID || !env.TURN_TOKEN) return json({ iceServers: [] });
+  try {
+    const res = await fetch(
+      `https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.TURN_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ttl: 86400 }), // 24h — comfortably outlives a play session
+      },
+    );
+    if (!res.ok) return json({ iceServers: [] }, 200);
+    return json(await res.json());
+  } catch {
+    return json({ iceServers: [] }, 200);
+  }
+}
 
 type Incoming = { t: "offer"; to: number; code: string } | { t: "answer"; code: string };
 
