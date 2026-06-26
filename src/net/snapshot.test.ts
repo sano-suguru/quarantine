@@ -91,6 +91,31 @@ describe("snapshot binary round-trip", () => {
     expect(back.caches[0]?.searchT).toBeGreaterThan(0);
   });
 
+  it("golden: encoded byte layout is stable (bump PROTOCOL_VERSION if this changes)", () => {
+    // A fully deterministic snapshot (no RNG / zombies): newState() + fixed scalars + 2 players.
+    // The encoded bytes are hashed; if the wire layout changes the hash drifts and this test fails
+    // — a forcing function so a `snapshot.ts` format change is paired with a conscious
+    // PROTOCOL_VERSION bump in net.ts (silent desync is the failure mode we're guarding against).
+    const s = newState();
+    s.phase = "night";
+    s.day = 3;
+    s.money = 200;
+    s.kills = 5;
+    addPlayer(s, 1, 120, -80);
+    const p1 = s.players[1] as State["players"][number];
+    p1.hp = 50;
+    p1.absent = true;
+    const bytes = new Uint8Array(encode(captureSnapshot(s, 100)));
+    let h = 0x811c9dc5; // FNV-1a over the bytes
+    for (const b of bytes) {
+      h ^= b;
+      h = Math.imul(h, 0x01000193);
+    }
+    expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
+      `"len=248 fnv=d2e62e"`,
+    );
+  });
+
   it("stays under the 16KB SCTP message limit for a heavy night", () => {
     const s = newState();
     for (let i = 0; i < 60; i++) spawnZombie(s, "walker", 1, 1);

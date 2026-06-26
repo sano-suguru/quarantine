@@ -38,6 +38,10 @@ export const CONFIG = {
       graceMs: 20000, // host holds a dropped player's body this long (> backoff total) for re-attach
       rejoinClaimTimeoutMs: 1000, // host waits this for the client's first rel (join/rejoin) before assuming fresh
     },
+    // public-room browser / quick-match (D)
+    registryPollMs: 3000, // OPEN RAIDS list refresh cadence while the hub is open
+    registryMetaMs: 10000, // public host → relay meta cadence (registry liveness; Worker-clock driven)
+    quickMatchTimeoutMs: 6000, // per-candidate connect wait before falling back to hosting
   },
   player: { radius: 16, speed: 230, sprint: 1.55, maxHp: 100 },
   cam: { lerp: 8, shakeDecay: 8 },

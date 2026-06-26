@@ -25,7 +25,8 @@ import { Client } from "./net/client";
 import { Host } from "./net/host";
 import { sampleLocalInput } from "./net/localInput";
 import { Net } from "./net/net";
-import { hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
+import { type RoomInfo, listRooms, selectQuickMatch, versionMatches } from "./net/registry";
+import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
 import { NETLOG, createClientLink, createHostLink } from "./net/transport";
 import { sysCamera } from "./systems/camera";
@@ -40,6 +41,11 @@ let hostStarted = false;
 // none of which can auto-reconnect), and a re-entrancy guard so the watchdog fires one loop.
 let coopRoomCode: string | null = null;
 let reconnecting = false;
+
+// public-room registry (D): the active host's signaling handle + whether it's listed publicly.
+// Read by the Worker-clock tick to push registry meta (so a backgrounded public host isn't pruned).
+let coopHostHandle: HostRoom | null = null;
+let coopPublic = false;
 
 /** Stored reconnect identity for a room (written from each Hello; replayed on rejoin). */
 function loadRejoinToken(code: string): { pid: number; nonce: string } | null {
@@ -76,7 +82,13 @@ async function reconnectClient(code: string): Promise<void> {
       reconnecting = false;
       return;
     }
-    if (res.status === "nohost" || res.status === "hostgone" || res.status === "full") break;
+    if (
+      res.status === "nohost" ||
+      res.status === "hostgone" ||
+      res.status === "full" ||
+      res.status === "versionMismatch"
+    )
+      break;
     // retryable (timeout/unreachable): the host may be briefly unreachable (NAT blip) — back off
     await delayMs(ladder[i] ?? 1000);
   }
@@ -157,11 +169,29 @@ function main(): void {
   let hLast = performance.now();
   let hAcc = 0;
   let hNet = 0;
+  let hMeta = 0;
   let tick = 0;
   startTicker(1000 / CONFIG.simHz, () => {
     const now = performance.now();
     const dt = Math.min((now - hLast) / 1000, 0.1);
     hLast = now;
+    // public-room registry heartbeat: refresh our listing on the Worker clock (NOT a main-thread
+    // timer) so a backgrounded public host isn't throttled into a TTL prune. Runs in the lobby too
+    // (phase "lobby") so the room is browsable before deploy. See signaling/room.ts meta handling.
+    if (Net.mode === "host" && coopHostHandle) {
+      hMeta += dt;
+      if (hMeta >= CONFIG.net.registryMetaMs / 1000) {
+        hMeta = 0; // periodic heartbeat (the initial publish is flushed on the signaling WS open)
+        const gs = getState();
+        coopHostHandle.setMeta({
+          public: coopPublic,
+          phase: hostStarted ? gs.phase : "lobby",
+          day: gs.day,
+        });
+      }
+    } else {
+      hMeta = 0;
+    }
     if (Net.mode !== "host" || !hostStarted) {
       hAcc = 0;
       hNet = 0;
@@ -299,7 +329,8 @@ function wireCoop(): void {
   const sendLabel = el("lobby-send-label");
   const recvLabel = el("lobby-recv-label");
 
-  let hostHandle: { close(): void } | null = null;
+  let hostHandle: HostRoom | null = null;
+  let coopPollTimer = 0; // OPEN RAIDS poll interval id (0 = not polling)
 
   // status with an optional "connecting" pulse dot (CSS .busy::after)
   const setStatus = (text: string, busy = false): void => {
@@ -330,6 +361,7 @@ function wireCoop(): void {
 
   const openLobby = (kind: "host" | "join"): void => {
     hide("start");
+    hide("coop");
     show("lobby");
     roomHost.style.display = kind === "host" ? "flex" : "none";
     roomJoin.style.display = kind === "join" ? "flex" : "none";
@@ -342,15 +374,17 @@ function wireCoop(): void {
     manual.ontoggle = null;
   };
   const closeLobby = (): void => {
-    hostHandle?.close();
+    hostHandle?.close(); // closes the signaling socket → Room DO unlists a public room
     hostHandle = null;
+    coopHostHandle = null;
+    coopPublic = false;
     Net.mode = "single";
     Net.host = null;
     Net.client = null;
     hostStarted = false;
     coopRoomCode = null; // disarm the reconnect watchdog
     hide("lobby");
-    show("start");
+    openCoopHub(); // back to the hub (you entered the lobby from there)
   };
   el("lobby-back").onclick = closeLobby;
   el("lobby-room-copy").onclick = () => {
@@ -362,15 +396,31 @@ function wireCoop(): void {
     navigator.clipboard?.writeText(out.value).catch(() => {});
   };
 
-  // ---- HOST ----
-  el("mpHostBtn").onclick = () => {
+  // ---- HOST (public/private) ----
+  const openHostLobby = (isPublic: boolean): void => {
     openLobby("host");
     role.textContent = "Hosting";
-    guide.textContent = "Share the room code with your squad, then Deploy.";
+    guide.textContent = isPublic
+      ? "Open to anyone via Quick Match — or share the code. Deploy when ready."
+      : "Share the room code with your squad, then Deploy.";
     const host = new Host();
     Net.mode = "host";
     Net.host = host;
     hostStarted = false;
+    // public-listing toggle (drives the registry meta pushed from the host tick)
+    coopPublic = isPublic;
+    const pub = el<HTMLInputElement>("lobby-public");
+    pub.checked = isPublic;
+    pub.onchange = () => {
+      coopPublic = pub.checked;
+      // reflect the change in the registry now (don't wait for the next heartbeat)
+      const gs = getState();
+      coopHostHandle?.setMeta({
+        public: coopPublic,
+        phase: hostStarted ? gs.phase : "lobby",
+        day: gs.day,
+      });
+    };
 
     const refreshSquad = (): void => {
       // host is player 0; each connected peer gets its pid's color/number
@@ -390,7 +440,9 @@ function wireCoop(): void {
 
     const code = makeRoomCode();
     roomCode.value = code;
-    setStatus("room open — share the code");
+    setStatus(
+      isPublic ? "public raid open — others can find you" : "private room — share the code",
+    );
     hostHandle = hostRoom(
       code,
       (link) => host.add(link),
@@ -399,6 +451,9 @@ function wireCoop(): void {
         if (s.error) setStatus(`signaling: ${s.error} — use manual connect below`);
       },
     );
+    coopHostHandle = hostHandle; // the host tick pushes registry meta through this
+    // seed the listing now; buffered in hostRoom and flushed the instant the signaling WS opens
+    hostHandle.setMeta({ public: isPublic, phase: "lobby", day: 1 });
 
     // manual fallback: opening <details> hides the room code (so the mode is unambiguous)
     // and lazily builds an offer on first open.
@@ -438,12 +493,12 @@ function wireCoop(): void {
     };
   };
 
-  // ---- JOIN ----
-  el("mpJoinBtn").onclick = () => {
+  // ---- JOIN (by code; also used by an Open Raids row with a prefilled code) ----
+  const openJoinLobby = (prefill?: string): void => {
     openLobby("join");
     role.textContent = "Joining";
     guide.textContent = "Enter the host's room code to connect.";
-    roomInput.value = "";
+    roomInput.value = prefill ?? "";
     roomInput.focus();
 
     const join = async (): Promise<void> => {
@@ -501,6 +556,7 @@ function wireCoop(): void {
     roomInput.onkeydown = (e) => {
       if (e.key === "Enter") void join();
     };
+    if (prefill) void join(); // came from an Open Raids row → connect straight away
 
     // manual fallback: opening <details> hides the room-code input (mode is unambiguous)
     // and lazily wires the paste-host-code → generate-reply flow on first open.
@@ -523,7 +579,13 @@ function wireCoop(): void {
         try {
           const { link, answer } = await createClientLink(offer);
           Net.mode = "client";
-          Net.client = new Client(link);
+          Net.client = new Client(link, undefined, {
+            // manual SDP bypasses the signaling version gate → re-check on Hello
+            onVersionMismatch: () => {
+              setStatus("host is on a different version — update to play together");
+              link.close();
+            },
+          });
           link.onOpen(() => setStatus("connected — waiting for host to deploy"));
           out.value = answer;
           sendBlock.style.display = "flex";
@@ -533,6 +595,176 @@ function wireCoop(): void {
         }
       };
     };
+  };
+
+  // ---- co-op hub: quick match + a live scan of open public raids ----
+  const coopStatus = (text: string, busy = false): void => {
+    const s = el("coop-status");
+    s.textContent = text;
+    s.classList.toggle("busy", busy);
+  };
+  const stopCoopPoll = (): void => {
+    if (coopPollTimer) {
+      clearInterval(coopPollTimer);
+      coopPollTimer = 0;
+    }
+  };
+  const makeRoomRow = (r: RoomInfo): HTMLElement => {
+    const joinable = versionMatches(r) && r.players < r.max;
+    const row = document.createElement("div");
+    row.className = `coop-row${joinable ? "" : " off"}`;
+    const dots = document.createElement("div");
+    dots.className = "rdots";
+    dots.textContent = "●".repeat(r.players) + "·".repeat(Math.max(0, r.max - r.players));
+    const info = document.createElement("div");
+    info.className = "rinfo";
+    const codeEl = document.createElement("div");
+    codeEl.className = "rcode";
+    codeEl.textContent = r.code;
+    const st = document.createElement("div");
+    st.className = "rstatus";
+    if (!versionMatches(r)) st.textContent = "update required";
+    else if (r.players >= r.max) st.textContent = "full";
+    else if (r.phase === "night") {
+      st.textContent = `night ${r.day} · spectate`;
+      st.classList.add("spectate");
+    } else st.textContent = r.phase === "day" ? `day ${r.day}` : "lobby";
+    info.append(codeEl, st);
+    row.append(dots, info);
+    if (joinable) {
+      const btn = document.createElement("button");
+      btn.className = "btn lobby-btn";
+      btn.textContent = "Join";
+      btn.onclick = () => {
+        stopCoopPoll();
+        openJoinLobby(r.code);
+      };
+      row.append(btn);
+    }
+    return row;
+  };
+  const renderRooms = (rooms: RoomInfo[] | null): void => {
+    const box = el("coop-rooms");
+    if (rooms === null) {
+      box.innerHTML = `<div class="empty">Room browser unavailable — use Join by code.</div>`;
+    } else if (rooms.length === 0) {
+      box.innerHTML = `<div class="empty">No signals detected — start your own raid.</div>`;
+    } else {
+      box.replaceChildren(...rooms.map(makeRoomRow));
+    }
+  };
+  const pollRooms = (): void => {
+    el("coop-scan").textContent = "↻ scanning…";
+    listRooms()
+      .then((rooms) => {
+        el("coop-scan").textContent = "";
+        renderRooms(rooms);
+      })
+      .catch(() => {
+        el("coop-scan").textContent = "";
+        renderRooms(null);
+      });
+  };
+  // hoisted (closeLobby above references it) — returns to the hub from the lobby
+  function openCoopHub(): void {
+    hide("start");
+    hide("lobby");
+    show("coop");
+    coopStatus("");
+    stopCoopPoll();
+    pollRooms();
+    coopPollTimer = window.setInterval(pollRooms, CONFIG.net.registryPollMs);
+  }
+  // QUICK MATCH: join the best joinable public raid (randomized among the top few to avoid a
+  // pile-up), one short-timeout attempt, else become a public host. Skips the lobby on the join
+  // path — the game appears on the first snapshot (startClientGame).
+  const quickMatch = async (): Promise<void> => {
+    stopCoopPoll();
+    coopStatus("scanning for raids…", true);
+    let rooms: RoomInfo[] = [];
+    let registryOk = true;
+    try {
+      rooms = await listRooms();
+    } catch {
+      registryOk = false; // browser unreachable → fall through to hosting
+    }
+    const top = selectQuickMatch(rooms).slice(0, 3);
+    const pick = top.length ? top[Math.floor(Math.random() * top.length)] : undefined;
+    if (!pick) {
+      openHostLobby(true); // nothing joinable → host a public raid
+      setStatus(
+        registryOk
+          ? "No open raids found — hosting a public one. Others can Quick Match in."
+          : "Room browser unavailable — hosting a public raid instead.",
+      );
+      return;
+    }
+    coopStatus(`joining ${pick.code}…`, true);
+    let link: Awaited<ReturnType<typeof joinRoom>>;
+    try {
+      link = await joinRoom(pick.code);
+    } catch {
+      openHostLobby(true); // couldn't reach it (or version mismatch) → host instead
+      setStatus("Couldn't reach that raid — hosting a public one instead.");
+      return;
+    }
+    const code = pick.code;
+    Net.mode = "client";
+    coopRoomCode = code;
+    Net.client = new Client(link, undefined, {
+      onIdentity: (pid, nonce) => {
+        try {
+          sessionStorage.setItem(`q_rejoin_${code}`, JSON.stringify({ pid, nonce }));
+        } catch {
+          /* sessionStorage unavailable */
+        }
+      },
+    });
+    let opened = false;
+    const t = window.setTimeout(() => {
+      if (opened) return;
+      try {
+        link.close();
+      } catch {
+        /* ignore */
+      }
+      Net.client = null;
+      Net.mode = "single";
+      coopRoomCode = null;
+      openHostLobby(true); // didn't connect in time → host instead
+      setStatus("Couldn't connect in time — hosting a public one instead.");
+    }, CONFIG.net.quickMatchTimeoutMs);
+    link.onOpen(() => {
+      opened = true;
+      clearTimeout(t);
+      coopStatus("connected — waiting for host to deploy");
+    });
+    link.onClose(() => {
+      if (opened) return; // post-open drops are the reconnect watchdog's job
+      clearTimeout(t);
+      Net.client = null;
+      Net.mode = "single";
+      coopRoomCode = null;
+      openHostLobby(true);
+      setStatus("Couldn't connect — hosting a public one instead.");
+    });
+  };
+
+  // ---- title + hub wiring ----
+  el("mpCoopBtn").onclick = openCoopHub;
+  el("coop-back").onclick = () => {
+    stopCoopPoll();
+    hide("coop");
+    show("start");
+  };
+  el("coop-quick").onclick = () => void quickMatch();
+  el("coop-host").onclick = () => {
+    stopCoopPoll();
+    openHostLobby(true);
+  };
+  el("coop-joincode").onclick = () => {
+    stopCoopPoll();
+    openJoinLobby();
   };
 }
 

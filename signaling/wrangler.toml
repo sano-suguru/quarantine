@@ -7,10 +7,20 @@ compatibility_date = "2025-04-01"
 name = "ROOM"
 class_name = "Room"
 
-# SQLite-backed DO class => available on the free Workers plan (we don't use storage).
+# Global public-room registry (quick-match / browser). Single instance via idFromName("global");
+# written only by Room DOs, read by GET /rooms. In-memory (no storage touched).
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "Registry"
+
+# SQLite-backed DO classes => available on the free Workers plan (we don't use storage).
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Registry"]
 
 # Serve the built game from this same Worker (single origin => no cross-origin / Mixed Content,
 # one deploy). `directory` is relative to this file (signaling/), so ../dist = repo-root dist/.

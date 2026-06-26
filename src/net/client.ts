@@ -9,7 +9,7 @@ import { fxHurt, fxImpact, fxKill, fxMuzzle } from "../systems/fx";
 import { integrateMovement } from "../systems/player";
 import type { Bullet } from "../types";
 import { advanceGhosts } from "./ghost";
-import type { NetMsg } from "./net";
+import { type NetMsg, PROTOCOL_VERSION } from "./net";
 import type { PlayerInput } from "./playerInput";
 import { type Snapshot, applySnapshot, decode, lerpSnapshots } from "./snapshot";
 import type { PeerLink } from "./transport";
@@ -74,6 +74,8 @@ export class Client {
       onIdentity?: (pid: number, nonce: string) => void;
       /** token to claim on the next P2P open: rejoin (reconnect) vs a fresh join */
       rejoin?: { pid: number; nonce: string } | null;
+      /** host runs an incompatible wire version (manual-SDP path; signaling gates the rest) */
+      onVersionMismatch?: () => void;
     } = {},
   ) {
     this.wire(link);
@@ -88,6 +90,13 @@ export class Client {
       this.lastRelAt = performance.now();
       const msg = m as NetMsg;
       if (msg.t === "hello") {
+        // wire-version gate for the manual-SDP path (signaling gates room-code / quick-match);
+        // mismatch → stop before showing the game, surface a clear error
+        if (msg.v !== undefined && msg.v !== PROTOCOL_VERSION) {
+          this.live = false;
+          this.hooks.onVersionMismatch?.();
+          return;
+        }
         this.hello = { localId: msg.localId, owned: msg.owned, wlevel: msg.wlevel };
         this.hooks.onIdentity?.(msg.localId, msg.nonce ?? "");
         if (this.started) clientApplyHello(msg.localId, msg.owned, msg.wlevel);

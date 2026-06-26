@@ -2,7 +2,7 @@ import { CONFIG } from "../config";
 import { HOME_SPAWN } from "../data/map";
 import { addPlayer, removePlayer } from "../engine/players";
 import { applyBuy, getState, shopDeploy, startNightNow } from "../game";
-import type { NetMsg } from "./net";
+import { type NetMsg, PROTOCOL_VERSION } from "./net";
 import { encodeSnapshot } from "./snapshot";
 import type { PeerLink } from "./transport";
 
@@ -182,6 +182,7 @@ export class Host {
       owned: st.owned,
       wlevel: st.wlevel,
       nonce: peer.nonce,
+      v: PROTOCOL_VERSION,
     };
     peer.link.sendRel(hello);
   }

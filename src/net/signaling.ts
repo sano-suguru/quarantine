@@ -1,4 +1,5 @@
 import { CONFIG } from "../config";
+import { PROTOCOL_VERSION } from "./net";
 import { type PeerLink, createClientLink, createHostLink } from "./transport";
 
 /**
@@ -17,6 +18,7 @@ type SignalMsg =
   | { t: "full" }
   | { t: "hostgone" }
   | { t: "nohost" } // reconnect: the room had a host but it's gone now → session over (terminal)
+  | { t: "versionMismatch" } // host/client wire-protocol versions differ → can't play (terminal)
   | { t: "error"; reason?: string };
 
 /** Outcome of a reconnect attempt (rejoinRoom). `open` = P2P re-established; the rest are
@@ -26,6 +28,7 @@ export type RejoinResult =
   | { status: "nohost" }
   | { status: "hostgone" }
   | { status: "full" }
+  | { status: "versionMismatch" }
   | { status: "timeout" };
 
 /**
@@ -38,11 +41,16 @@ function roomUrl(code: string, role: "host" | "client"): string {
   const https = location.protocol === "https:";
   const scheme = https ? "wss" : "ws";
   const host = https ? location.host : CONFIG.net.signalUrl;
-  return `${scheme}://${host}/room/${encodeURIComponent(code)}?role=${role}`;
+  // `v` lets the relay reject a host/client wire-version mismatch before P2P (see signaling/room.ts)
+  return `${scheme}://${host}/room/${encodeURIComponent(code)}?role=${role}&v=${PROTOCOL_VERSION}`;
 }
 
 export interface HostRoom {
   close(): void;
+  /** Publish/refresh this room in the public registry (public=false unlists it). Sent on the host
+   *  signaling socket; drive it from the host's Worker-clock tick so it isn't throttled in a
+   *  backgrounded tab and doubles as the registry liveness heartbeat. */
+  setMeta(meta: { public: boolean; phase: string; day: number }): void;
 }
 
 /**
@@ -58,6 +66,13 @@ export function hostRoom(
   const ws = new WebSocket(roomUrl(code, "host"));
   const accepts = new Map<number, (answerCode: string) => Promise<void>>();
   let connected = 0;
+  // latest public-listing meta; flushed the instant the socket opens so a public room registers
+  // immediately (not after the first heartbeat tick), and re-sent on every setMeta thereafter.
+  let lastMeta: { public: boolean; phase: string; day: number } | null = null;
+
+  ws.addEventListener("open", () => {
+    if (lastMeta) ws.send(JSON.stringify({ t: "meta", ...lastMeta }));
+  });
 
   ws.addEventListener("message", (e) => {
     const m = JSON.parse(e.data as string) as SignalMsg;
@@ -79,6 +94,9 @@ export function hostRoom(
       })();
     } else if (m.t === "answer") {
       void accepts.get(m.from)?.(m.code);
+    } else if (m.t === "versionMismatch") {
+      // a joining client is on a different build than us; the relay refused to pair us
+      onState({ connected, error: "a player tried to join on a different version" });
     } else if (m.t === "error") {
       onState({ connected, error: m.reason ?? "signal-error" });
     }
@@ -88,6 +106,10 @@ export function hostRoom(
   return {
     close() {
       ws.close();
+    },
+    setMeta(meta) {
+      lastMeta = meta; // buffer so the "open" handler can flush it if the socket isn't up yet
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: "meta", ...meta }));
     },
   };
 }
@@ -111,6 +133,9 @@ export function joinRoom(code: string): Promise<PeerLink> {
         })();
       } else if (m.t === "full") {
         reject(new Error("room is full"));
+        ws.close();
+      } else if (m.t === "versionMismatch") {
+        reject(new Error("host is on a different version — update to play together"));
         ws.close();
       } else if (m.t === "hostgone") {
         if (!settled) reject(new Error("host left"));
@@ -171,6 +196,8 @@ export function rejoinRoom(code: string): Promise<RejoinResult> {
         finish({ status: "hostgone" });
       } else if (m.t === "full") {
         finish({ status: "full" });
+      } else if (m.t === "versionMismatch") {
+        finish({ status: "versionMismatch" });
       }
     });
     ws.addEventListener("error", () => finish({ status: "timeout" }));

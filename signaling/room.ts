@@ -11,8 +11,13 @@
  * just never touch storage.
  */
 
+// Re-export the registry DO so wrangler can bind it from this main module (see wrangler.toml).
+export { Registry } from "./registry";
+
 export interface Env {
   ROOM: DurableObjectNamespace;
+  // Global public-room registry (quick-match / browser). Written only by Room DOs, read by GET /rooms.
+  REGISTRY: DurableObjectNamespace;
   // Cloudflare Realtime TURN key (set as Worker secrets; absent => /turn returns STUN-only).
   TURN_KEY_ID?: string;
   TURN_TOKEN?: string;
@@ -31,6 +36,13 @@ export default {
     // Mint short-lived ICE servers (incl. TURN/TURNS) for clients behind UDP-blocking / symmetric
     // NAT. The TURN key secret never leaves the Worker; clients only ever see ephemeral creds.
     if (url.pathname === "/turn" && req.method === "POST") return turnIceServers(req, env);
+    // Public room list for the browser / quick-match. Read-only (the data is joinable-by-design),
+    // so we only soft-guard against cross-site embedding; writes happen Room-DO→Registry, never here.
+    if (url.pathname === "/rooms" && req.method === "GET") {
+      if (req.headers.get("Sec-Fetch-Site") === "cross-site") return json({ rooms: [] }, 403);
+      const reg = env.REGISTRY.get(env.REGISTRY.idFromName("global"));
+      return reg.fetch("https://reg/list");
+    }
     const match = url.pathname.match(/^\/room\/([^/]+)$/);
     if (!match) return new Response("not found", { status: 404 });
     if (req.headers.get("Upgrade") !== "websocket") {
@@ -155,26 +167,50 @@ async function queryTurnOverBudget(env: Env): Promise<boolean | null> {
   }
 }
 
-type Incoming = { t: "offer"; to: number; code: string } | { t: "answer"; code: string };
+type Incoming =
+  | { t: "offer"; to: number; code: string }
+  | { t: "answer"; code: string }
+  // host → relay: publish/refresh this room in the public registry (public=false unlists it).
+  // Sent on the host's signaling socket, driven by the host's Worker-clock tick (not throttled
+  // when backgrounded), so it doubles as the liveness heartbeat for the registry TTL.
+  | { t: "meta"; public: boolean; phase: string; day: number };
 
 /** One room: a single host plus up to 3 clients. Pure offer/answer relay, in memory. */
 export class Room {
   private host: WebSocket | null = null;
-  private clients = new Map<number, WebSocket>();
+  private clients = new Map<number, { ws: WebSocket; v: number | null }>();
   private nextPeerId = 1;
   // a host has connected at some point this DO's lifetime. Lets a reconnecting client tell
   // "host left, session over" (hadHost && !host → nohost) from the legitimate startup race
   // where a client joins before the host arrives (!hadHost → wait for the retroactive join).
   private hadHost = false;
+  // host's wire-protocol version (?v=). null = a pre-D host that doesn't advertise one.
+  private hostV: number | null = null;
+  // public-registry state (feature D), driven by host `meta` messages
+  private code = "";
+  private isPublic = false;
+  private metaPhase = "lobby";
+  private metaDay = 1;
+
+  constructor(
+    _state: DurableObjectState,
+    private env: Env,
+  ) {}
 
   async fetch(req: Request): Promise<Response> {
-    const role = new URL(req.url).searchParams.get("role");
+    const url = new URL(req.url);
+    const role = url.searchParams.get("role");
+    const vRaw = url.searchParams.get("v");
+    const v = vRaw !== null && Number.isFinite(Number(vRaw)) ? Number(vRaw) : null;
+    // remember our own room code (for the registry key); the Worker routes /room/CODE here
+    const m = url.pathname.match(/^\/room\/([^/]+)$/);
+    if (m) this.code = decodeURIComponent(m[1] as string).toUpperCase();
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     server.accept();
-    if (role === "host") this.attachHost(server);
-    else this.attachClient(server);
+    if (role === "host") this.attachHost(server, v);
+    else this.attachClient(server, v);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -186,7 +222,14 @@ export class Room {
     }
   }
 
-  private attachHost(ws: WebSocket): void {
+  /** Incompatible only when BOTH sides advertise a version and they differ. A missing version
+   *  (pre-D build) is allowed through — the D rollout doesn't change the wire format, and real
+   *  future format changes gate v=N vs v=M once both peers advertise. */
+  private versionConflict(clientV: number | null): boolean {
+    return this.hostV !== null && clientV !== null && this.hostV !== clientV;
+  }
+
+  private attachHost(ws: WebSocket, v: number | null): void {
     if (this.host) {
       // a room has exactly one host; reject a second claim
       this.send(ws, { t: "error", reason: "host-exists" });
@@ -194,23 +237,45 @@ export class Room {
       return;
     }
     this.host = ws;
+    this.hostV = v;
     this.hadHost = true;
-    // clients who joined before the host arrived get their join notice now (retroactive)
-    for (const peerId of this.clients.keys()) this.send(ws, { t: "join", peerId });
+    // clients who joined before the host arrived: notify (or reject a version-mismatched one)
+    for (const [peerId, c] of this.clients) {
+      if (this.versionConflict(c.v)) {
+        this.send(c.ws, { t: "versionMismatch" });
+        try {
+          c.ws.close();
+        } catch {
+          /* already closing */
+        }
+        this.clients.delete(peerId);
+      } else {
+        this.send(ws, { t: "join", peerId });
+      }
+    }
     ws.addEventListener("message", (e) => {
       const m = parse(e.data);
       if (m && m.t === "offer" && typeof m.to === "number") {
         const c = this.clients.get(m.to);
-        if (c) this.send(c, { t: "offer", code: m.code });
+        if (c) this.send(c.ws, { t: "offer", code: m.code });
+      } else if (m && m.t === "meta") {
+        // host publishing/refreshing its public listing (also the registry liveness heartbeat)
+        this.isPublic = !!m.public;
+        this.metaPhase = typeof m.phase === "string" ? m.phase : "lobby";
+        this.metaDay = typeof m.day === "number" ? m.day : 1;
+        void this.syncRegistry();
       }
     });
     ws.addEventListener("close", () => {
       this.host = null;
+      this.hostV = null;
+      this.isPublic = false;
+      void this.syncRegistry(); // unlist immediately on a clean host exit
       // host gone = session over (method C): tell every client and reset the room
       for (const c of this.clients.values()) {
-        this.send(c, { t: "hostgone" });
+        this.send(c.ws, { t: "hostgone" });
         try {
-          c.close();
+          c.ws.close();
         } catch {
           /* already closing */
         }
@@ -219,12 +284,45 @@ export class Room {
     });
   }
 
-  private attachClient(ws: WebSocket): void {
+  /** Push this room's public listing to the global Registry (or remove it). Called on host meta,
+   *  player-count change, and host close. Only Room DOs write the registry — never clients. */
+  private async syncRegistry(): Promise<void> {
+    const reg = this.env.REGISTRY.get(this.env.REGISTRY.idFromName("global"));
+    try {
+      if (this.isPublic && this.host) {
+        const entry = {
+          code: this.code,
+          v: this.hostV,
+          players: 1 + this.clients.size, // host + connected clients (authoritative socket count)
+          max: 4,
+          phase: this.metaPhase,
+          day: this.metaDay,
+          lastSeen: 0, // Registry stamps this
+        };
+        await reg.fetch("https://reg/register", { method: "POST", body: JSON.stringify(entry) });
+      } else {
+        await reg.fetch("https://reg/deregister", {
+          method: "POST",
+          body: JSON.stringify({ code: this.code }),
+        });
+      }
+    } catch {
+      /* registry unavailable → browser/quick-match degrade; code-based play is unaffected */
+    }
+  }
+
+  private attachClient(ws: WebSocket, v: number | null): void {
     // a reconnecting client whose host has already left: tell it the session is over (terminal)
     // instead of letting it wait for an offer that will never come. Scoped to hadHost so the
     // client-before-host startup race still works (that client waits for the retroactive join).
     if (this.hadHost && !this.host) {
       this.send(ws, { t: "nohost" });
+      ws.close();
+      return;
+    }
+    // wire-version gate (host present): refuse a client on an incompatible build before P2P
+    if (this.host && this.versionConflict(v)) {
+      this.send(ws, { t: "versionMismatch" });
       ws.close();
       return;
     }
@@ -234,8 +332,9 @@ export class Room {
       return;
     }
     const peerId = this.nextPeerId++;
-    this.clients.set(peerId, ws);
+    this.clients.set(peerId, { ws, v });
     if (this.host) this.send(this.host, { t: "join", peerId });
+    void this.syncRegistry(); // player count changed
     ws.addEventListener("message", (e) => {
       const m = parse(e.data);
       if (m && m.t === "answer" && this.host) {
@@ -244,6 +343,7 @@ export class Room {
     });
     ws.addEventListener("close", () => {
       this.clients.delete(peerId);
+      void this.syncRegistry(); // player count changed
       // the host learns of the drop via its RTC PeerLink onClose (removePlayer)
     });
   }

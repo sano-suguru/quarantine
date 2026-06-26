@@ -579,6 +579,7 @@ export function startGame(): void {
   hide("over");
   hide("shop");
   hide("lobby");
+  hide("coop");
   show("hud");
   buildWeaponSlots();
   startDay(state);
@@ -785,6 +786,8 @@ export function toTitle(): void {
   hide("over");
   hide("shop");
   hide("hud");
+  hide("lobby");
+  hide("coop");
   renderArsenal();
   show("start");
 }
@@ -890,6 +893,7 @@ export function startClientGame(): void {
   hide("over");
   hide("shop");
   hide("lobby");
+  hide("coop");
   show("hud");
   buildWeaponSlots();
 }

@@ -145,6 +145,29 @@
     color:var(--ink);opacity:.7;list-style:none;}
   .lobby-manual>summary:hover{opacity:1;}
   .lobby-manual[open]>summary{color:var(--toxic);opacity:1;}
+  /* co-op hub (D): CO-OP cta is deliberately secondary so solo DEPLOY stays the hero */
+  .btn.coop-cta{background:transparent;color:var(--toxic);box-shadow:0 0 0 1px var(--toxic);
+    font-size:clamp(15px,2vw,20px);letter-spacing:.2em;padding:9px 30px;margin-top:10px;}
+  .btn.coop-cta:hover{background:var(--toxic);color:var(--bg);}
+  .coop-wrap{display:flex;flex-direction:column;gap:14px;width:min(460px,88vw);margin-top:6px;}
+  .coop-browser{border:1px solid var(--line);background:rgba(0,0,0,.3);}
+  .coop-browser-head{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;
+    border-bottom:1px solid var(--line);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--toxic);}
+  #coop-scan{font-size:10px;letter-spacing:.18em;color:var(--dim);}
+  .coop-rooms{max-height:34vh;overflow-y:auto;display:flex;flex-direction:column;}
+  .coop-rooms .empty{padding:18px 12px;color:var(--dim);font-size:12px;text-align:center;letter-spacing:.06em;}
+  .coop-row{display:flex;align-items:center;gap:12px;padding:9px 13px;border-top:1px solid var(--line);text-align:left;}
+  .coop-row:first-child{border-top:0;}
+  .coop-row.off{opacity:.45;}
+  .coop-row .rdots{letter-spacing:2px;font-size:13px;color:var(--toxic);min-width:46px;}
+  .coop-row .rinfo{flex:1;}
+  .coop-row .rcode{font:600 14px/1 monospace;letter-spacing:.14em;color:var(--ink);}
+  .coop-row .rstatus{font-size:10.5px;color:var(--dim);margin-top:3px;letter-spacing:.08em;text-transform:uppercase;}
+  .coop-row .rstatus.spectate{color:var(--amber);}
+  .coop-secondary{display:flex;gap:10px;}
+  .coop-secondary .btn{flex:1;}
+  .coop-toggle{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--ink);cursor:pointer;}
+  .coop-toggle input{accent-color:var(--toxic);cursor:pointer;}
 
   .overlay{position:fixed;inset:0;z-index:6;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:6px;text-align:center;
@@ -373,10 +396,7 @@
   </div>
 
   <button class="btn" id="startBtn">Deploy</button>
-  <div style="display:flex;gap:10px;margin-top:10px;">
-    <button class="btn" id="mpHostBtn" style="flex:1">Host co-op</button>
-    <button class="btn" id="mpJoinBtn" style="flex:1">Join co-op</button>
-  </div>
+  <button class="btn coop-cta" id="mpCoopBtn">Co-op</button>
 
   <div class="startfoot"><div class="tape"></div><div class="build">Build Sector-7 &middot; v0.4</div></div>
 </div>
@@ -417,6 +437,10 @@
         <input id="lobby-room-code" class="lobby-code" readonly value="" />
         <button class="btn lobby-btn" id="lobby-room-copy">Copy</button>
       </div>
+      <label class="coop-toggle" id="lobby-public-wrap">
+        <input type="checkbox" id="lobby-public" checked />
+        <span>Public &mdash; list in Quick Match &amp; Open Raids</span>
+      </label>
     </div>
     <div id="lobby-room-join" class="lobby-field" style="display:none;">
       <div class="lobby-label">Enter the host's room code</div>
@@ -456,6 +480,26 @@
       </div>
     </div>
   </details>
+</div>
+
+<!-- co-op hub: quick match + a live scan of open public raids, with host/join-by-code beneath -->
+<div id="coop" class="overlay hidden">
+  <div class="eyebrow"><span class="dot"></span>Co-op &middot; Sector 7</div>
+  <h1 style="font-size:clamp(28px,6vw,54px)">CO-OP</h1>
+
+  <div class="coop-wrap">
+    <button class="btn" id="coop-quick">Quick Match</button>
+    <div class="coop-browser">
+      <div class="coop-browser-head"><span>Open Raids</span><span id="coop-scan"></span></div>
+      <div id="coop-rooms" class="coop-rooms"></div>
+    </div>
+    <div class="coop-secondary">
+      <button class="btn lobby-btn" id="coop-host">Host raid</button>
+      <button class="btn lobby-btn" id="coop-joincode">Join by code</button>
+    </div>
+  </div>
+  <div id="coop-status" class="hint" style="min-height:16px;margin-top:8px;"></div>
+  <button class="btn lobby-back-btn" id="coop-back" style="margin-top:10px;">Back</button>
 </div>
 
 <script>
