@@ -27,7 +27,7 @@ import { sampleLocalInput } from "./net/localInput";
 import { Net } from "./net/net";
 import { hostRoom, joinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
-import { createClientLink, createHostLink } from "./net/transport";
+import { NETLOG, createClientLink, createHostLink } from "./net/transport";
 import { sysCamera } from "./systems/camera";
 import { sysFx } from "./systems/fx";
 import { el, hide, show } from "./ui";
@@ -49,6 +49,8 @@ function main(): void {
 
   const cross = el("cross");
   const muteTag = el("mute");
+  const netstat = el("netstat"); // ?netlog co-op net-stat readout
+  let netAcc = 0;
   const refreshMute = (): void => {
     muteTag.textContent = Audio.isMuted() ? "♪ muted [M]" : "";
   };
@@ -147,6 +149,22 @@ function main(): void {
 
     draw();
     if (st.running) updateHUD();
+
+    // ?netlog: live co-op net-stat readout (client only) to drive feel-tuning
+    if (NETLOG) {
+      const showNet = Net.mode === "client" && st.running;
+      netstat.style.display = showNet ? "block" : "none";
+      if (showNet) {
+        netAcc += dt;
+        if (netAcc >= 0.25) {
+          netAcc = 0;
+          const s = Net.client?.netStats();
+          if (s) {
+            netstat.textContent = `RTT ${s.rtt}ms · jit ${s.jitter}ms · buf ${s.buf} · snap ${s.interval}ms`;
+          }
+        }
+      }
+    }
 
     // custom crosshair (hidden while downed — you're spectating, not aiming)
     if (st.running && !st.paused && localPlayer(st).hp > 0) {

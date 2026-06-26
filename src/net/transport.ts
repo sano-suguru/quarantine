@@ -19,7 +19,7 @@ type Role = "host" | "client";
 // candidates (local/public IPs) to ordinary visitors: enable with `?netlog` in the URL or
 // `localStorage.netlog="1"`. Co-op only — single-player never builds a PeerLink, so this is dead
 // code in SP. Strip / leave gated once a connection issue is resolved.
-const NETLOG = (() => {
+export const NETLOG = (() => {
   try {
     return (
       (typeof location !== "undefined" && location.search.includes("netlog")) ||

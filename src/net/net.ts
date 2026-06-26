@@ -15,6 +15,8 @@ export type NetMsg =
       wlevel: Record<string, number>;
     }
   | { t: "input"; input: PlayerInput; seq: number }
+  | { t: "ping"; id: number } // client→host RTT probe (rel channel); host echoes pong
+  | { t: "pong"; id: number }
   | CoopEvent
   | HostEvent;
 

@@ -55,6 +55,8 @@ export class Host {
         shopDeploy(); // idempotent (no-op unless the shop is open)
       } else if (msg.t === "nightStart") {
         startNightNow(); // idempotent (no-op unless we're in the day phase)
+      } else if (msg.t === "ping") {
+        link.sendRel({ t: "pong", id: msg.id }); // RTT probe echo (see client netStats)
       }
     });
 

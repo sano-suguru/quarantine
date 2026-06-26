@@ -50,6 +50,11 @@ export class Client {
   // instead of ~interpDelay late; the real bullet/damage stay host-authoritative.
   private ghosts: Bullet[] = [];
   private ghostId = -1;
+  // net diagnostics (surfaced by the ?netlog HUD): rel-channel ping/pong RTT + snapshot jitter.
+  private rttMs = 0;
+  private pingId = 0;
+  private pingSent = new Map<number, number>();
+  private pingAcc = 0;
 
   constructor(
     private link: PeerLink,
@@ -62,6 +67,13 @@ export class Client {
         if (this.started) clientApplyHello(msg.localId, msg.owned, msg.wlevel);
       } else if (msg.t === "gameover") {
         clientGameOver(msg.salvage, msg.day, msg.kills, msg.money);
+      } else if (msg.t === "pong") {
+        const sent = this.pingSent.get(msg.id);
+        if (sent !== undefined) {
+          this.pingSent.delete(msg.id);
+          const rtt = performance.now() - sent;
+          this.rttMs = this.rttMs ? this.rttMs * 0.7 + rtt * 0.3 : rtt; // EWMA
+        }
       }
     });
     link.onSnap((b) => {
@@ -130,6 +142,28 @@ export class Client {
     this.link.sendRel({ t: "nightStart" });
   }
 
+  /** Net diagnostics for the ?netlog HUD: RTT (rel ping/pong), snapshot interval + jitter, buffer. */
+  netStats(): { rtt: number; interval: number; jitter: number; buf: number } {
+    const ats = this.buf.map((b) => b.at);
+    let mean = 0;
+    let jitter = 0;
+    if (ats.length >= 2) {
+      const deltas: number[] = [];
+      for (let i = 1; i < ats.length; i++) {
+        deltas.push((ats[i] as number) - (ats[i - 1] as number));
+      }
+      mean = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+      const v = deltas.reduce((s, d) => s + (d - mean) ** 2, 0) / deltas.length;
+      jitter = Math.sqrt(v);
+    }
+    return {
+      rtt: Math.round(this.rttMs),
+      interval: Math.round(mean),
+      jitter: Math.round(jitter),
+      buf: this.buf.length,
+    };
+  }
+
   /** Nudge the predicted local position toward the host's authoritative one. */
   private reconcile(snap: Snapshot): void {
     const id = getState().localId;
@@ -162,6 +196,21 @@ export class Client {
    */
   render(nowMs: number, inp: PlayerInput | null, dt: number): void {
     if (!this.started || this.buf.length === 0) return;
+
+    // RTT probe: ping the host on the reliable channel ~1×/s (the host echoes pong). Measures
+    // the actual DataChannel path latency — what gameplay feels — not STUN consent RTT.
+    this.pingAcc += dt;
+    if (this.pingAcc >= 1) {
+      this.pingAcc = 0;
+      const id = ++this.pingId;
+      this.pingSent.set(id, performance.now());
+      this.link.sendRel({ t: "ping", id });
+      if (this.pingSent.size > 5) {
+        const oldest = this.pingSent.keys().next().value; // drop unanswered (host gone / lossy)
+        if (oldest !== undefined) this.pingSent.delete(oldest);
+      }
+    }
+
     const rt = nowMs - CONFIG.net.interpDelayMs;
     const buf = this.buf;
 

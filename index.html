@@ -157,6 +157,10 @@
   .squad-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink);
     padding:4px 10px;border-radius:4px;background:rgba(0,0,0,.35);box-shadow:0 0 0 1px var(--line);}
   .squad-dot{width:9px;height:9px;border-radius:2px;}
+  /* ?netlog co-op net-stat readout (hidden unless enabled) */
+  #netstat{position:fixed;top:6px;right:8px;z-index:50;display:none;pointer-events:none;
+    font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--toxic);
+    background:rgba(0,0,0,.45);padding:3px 7px;border-radius:4px;letter-spacing:.03em;}
   .overlay h1{margin:6px 0 0;font-family:var(--display);font-size:clamp(34px,7vw,68px);
     font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);
     text-shadow:0 0 24px rgba(125,255,79,.25);text-wrap:balance;}
@@ -286,6 +290,7 @@
 <div id="flash"></div>
 <div id="cross"></div>
 <div id="mute"></div>
+<div id="netstat"></div>
 
 <div id="hud" class="hud hidden">
   <div class="hud-top">
