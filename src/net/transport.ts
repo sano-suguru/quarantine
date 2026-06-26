@@ -216,6 +216,29 @@ function iceHasTurn(servers: RTCIceServer[]): boolean {
  * STUN-only when `/turn` is unavailable (dev, or TURN key not configured) so STUN-reachable peers
  * still connect.
  */
+/**
+ * Whether relay (TURN) is usable this session, derived from the `/turn` response (D). Surfaced so
+ * the UI can explain a cross-NAT connect failure when the monthly TURN budget is exhausted instead
+ * of failing silently. Pure so it's unit-testable; defaults to "stun-only" for every non-available,
+ * non-budget case (TURN key unset, 403, fetch error, dev/http where /turn isn't called).
+ */
+export type TurnStatus = "available" | "budget-reached" | "stun-only";
+export function turnStatusOf(
+  ok: boolean,
+  iceServers: RTCIceServer[] | undefined,
+  reason: string | undefined,
+): TurnStatus {
+  if (ok && Array.isArray(iceServers) && iceServers.length > 0) return "available";
+  if (reason === "budget-reached") return "budget-reached"; // /turn fail-closed at the monthly cap
+  return "stun-only";
+}
+
+let turnStatus: TurnStatus = "stun-only";
+/** Latest known relay status (see TurnStatus). Set once per session when resolveIceServers runs. */
+export function getTurnStatus(): TurnStatus {
+  return turnStatus;
+}
+
 let cachedIce: RTCIceServer[] | null = null;
 async function resolveIceServers(): Promise<RTCIceServer[]> {
   if (cachedIce) return cachedIce;
@@ -224,17 +247,20 @@ async function resolveIceServers(): Promise<RTCIceServer[]> {
     if (typeof location !== "undefined" && location.protocol === "https:") {
       const res = await fetch("/turn", { method: "POST" });
       if (res.ok) {
-        const data = (await res.json()) as { iceServers?: RTCIceServer[] };
+        const data = (await res.json()) as { iceServers?: RTCIceServer[]; reason?: string };
+        turnStatus = turnStatusOf(true, data.iceServers, data.reason);
         if (Array.isArray(data.iceServers) && data.iceServers.length > 0) {
           cachedIce = [...base, ...data.iceServers];
           nlog("client", "TURN creds fetched", `${data.iceServers.length} server group(s)`);
           return cachedIce;
         }
+      } else {
+        turnStatus = "stun-only"; // e.g. same-origin 403 — no trustworthy body to read
       }
-      nlog("client", "no TURN creds (/turn empty or unavailable) — STUN only");
+      nlog("client", "no TURN creds (/turn empty or unavailable) — STUN only", turnStatus);
     }
   } catch {
-    /* fall back to STUN-only */
+    /* fall back to STUN-only (turnStatus stays its default) */
   }
   cachedIce = base;
   return cachedIce;

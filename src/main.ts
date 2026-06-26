@@ -28,7 +28,7 @@ import { Net } from "./net/net";
 import { type RoomInfo, listRooms, selectQuickMatch, versionMatches } from "./net/registry";
 import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
-import { NETLOG, createClientLink, createHostLink } from "./net/transport";
+import { NETLOG, createClientLink, createHostLink, getTurnStatus } from "./net/transport";
 import { sysCamera } from "./systems/camera";
 import { sysFx } from "./systems/fx";
 import { el, hide, show } from "./ui";
@@ -337,6 +337,12 @@ function wireCoop(): void {
     status.textContent = text;
     status.classList.toggle("busy", busy);
   };
+  // budget-aware connect-failure text: when the monthly TURN budget is exhausted, cross-NAT peers
+  // can't relay — name that instead of a generic NAT message. prod-only (dev is always STUN-only).
+  const failMsg = (generic: string): string =>
+    getTurnStatus() === "budget-reached"
+      ? "Relay at capacity this month — only same-network players can connect right now."
+      : generic;
   // squad as colored chips (matches the in-game PLAYER_COLORS so teammates are recognizable)
   const chipColor = (pid: number): string => {
     const [r, g, b] = PLAYER_COLORS[pid % PLAYER_COLORS.length] ?? [0.49, 1, 0.31];
@@ -529,7 +535,9 @@ function wireCoop(): void {
         const failTimer = setTimeout(() => {
           if (opened) return;
           setStatus(
-            "couldn't connect (network/NAT). Try a personal network, or manual connect below.",
+            failMsg(
+              "couldn't connect (network/NAT). Try a personal network, or manual connect below.",
+            ),
           );
           manual.open = true;
         }, CONFIG.net.p2pOpenTimeoutMs);
@@ -543,7 +551,7 @@ function wireCoop(): void {
           setStatus(
             opened
               ? "disconnected from host."
-              : "connection failed (network/NAT) — try manual connect below.",
+              : failMsg("connection failed (network/NAT) — try manual connect below."),
           );
           if (!opened) manual.open = true;
         });
@@ -671,6 +679,7 @@ function wireCoop(): void {
     hide("lobby");
     show("coop");
     coopStatus("");
+    el<HTMLButtonElement>("coop-quick").disabled = false; // single re-enable point for the QM guard
     stopCoopPoll();
     pollRooms();
     coopPollTimer = window.setInterval(pollRooms, CONFIG.net.registryPollMs);
@@ -680,6 +689,7 @@ function wireCoop(): void {
   // path — the game appears on the first snapshot (startClientGame).
   const quickMatch = async (): Promise<void> => {
     stopCoopPoll();
+    el<HTMLButtonElement>("coop-quick").disabled = true; // no re-entry until we leave/return to the hub
     coopStatus("scanning for raids…", true);
     let rooms: RoomInfo[] = [];
     let registryOk = true;
@@ -732,7 +742,11 @@ function wireCoop(): void {
       Net.mode = "single";
       coopRoomCode = null;
       openHostLobby(true); // didn't connect in time → host instead
-      setStatus("Couldn't connect in time — hosting a public one instead.");
+      setStatus(
+        getTurnStatus() === "budget-reached"
+          ? "Relay at capacity this month — hosting a public raid (same-network players only)."
+          : "Couldn't connect in time — hosting a public one instead.",
+      );
     }, CONFIG.net.quickMatchTimeoutMs);
     link.onOpen(() => {
       opened = true;
@@ -746,7 +760,11 @@ function wireCoop(): void {
       Net.mode = "single";
       coopRoomCode = null;
       openHostLobby(true);
-      setStatus("Couldn't connect — hosting a public one instead.");
+      setStatus(
+        getTurnStatus() === "budget-reached"
+          ? "Relay at capacity this month — hosting a public raid (same-network players only)."
+          : "Couldn't connect — hosting a public one instead.",
+      );
     });
   };
 
