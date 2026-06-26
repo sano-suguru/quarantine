@@ -324,8 +324,32 @@ function wireCoop(): void {
         Net.client = new Client(link, () => {
           status.textContent = "in!";
         });
-        squad.textContent = "Squad: you — waiting for the host to deploy…";
-        status.textContent = "connected — waiting for host";
+        squad.textContent = "Squad: you — connecting to host…";
+        status.textContent = "answer sent — establishing P2P…";
+        // joinRoom resolves when our ANSWER is sent, NOT when the P2P link actually opens. A
+        // blocked NAT/firewall (e.g. a corporate network) then fails silently. Confirm a real
+        // open via link.onOpen, surface link.onClose, and time out otherwise — so the player
+        // sees "couldn't connect" instead of sitting forever on a misleading "connected".
+        let opened = false;
+        const failTimer = setTimeout(() => {
+          if (opened) return;
+          status.textContent =
+            "couldn't connect (network/NAT). Try a personal network, or use manual connect below.";
+          manual.open = true;
+        }, CONFIG.net.p2pOpenTimeoutMs);
+        link.onOpen(() => {
+          opened = true;
+          clearTimeout(failTimer);
+          squad.textContent = "Squad: you — waiting for the host to deploy…";
+          status.textContent = "connected — waiting for host";
+        });
+        link.onClose(() => {
+          clearTimeout(failTimer);
+          status.textContent = opened
+            ? "disconnected from host."
+            : "connection failed (network/NAT) — try manual connect below.";
+          if (!opened) manual.open = true;
+        });
       } catch (err) {
         status.textContent = `${err instanceof Error ? err.message : err} — try manual connect below`;
         manual.open = true;

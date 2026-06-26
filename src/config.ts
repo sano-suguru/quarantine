@@ -22,6 +22,12 @@ export const CONFIG = {
     // ICE servers for WebRTC. STUN only by default (covers most home↔home NATs). Add a
     // TURN entry here (no code change) if a peer behind symmetric NAT/CGNAT can't connect.
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }] as RTCIceServer[],
+    // Non-trickle ICE bakes every candidate into ONE pasteable/relayed SDP, so we must not ship
+    // before the useful candidates exist. Old code used a flat 3s that truncated slow srflx/relay
+    // candidates on restrictive networks → guaranteed cross-NAT failure. See transport.ts.
+    iceGatherMaxMs: 8000, // hard cap before shipping whatever candidates we have (backstop)
+    iceGatherGraceMs: 1200, // STUN-only: after the first reflexive candidate, wait this then go
+    p2pOpenTimeoutMs: 15000, // client lobby: if the P2P link never opens, surface a failure
   },
   player: { radius: 16, speed: 230, sprint: 1.55, maxHp: 100 },
   cam: { lerp: 8, shakeDecay: 8 },
