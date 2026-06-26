@@ -114,6 +114,28 @@
     75%{opacity:1;}
     100%{opacity:0;transform:scale(.96);}
   }
+  #downed{position:fixed;left:0;right:0;top:18%;z-index:4;pointer-events:none;
+    text-align:center;display:none;}
+  #downed.show{display:block;}
+  #downed .dn-main{font-size:clamp(28px,5vw,54px);font-weight:700;letter-spacing:.12em;
+    color:var(--blood);text-shadow:0 0 30px rgba(255,77,77,.5);}
+  #downed .dn-sub{font-size:12px;letter-spacing:.4em;color:var(--ink);text-transform:uppercase;opacity:.8;}
+  /* co-op lobby */
+  .lobby-wrap{display:flex;flex-direction:column;gap:14px;width:min(460px,88vw);text-align:left;margin-top:6px;}
+  .lobby-field{display:flex;flex-direction:column;gap:6px;}
+  .lobby-label{font-size:11px;letter-spacing:.2em;color:var(--toxic);text-transform:uppercase;}
+  .lobby-row{display:flex;gap:8px;align-items:stretch;}
+  .lobby-code{flex:1;min-width:0;background:#06080a;color:#9fdcb8;border:1px solid #243a30;border-radius:4px;
+    font:600 20px/1 monospace;letter-spacing:.18em;text-transform:uppercase;padding:10px 12px;}
+  .lobby-ta{width:100%;box-sizing:border-box;height:48px;resize:none;background:#06080a;color:#9fdcb8;
+    border:1px solid #243a30;border-radius:4px;font:11px monospace;padding:6px;}
+  .lobby-btn{font-size:13px;letter-spacing:.12em;padding:7px 16px;white-space:nowrap;}
+  .lobby-back-btn{font-size:14px;letter-spacing:.12em;padding:8px 20px;background:#3a4a40;color:var(--ink);box-shadow:0 0 0 1px #2a3a30;}
+  .lobby-manual{margin-top:16px;width:min(460px,88vw);text-align:left;color:var(--ink);}
+  .lobby-manual>summary{cursor:pointer;font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--ink);opacity:.7;list-style:none;}
+  .lobby-manual>summary:hover{opacity:1;}
+  .lobby-manual[open]>summary{color:var(--toxic);opacity:1;}
 
   .overlay{position:fixed;inset:0;z-index:6;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:6px;text-align:center;
@@ -267,6 +289,11 @@
   <div class="bn-main"><span id="banner-label">DAY</span> <span id="banner-n">1</span></div>
 </div>
 
+<div id="downed">
+  <div class="dn-main">DOWN</div>
+  <div class="dn-sub">spectating &mdash; back at dawn</div>
+</div>
+
 <div id="start" class="overlay">
   <div class="grime"></div><div class="torch"></div><div class="vig"></div>
   <span class="frame tl"></span><span class="frame tr"></span>
@@ -289,6 +316,10 @@
   </div>
 
   <button class="btn" id="startBtn">Deploy</button>
+  <div style="display:flex;gap:10px;margin-top:10px;">
+    <button class="btn" id="mpHostBtn" style="flex:1">Host co-op</button>
+    <button class="btn" id="mpJoinBtn" style="flex:1">Join co-op</button>
+  </div>
 
   <div class="startfoot"><div class="tape"></div><div class="build">Build Sector-7 &middot; v0.4</div></div>
 </div>
@@ -314,6 +345,55 @@
   <p>You survived to day <b id="over-wave" style="color:var(--ink)">1</b> &middot; <span id="over-kills">0</span> neutralized &middot; <span id="over-money">0</span> credits earned</p>
   <p style="color:var(--amber)">Salvage recovered: <b id="over-salvage">0</b> &#9670;</p>
   <button class="btn" id="restartBtn">Redeploy</button>
+</div>
+
+<div id="lobby" class="overlay hidden">
+  <div class="eyebrow"><span class="dot"></span><span id="lobby-role">Co-op</span></div>
+  <h1 style="font-size:clamp(28px,6vw,54px)">CO-OP LOBBY</h1>
+  <p id="lobby-guide" style="min-height:1.5em">Setting up…</p>
+
+  <div class="lobby-wrap">
+    <!-- primary: room code (host shows a code to share; client types the host's code) -->
+    <div id="lobby-room-host" class="lobby-field" style="display:none;">
+      <div class="lobby-label">Room code &mdash; share with your squad</div>
+      <div class="lobby-row">
+        <input id="lobby-room-code" class="lobby-code" readonly value="" />
+        <button class="btn lobby-btn" id="lobby-room-copy">Copy</button>
+      </div>
+    </div>
+    <div id="lobby-room-join" class="lobby-field" style="display:none;">
+      <div class="lobby-label">Enter the host's room code</div>
+      <div class="lobby-row">
+        <input id="lobby-room-input" class="lobby-code" placeholder="RAID" maxlength="8" />
+        <button class="btn lobby-btn" id="lobby-room-go">Join</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="lobby-squad" style="margin-top:12px;color:var(--ink);font-size:13px;letter-spacing:.05em;"></div>
+  <div id="lobby-status" class="hint" style="min-height:16px;margin-top:2px;"></div>
+
+  <div style="display:flex;gap:12px;align-items:center;margin-top:8px;">
+    <button class="btn" id="lobby-deploy" style="display:none;">Deploy raid</button>
+    <button class="btn lobby-back-btn" id="lobby-back">Back</button>
+  </div>
+
+  <!-- fallback: zero-dependency manual SDP copy-paste (no signaling server) -->
+  <details id="lobby-manual" class="lobby-manual">
+    <summary>No server? Connect manually</summary>
+    <div class="lobby-wrap" style="margin-top:10px;">
+      <div id="lobby-recv" class="lobby-field">
+        <div class="lobby-label" id="lobby-recv-label">Their code</div>
+        <textarea id="lobby-in" class="lobby-ta" placeholder="paste the other player's code"></textarea>
+        <button class="btn lobby-btn" id="lobby-go">Connect</button>
+      </div>
+      <div id="lobby-send" class="lobby-field">
+        <div class="lobby-label" id="lobby-send-label">Your code</div>
+        <textarea id="lobby-out" class="lobby-ta" readonly></textarea>
+        <button class="btn lobby-btn" id="lobby-copy">Copy code</button>
+      </div>
+    </div>
+  </details>
 </div>
 
 <script>

@@ -4,15 +4,17 @@ import { WEAPONS, WEAPON_ORDER } from "./weapons";
 
 const pct = (m: number): string => `${Math.round(m * 100)}%`;
 
+// Perks split into two kinds: run-wide multipliers (s.* — affect the whole party) and
+// personal stats (p.* — apply to the buying player). The buyer is passed in as `p`.
 export const UPGRADES: Upgrade[] = [
   {
     name: "Field Medic",
     desc: "+20 max integrity, +1 medkit",
-    apply: (s) => {
-      s.player.maxHp += 20;
-      s.player.medkits = Math.min(CONFIG.heal.maxMedkits, s.player.medkits + 1);
+    apply: (_s, p) => {
+      p.maxHp += 20;
+      p.medkits = Math.min(CONFIG.heal.maxMedkits, p.medkits + 1);
     },
-    preview: (s) => `integrity ${s.player.maxHp} → ${s.player.maxHp + 20}`,
+    preview: (_s, p) => `integrity ${p.maxHp} → ${p.maxHp + 20}`,
   },
   {
     name: "Hollow Points",
@@ -25,10 +27,10 @@ export const UPGRADES: Upgrade[] = [
   {
     name: "Adrenaline",
     desc: "+12% movement speed",
-    apply: (s) => {
-      s.player.speed *= 1.12;
+    apply: (_s, p) => {
+      p.speed *= 1.12;
     },
-    preview: (s) => `speed ${Math.round(s.player.speed)} → ${Math.round(s.player.speed * 1.12)}`,
+    preview: (_s, p) => `speed ${Math.round(p.speed)} → ${Math.round(p.speed * 1.12)}`,
   },
   {
     name: "Quick Hands",
@@ -41,21 +43,20 @@ export const UPGRADES: Upgrade[] = [
   {
     name: "First Aid Cache",
     desc: "+2 medkits",
-    apply: (s) => {
-      s.player.medkits = Math.min(CONFIG.heal.maxMedkits, s.player.medkits + 2);
+    apply: (_s, p) => {
+      p.medkits = Math.min(CONFIG.heal.maxMedkits, p.medkits + 2);
     },
-    preview: (s) =>
-      `medkits ${s.player.medkits} → ${Math.min(CONFIG.heal.maxMedkits, s.player.medkits + 2)}`,
+    preview: (_s, p) => `medkits ${p.medkits} → ${Math.min(CONFIG.heal.maxMedkits, p.medkits + 2)}`,
   },
   {
     name: "Bandolier",
     desc: "+50% spare ammo capacity, top off now",
-    apply: (s) => {
+    apply: (s, p) => {
       s.reserveMul *= 1.5;
       for (const id of WEAPON_ORDER) {
         const w = WEAPONS[id];
         if (!w || w.melee) continue;
-        s.player.reserve[id] = Math.round(w.reserveMax * s.reserveMul);
+        p.reserve[id] = Math.round(w.reserveMax * s.reserveMul);
       }
     },
     preview: (s) => `spare capacity ${pct(s.reserveMul)} → ${pct(s.reserveMul * 1.5)}`,
@@ -63,14 +64,14 @@ export const UPGRADES: Upgrade[] = [
   {
     name: "Scavenger",
     desc: "Full resupply — all magazines and spare ammo",
-    apply: (s) => {
+    apply: (s, p) => {
       for (const id of WEAPON_ORDER) {
         const w = WEAPONS[id];
         if (!w || w.melee) continue;
-        s.player.reserve[id] = Math.round(w.reserveMax * s.reserveMul);
-        s.player.mags[id] = w.mag;
+        p.reserve[id] = Math.round(w.reserveMax * s.reserveMul);
+        p.mags[id] = w.mag;
       }
-      s.player.ammo = WEAPONS[s.player.weapon]?.mag ?? s.player.ammo;
+      p.ammo = WEAPONS[p.weapon]?.mag ?? p.ammo;
     },
     preview: () => "all ammo → full",
   },

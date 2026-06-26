@@ -2,6 +2,7 @@ import { CONFIG } from "../config";
 import { Audio } from "../engine/audio";
 import { circlePush, circlePushFromSegment } from "../engine/geometry";
 import { len, rand } from "../engine/math";
+import { localPlayer, nearestPlayer } from "../engine/players";
 import type { State } from "../types";
 import { fxHurt, fxImpact } from "./fx";
 
@@ -10,7 +11,7 @@ const LUNGE_DUR = 0.3; // seconds a runner's dash lasts
 
 export function sysAI(state: State, dt: number): void {
   const Z = state.zombies;
-  const p = state.player;
+  const lp = localPlayer(state);
   const night = state.phase === "night";
 
   state.hash.clear();
@@ -22,8 +23,8 @@ export function sysAI(state: State, dt: number): void {
   const kbK = Math.exp(-CONFIG.feel.knockbackDecay * dt);
   const surroundR2 = CONFIG.horror.surroundRadius * CONFIG.horror.surroundRadius;
   const coneCos = Math.cos(CONFIG.flashlight.halfAngle);
-  const aimX = Math.cos(p.aim);
-  const aimY = Math.sin(p.aim);
+  const aimX = Math.cos(lp.aim);
+  const aimY = Math.sin(lp.aim);
   let near = 0;
   let lurking = 0;
 
@@ -33,23 +34,35 @@ export function sysAI(state: State, dt: number): void {
     if (z.flash > 0) z.flash -= dt;
     if (z.spawnT > 0) z.spawnT -= dt;
 
-    let dx = p.x - z.x;
-    let dy = p.y - z.y;
-    const dist = len(dx, dy) || 1;
-    dx /= dist;
-    dy /= dist;
-    if (dist * dist < surroundR2) {
+    // dread is measured from the LOCAL player's viewpoint (this client's own fear)
+    const ldx = lp.x - z.x;
+    const ldy = lp.y - z.y;
+    const ldist = len(ldx, ldy) || 1;
+    if (ldist * ldist < surroundR2) {
       near++;
-      if (dx * aimX + dy * aimY < coneCos) lurking++;
+      if ((ldx / ldist) * aimX + (ldy / ldist) * aimY < coneCos) lurking++;
     }
 
-    // aggro latches on once sensed (or always at night) → guarantees night clears
-    if (night || dist <= z.sense) z.chasing = true;
+    // steer toward the nearest living player (everyone is a target in co-op)
+    const target = nearestPlayer(state, z.x, z.y);
+    let dx = 0;
+    let dy = 0;
+    let dist = Number.POSITIVE_INFINITY;
+    if (target) {
+      dx = target.x - z.x;
+      dy = target.y - z.y;
+      dist = len(dx, dy) || 1;
+      dx /= dist;
+      dy /= dist;
+      // aggro latches on once sensed (or always at night) → guarantees night clears
+      if (night || dist <= z.sense) z.chasing = true;
+    }
+    const chasing = z.chasing && target !== null;
 
     // desired heading
     let hx: number;
     let hy: number;
-    if (z.chasing) {
+    if (chasing) {
       // shamble: wobble the heading a little so the chase isn't a dead-straight line
       const a = Math.sin(state.time * 3 + z.wob) * z.wander * 0.5;
       const c = Math.cos(a);
@@ -85,7 +98,7 @@ export function sysAI(state: State, dt: number): void {
     const vl = len(vx, vy) || 1;
 
     // lunge: runners periodically dash while chasing
-    if (z.chasing && z.lunge > 0) {
+    if (chasing && z.lunge > 0) {
       if (z.lungeT > 0) z.lungeT -= dt;
       else {
         z.lungeCd -= dt;
@@ -96,7 +109,7 @@ export function sysAI(state: State, dt: number): void {
       }
     }
     const emerge = z.spawnT > 0 ? 0.35 : 1;
-    const roamMul = z.chasing ? 1 : 0.45;
+    const roamMul = chasing ? 1 : 0.45;
     const lungeMul = z.lungeT > 0 ? z.lunge : 1;
     const spd = z.speed * emerge * roamMul * lungeMul;
     z.x += (vx / vl) * spd * dt + z.vx * dt;
@@ -124,19 +137,22 @@ export function sysAI(state: State, dt: number): void {
       }
     }
 
-    if (z.spawnT <= 0 && dist < z.r + p.r + 2 && z.attackCd <= 0) {
-      p.hp -= z.dmg;
+    if (target && z.spawnT <= 0 && dist < z.r + target.r + 2 && z.attackCd <= 0) {
+      target.hp -= z.dmg;
       z.attackCd = 1 / z.attackRate;
-      if (p.iframe <= 0) {
-        p.hitFlash = 0.28;
-        p.iframe = CONFIG.feel.hurtIframe;
-        state.flashT = Math.min(1, state.flashT + 0.7);
-        state.flashColor = [1, 0.18, 0.18];
-        state.cam.shake = Math.min(state.cam.shake + 8, 20);
-        fxHurt(state, p.x, p.y);
-        Audio.hurt();
+      if (target.iframe <= 0) {
+        target.hitFlash = 0.28;
+        target.iframe = CONFIG.feel.hurtIframe;
+        fxHurt(state, target.x, target.y);
+        // screen flash, camera shake and the pain grunt are the LOCAL player's own feedback
+        if (target.id === state.localId) {
+          state.flashT = Math.min(1, state.flashT + 0.7);
+          state.flashColor = [1, 0.18, 0.18];
+          state.cam.shake = Math.min(state.cam.shake + 8, 20);
+          Audio.hurt();
+        }
       }
-      if (p.hp <= 0) p.hp = 0;
+      if (target.hp <= 0) target.hp = 0;
     }
   }
 
@@ -171,11 +187,14 @@ export function sysAI(state: State, dt: number): void {
     const z = Z[i] as (typeof Z)[number];
     z.x += bx[i] as number;
     z.y += by[i] as number;
-    // the player is a solid obstacle: shove the zombie out (player stays put)
-    const pp = circlePush(z.x, z.y, z.r, p.x, p.y, p.r);
-    if (pp) {
-      z.x += pp.dx;
-      z.y += pp.dy;
+    // each player is a solid obstacle: shove the zombie out (players stay put)
+    for (const pl of state.players) {
+      if (pl.hp <= 0) continue;
+      const pp = circlePush(z.x, z.y, z.r, pl.x, pl.y, pl.r);
+      if (pp) {
+        z.x += pp.dx;
+        z.y += pp.dy;
+      }
     }
     // walls have the final say so nothing gets shoved through them
     resolveWalls(state, z);

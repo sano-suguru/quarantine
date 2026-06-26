@@ -1,5 +1,5 @@
 import { CONFIG } from "../config";
-import type { PickupDef, State } from "../types";
+import type { PickupDef, Player, State } from "../types";
 import { WEAPONS } from "./weapons";
 
 /**
@@ -13,7 +13,7 @@ export const PICKUP_TYPES: Record<string, PickupDef> = {
     color: [1.0, 0.82, 0.3],
     glow: [1.0, 0.7, 0.2],
     shape: "box",
-    apply: (s) => refillAmmo(s),
+    apply: (s, p) => refillAmmo(s, p),
   },
   health: {
     id: "health",
@@ -22,8 +22,7 @@ export const PICKUP_TYPES: Record<string, PickupDef> = {
     glow: [1.0, 0.2, 0.25],
     shape: "cross",
     // grants a carried medkit (deliberate, used later via H) rather than an instant heal
-    apply: (s) => {
-      const p = s.player;
+    apply: (_s, p) => {
       p.medkits = Math.min(CONFIG.heal.maxMedkits, p.medkits + 1);
     },
   },
@@ -33,8 +32,7 @@ export const PICKUP_TYPES: Record<string, PickupDef> = {
     color: [0.6, 0.95, 1.0],
     glow: [0.4, 0.85, 1.0],
     shape: "battery",
-    apply: (s) => {
-      const p = s.player;
+    apply: (_s, p) => {
       p.battery = Math.min(CONFIG.flashlight.batteryMax, p.battery + CONFIG.flashlight.batteryMax);
     },
   },
@@ -45,8 +43,7 @@ export const PICKUP_TYPES: Record<string, PickupDef> = {
  * reserveMax). If a melee weapon is equipped, the pistol is resupplied so the
  * pickup is never wasted.
  */
-function refillAmmo(s: State): void {
-  const p = s.player;
+function refillAmmo(s: State, p: Player): void {
   const cur = WEAPONS[p.weapon];
   const targetId = cur && !cur.melee ? p.weapon : "pistol";
   const w = WEAPONS[targetId];

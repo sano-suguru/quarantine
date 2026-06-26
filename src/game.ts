@@ -1,10 +1,13 @@
 import { CONFIG } from "./config";
-import { type StoreItem, effWeapon, storeItems } from "./data/arsenal";
+import { type StoreItem, effWeapon, salvageEarned, storeItems } from "./data/arsenal";
 import { PICKUP_TYPES } from "./data/pickups";
+import { PLAYER_COLORS } from "./data/players";
 import { UNLOCKABLE, WEAPONS, WEAPON_ORDER } from "./data/weapons";
 import { Audio } from "./engine/audio";
+import { anyAlive, localPlayer, nearestPlayer, revivePlayer } from "./engine/players";
 import { Renderer, SHAPE } from "./engine/renderer";
 import { addSalvage, buyUnlock, loadMeta } from "./meta";
+import { Net } from "./net/net";
 import { newState } from "./state";
 import { sysAI } from "./systems/ai";
 import { sysBullets } from "./systems/bullets";
@@ -14,7 +17,7 @@ import { sysFx } from "./systems/fx";
 import { sysPickups } from "./systems/pickups";
 import { sysPlayer } from "./systems/player";
 import { startDay, startNight, sysSiege } from "./systems/siege";
-import type { State } from "./types";
+import type { Player, State } from "./types";
 import { el, hide, show } from "./ui";
 
 let state: State = newState();
@@ -43,7 +46,7 @@ export function update(dt: number): void {
   state.time += sdt;
   sysPlayer(state, sdt);
   sysAI(state, sdt);
-  if (state.player.hp <= 0) {
+  if (!anyAlive(state)) {
     gameOver();
     return;
   }
@@ -63,7 +66,7 @@ export function update(dt: number): void {
 }
 
 function audioAmbience(dt: number): void {
-  const p = state.player;
+  const p = localPlayer(state);
   const hpf = p.hp / p.maxHp;
   const wd = effWeapon(state, p.weapon);
   // running dry feeds the dread too — the fear of an empty gun
@@ -99,36 +102,65 @@ function audioAmbience(dt: number): void {
   }
 }
 
+/**
+ * Client-side ambience: the client runs no sim, so it recomputes the dread inputs
+ * (surrounded/lurking, normally set by sysAI) from the snapshot world relative to the
+ * local player, then reuses audioAmbience for the dread/heartbeat/groan soundscape.
+ */
+export function clientAmbience(dt: number): void {
+  const lp = localPlayer(state);
+  const r2 = CONFIG.horror.surroundRadius * CONFIG.horror.surroundRadius;
+  const coneCos = Math.cos(CONFIG.flashlight.halfAngle);
+  const aimX = Math.cos(lp.aim);
+  const aimY = Math.sin(lp.aim);
+  let near = 0;
+  let lurking = 0;
+  for (const z of state.zombies) {
+    const dx = lp.x - z.x;
+    const dy = lp.y - z.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < r2) {
+      near++;
+      const d = Math.sqrt(d2) || 1;
+      if ((dx / d) * aimX + (dy / d) * aimY < coneCos) lurking++;
+    }
+  }
+  state.surrounded = near;
+  state.lurking = lurking;
+  audioAmbience(dt);
+}
+
 export function draw(): void {
   const R = Renderer;
-  const p = state.player;
+  const lp = localPlayer(state);
   const c = state.cam;
   const sh = c.shake;
   const camX = c.x + (Math.random() * 2 - 1) * sh;
   const camY = c.y + (Math.random() * 2 - 1) * sh;
-  // aimed flashlight: cone follows the mouse; flickers and dies with the battery
-  const flc = CONFIG.flashlight;
-  const intensity = flashlightIntensity(
-    p.battery / flc.batteryMax,
-    p.lightOn,
-    flc.lowThreshold,
-    flc.flickerDepth,
-    Math.random(),
-  );
   // daylight floods the arena; night sinks to near-black (flashlight essential)
+  const flc = CONFIG.flashlight;
   const ambient = state.phase === "day" ? CONFIG.siege.dayAmbient : CONFIG.siege.nightAmbient;
-  R.setLight(p.x, p.y);
-  R.setFlashlight(
-    Math.cos(p.aim),
-    Math.sin(p.aim),
+  R.setLightParams(
     Math.cos(flc.halfAngle),
     flc.range,
     ambient,
     flc.personalRadius,
     flc.personalMax,
-    intensity,
     flc.emissiveFloor,
   );
+  // one aimed flashlight per living player — teammates' cones light the dark too
+  R.beginLights();
+  for (const pl of state.players) {
+    if (pl.hp <= 0) continue;
+    const intensity = flashlightIntensity(
+      pl.battery / flc.batteryMax,
+      pl.lightOn,
+      flc.lowThreshold,
+      flc.flickerDepth,
+      Math.random(),
+    );
+    R.addLight(pl.x, pl.y, Math.cos(pl.aim), Math.sin(pl.aim), intensity);
+  }
   R.begin();
 
   // --- ground: blood decals ---
@@ -155,7 +187,8 @@ export function draw(): void {
     const wob = Math.sin(state.time * 7 + z.wob) * z.r * 0.05;
     const zx = z.x + wob;
     const zy = z.y + Math.cos(state.time * 6 + z.wob) * z.r * 0.04;
-    const face = Math.atan2(p.y - z.y, p.x - z.x);
+    const ft = nearestPlayer(state, z.x, z.y) ?? lp;
+    const face = Math.atan2(ft.y - z.y, ft.x - z.x);
     const fl = z.flash > 0 ? z.flash / 0.12 : 0;
     const col: [number, number, number] = [
       z.color[0] + (1 - z.color[0]) * fl,
@@ -260,31 +293,10 @@ export function draw(): void {
     R.circle(b.x, b.y, b.r, 1, 0.96, 0.8, 1);
   }
 
-  // --- player ---
-  const px = p.x + p.recoilX;
-  const py = p.y + p.recoilY;
-  R.glow(px, py, p.r * 3, TOXIC[0], TOXIC[1], TOXIC[2], 0.55);
-  R.circle(px, py, p.r, TOXIC[0], TOXIC[1], TOXIC[2], 1);
-  R.ring(px, py, p.r * 0.6, 0.05, 0.18, 0.05, 0.9);
-  if (p.hitFlash > 0) R.glow(px, py, p.r * 3.4, 1, 0.2, 0.2, Math.min(0.9, p.hitFlash * 3));
-  const bx = px + Math.cos(p.aim) * p.r * 0.9;
-  const by = py + Math.sin(p.aim) * p.r * 0.9;
-  R.rect(bx, by, p.r * 1.4, 6, p.aim, 0.85, 0.95, 0.8, 1);
-  if (p.muzzle > 0) {
-    const tx = px + Math.cos(p.aim) * p.r * 1.7;
-    const ty = py + Math.sin(p.aim) * p.r * 1.7;
-    R.glow(tx, ty, p.r * 1.6, 1, 0.9, 0.6, Math.min(1, p.muzzle * 18));
-  }
-  if (p.reloadT > 0) {
-    const wd = effWeapon(state, p.weapon);
-    const prog = 1 - p.reloadT / wd.reload;
-    R.rect(p.x, p.y - p.r - 12, 34 * prog, 4, 0, 1, 0.75, 0.2, 1);
-  }
-  // healing: green aura + progress bar (you're rooted and exposed while it fills)
-  if (p.healT > 0) {
-    const prog = 1 - p.healT / CONFIG.heal.duration;
-    R.glow(px, py, p.r * 3.4, 0.3, 1, 0.45, 0.4);
-    R.rect(p.x, p.y - p.r - 12, 34 * prog, 4, 0, 0.3, 1, 0.45, 1);
+  // --- players (local in TOXIC, teammates in their palette color + overhead HP) ---
+  for (const pl of state.players) {
+    if (pl.hp <= 0) drawDownedPlayer(R, pl);
+    else drawPlayer(R, pl, pl.id === state.localId);
   }
 
   // --- additive particles (sparks / rings) ---
@@ -315,6 +327,55 @@ export function draw(): void {
   }
 
   R.flush(camX, camY);
+}
+
+/** draw one player: body, gun, muzzle/reload/heal feedback; teammates get an overhead HP bar */
+function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
+  const col = isLocal
+    ? TOXIC
+    : (PLAYER_COLORS[pl.id % PLAYER_COLORS.length] as [number, number, number]);
+  const px = pl.x + pl.recoilX;
+  const py = pl.y + pl.recoilY;
+  R.glow(px, py, pl.r * 3, col[0], col[1], col[2], 0.55);
+  R.circle(px, py, pl.r, col[0], col[1], col[2], 1);
+  R.ring(px, py, pl.r * 0.6, 0.05, 0.18, 0.05, 0.9);
+  if (pl.hitFlash > 0) R.glow(px, py, pl.r * 3.4, 1, 0.2, 0.2, Math.min(0.9, pl.hitFlash * 3));
+  const bx = px + Math.cos(pl.aim) * pl.r * 0.9;
+  const by = py + Math.sin(pl.aim) * pl.r * 0.9;
+  R.rect(bx, by, pl.r * 1.4, 6, pl.aim, 0.85, 0.95, 0.8, 1);
+  if (pl.muzzle > 0) {
+    const tx = px + Math.cos(pl.aim) * pl.r * 1.7;
+    const ty = py + Math.sin(pl.aim) * pl.r * 1.7;
+    R.glow(tx, ty, pl.r * 1.6, 1, 0.9, 0.6, Math.min(1, pl.muzzle * 18));
+  }
+  if (pl.reloadT > 0) {
+    const wd = effWeapon(state, pl.weapon);
+    const prog = 1 - pl.reloadT / wd.reload;
+    R.rect(pl.x, pl.y - pl.r - 12, 34 * prog, 4, 0, 1, 0.75, 0.2, 1);
+  }
+  // healing: green aura + progress bar (you're rooted and exposed while it fills)
+  if (pl.healT > 0) {
+    const prog = 1 - pl.healT / CONFIG.heal.duration;
+    R.glow(px, py, pl.r * 3.4, 0.3, 1, 0.45, 0.4);
+    R.rect(pl.x, pl.y - pl.r - 12, 34 * prog, 4, 0, 0.3, 1, 0.45, 1);
+  }
+  // teammates: overhead HP bar + id tag so their state is readable at a glance
+  if (!isLocal) {
+    const f = Math.max(0, Math.min(1, pl.hp / pl.maxHp));
+    const w = pl.r * 1.8;
+    const yb = pl.y - pl.r - 10;
+    R.rect(pl.x, yb, w, 3, 0, 0, 0, 0, 0.5);
+    R.rect(pl.x - (w * (1 - f)) / 2, yb, w * f, 3, 0, 1 - f, 0.2 + 0.6 * f, 0.2, 0.95);
+    R.number(pl.x, yb - 8, pl.id + 1, 11, col[0], col[1], col[2], 0.9);
+  }
+}
+
+/** A downed player: a dim, additive ghost so allies can spot where someone fell even in
+ *  near-black night (a plain circle would be swallowed by the low ambient). No gun/HP bar. */
+function drawDownedPlayer(R: typeof Renderer, pl: Player): void {
+  const col = (PLAYER_COLORS[pl.id % PLAYER_COLORS.length] as [number, number, number]) ?? TOXIC;
+  R.glow(pl.x, pl.y, pl.r * 2.6, col[0], col[1], col[2], 0.4);
+  R.ring(pl.x, pl.y, pl.r * 0.9, col[0] * 0.6, col[1] * 0.6, col[2] * 0.6, 0.5);
 }
 
 /** draw a segment as an oriented rect of the given thickness */
@@ -395,7 +456,7 @@ function drawCaches(R: typeof Renderer): void {
 /* ----------------------------- HUD ------------------------------ */
 let lastWeapon = "";
 export function updateHUD(): void {
-  const p = state.player;
+  const p = localPlayer(state);
   const wd = effWeapon(state, p.weapon);
   const hpf = Math.max(0, p.hp) / p.maxHp;
   el("hpbar").style.width = `${100 * hpf}%`;
@@ -471,6 +532,14 @@ export function updateHUD(): void {
   const fl = el("flash");
   fl.style.opacity = String(Math.min(0.6, state.flashT));
   fl.style.background = `radial-gradient(circle at 50% 50%, transparent 40%, rgba(${Math.round(state.flashColor[0] * 255)},${Math.round(state.flashColor[1] * 255)},${Math.round(state.flashColor[2] * 255)},0.9) 100%)`;
+
+  // downed spectator banner (co-op): you're out until the next dawn
+  el("downed").classList.toggle("show", p.hp <= 0);
+
+  // pause overlay is state-driven (so a host pause shows on every client via the
+  // snapshot); the shop has its own overlay and also sets paused, so suppress it there.
+  if (state.paused && !state.inShop) show("pause");
+  else hide("pause");
 }
 
 /* --------------------------- FLOW / UI -------------------------- */
@@ -509,14 +578,22 @@ export function startGame(): void {
   hide("start");
   hide("over");
   hide("shop");
+  hide("lobby");
   show("hud");
   buildWeaponSlots();
   startDay(state);
   announce("DAY", state.day);
 }
 
-/** Player chooses to bring the night early, skipping the rest of the day. */
+/**
+ * Bring the night early. On a client this is a request to the host (idempotent there);
+ * on host/single it runs the authoritative transition directly.
+ */
 export function startNightNow(): void {
+  if (Net.mode === "client") {
+    Net.client?.requestNight();
+    return;
+  }
   if (!state.running || state.paused || state.phase !== "day") return;
   startNight(state);
   announce("NIGHT", state.day);
@@ -526,16 +603,35 @@ export function startNightNow(): void {
 let shopItems: StoreItem[] = [];
 let shopSel = 0;
 let shopEls: HTMLElement[] = [];
+let shopSig = ""; // store-list signature; a change means the DOM must be rebuilt
 
+/** id+price per item — changes when the set OR a level/price changes (Mk2 → Mk3). */
+const shopSigOf = (items: StoreItem[]): string => items.map((x) => `${x.id}:${x.price}`).join("|");
+
+/** Authoritative: open the arsenal between nights (host/single sim). The overlay itself
+ *  is shown by syncShopUI from `state.inShop`, so clients open it from the snapshot. */
 export function openShop(): void {
+  state.inShop = true;
   state.paused = true;
   Audio.setDread(0.1);
+  // dawn revival: anyone who fell during the night comes back for the shop + next day
+  // (a survivor cleared the wave to reach here). Gear is kept; see revivePlayer.
+  for (const p of state.players) if (p.hp <= 0) revivePlayer(state, p);
   resupply();
-  shopItems = storeItems(state);
-  shopSel = 0;
-  el("shop-wave").textContent = String(state.day);
-  renderShop();
-  show("shop");
+}
+
+/**
+ * Apply a purchase host-authoritatively. `buyer` is the player who paid (perks with
+ * personal stats apply to them). Returns false (and changes nothing) if the shop is
+ * closed, the buyer is gone (dead/left), or the item can't be afforded.
+ */
+export function applyBuy(s: State, itemId: string, buyer: Player | undefined): boolean {
+  if (!s.inShop || !buyer) return false;
+  const it = storeItems(s).find((x) => x.id === itemId);
+  if (!it || !it.canBuy(s)) return false;
+  s.money -= it.price;
+  it.buy(s, buyer);
+  return true;
 }
 
 function renderShop(): void {
@@ -563,55 +659,125 @@ function highlightShop(): void {
 }
 
 export function shopMove(dir: number): void {
-  if (!shopVisible() || shopItems.length === 0) return;
+  if (!state.inShop || shopItems.length === 0) return;
   shopSel = (shopSel + dir + shopItems.length) % shopItems.length;
   Audio.ui(false);
   highlightShop();
 }
 
-/** Buy one item; prices/levels can change, so the list is rebuilt after. */
+/**
+ * Buy the item at index `i`. On a client this just ships a request to the host (money,
+ * levels and re-render arrive via the snapshot); on host/single it applies authoritatively
+ * and rebuilds the list locally (prices/levels can change).
+ */
 export function buyItem(i: number): void {
-  if (!shopVisible()) return;
+  if (!state.inShop) return;
   const it = shopItems[i];
-  if (!it || !it.canBuy(state)) return;
-  state.money -= it.price;
-  it.buy(state);
-  Audio.ui(true);
-  shopItems = storeItems(state);
-  if (shopSel >= shopItems.length) shopSel = Math.max(0, shopItems.length - 1);
-  renderShop();
+  if (!it) return;
+  if (Net.mode === "client") {
+    Net.client?.requestBuy(it.id);
+    Audio.ui(true);
+    return;
+  }
+  if (applyBuy(state, it.id, localPlayer(state))) {
+    Audio.ui(true);
+    shopItems = storeItems(state);
+    shopSig = shopSigOf(shopItems);
+    if (shopSel >= shopItems.length) shopSel = Math.max(0, shopItems.length - 1);
+    renderShop();
+  } else {
+    Audio.ui(false);
+  }
 }
 
 export function shopBuySelected(): void {
-  if (shopVisible()) buyItem(shopSel);
+  if (state.inShop) buyItem(shopSel);
 }
 
-/** Leave the arsenal and start the next day. */
+/**
+ * Leave the arsenal and start the next day. Client → request to the host (idempotent);
+ * host/single → authoritative transition. The overlay is hidden by syncShopUI.
+ */
 export function shopDeploy(): void {
-  if (!shopVisible()) return;
+  if (Net.mode === "client") {
+    Net.client?.requestDeploy();
+    return;
+  }
+  if (!state.inShop) return;
   Audio.ui(true);
-  hide("shop");
+  state.inShop = false;
   state.paused = false;
   state.day++;
   startDay(state);
   announce("DAY", state.day);
 }
 
-export function gameOver(): void {
+/**
+ * Reconcile the shop overlay with `state.inShop` every frame (all modes). Clients open it
+ * straight from the snapshot. While open we avoid tearing down the DOM each frame: only a
+ * change in the item id-list triggers a full re-render; otherwise we cheaply refresh the
+ * credits text and per-row affordance so hover/selection survive.
+ */
+export function syncShopUI(): void {
+  const open = state.inShop;
+  const shown = shopVisible();
+  if (open && !shown) {
+    shopItems = storeItems(state);
+    shopSig = shopSigOf(shopItems);
+    shopSel = 0;
+    el("shop-wave").textContent = String(state.day);
+    renderShop();
+    show("shop");
+    return;
+  }
+  if (!open) {
+    if (shown) hide("shop");
+    return;
+  }
+  // open && shown: rebuild only if the item set changed, else a light refresh
+  const items = storeItems(state);
+  const sig = shopSigOf(items);
+  if (sig !== shopSig) {
+    shopItems = items;
+    shopSig = sig;
+    if (shopSel >= shopItems.length) shopSel = Math.max(0, shopItems.length - 1);
+    renderShop();
+  } else {
+    el("shop-credits").textContent = String(state.money);
+    shopEls.forEach((d, i) => {
+      const it = shopItems[i];
+      if (it) d.classList.toggle("off", !it.canBuy(state));
+    });
+  }
+}
+
+/** End the run on this machine: bank our salvage share and show the debrief. Shared by
+ *  the host/single gameOver and the client's gameover-event handler. */
+function endRun(salvage: number, day: number, kills: number, money: number): void {
   state.running = false;
   Audio.gameOver();
   Audio.stopDread();
-  // bank SALVAGE for permanent unlocks (meta-progression)
-  const gained = Math.round(
-    state.day * CONFIG.arsenal.salvagePerDay + state.kills * CONFIG.arsenal.salvagePerKill,
-  );
-  addSalvage(gained);
-  el("over-wave").textContent = String(state.day);
-  el("over-kills").textContent = String(state.kills);
-  el("over-money").textContent = String(state.money);
-  el("over-salvage").textContent = String(gained);
+  addSalvage(salvage); // banks to THIS machine's localStorage (each player keeps their own)
+  el("over-wave").textContent = String(day);
+  el("over-kills").textContent = String(kills);
+  el("over-money").textContent = String(money);
+  el("over-salvage").textContent = String(salvage);
   hide("hud");
   show("over");
+}
+
+export function gameOver(): void {
+  // the run's SALVAGE is a party pot, split evenly (floor so co-op never over-banks);
+  // each player banks their own share to their own localStorage via the gameover event.
+  const total = salvageEarned(state.day, state.kills);
+  const share = Math.floor(total / state.players.length);
+  Net.host?.broadcastGameOver(share, state.day, state.kills, state.money);
+  endRun(share, state.day, state.kills, state.money);
+}
+
+/** Apply the host's gameover event: bank our share + show the debrief on this client. */
+export function clientGameOver(salvage: number, day: number, kills: number, money: number): void {
+  endRun(salvage, day, kills, money);
 }
 
 /** Back to the title screen (so the player can spend SALVAGE before redeploying). */
@@ -654,10 +820,11 @@ function unlockWeapon(id: string, price: number): void {
 }
 
 export function togglePause(): void {
-  if (!state.running || shopVisible()) return;
+  if (Net.mode === "client") return; // MVP: only the host pauses the shared sim
+  if (!state.running || state.inShop) return;
   state.paused = !state.paused;
-  if (state.paused) show("pause");
-  else hide("pause");
+  // the overlay itself is driven by state.paused in updateHUD (so a host pause shows on
+  // every client via the snapshot) — no imperative show/hide here.
 }
 
 export function shopVisible(): boolean {
@@ -666,7 +833,8 @@ export function shopVisible(): boolean {
 
 /** Context interact hint for the HUD: repair a barricade (priority) or search a cache. */
 function interactPrompt(): string | null {
-  const p = state.player;
+  const p = localPlayer(state);
+  if (p.hp <= 0) return null; // downed: spectating, no interaction
   const reach = CONFIG.siege.interactRadius;
   for (const b of state.barricades) {
     if (b.hp >= b.maxHp) continue;
@@ -687,31 +855,49 @@ function interactPrompt(): string | null {
 
 /** Safe-room resupply: top up spare ammo, the battery, and medkits between waves. */
 function resupply(): void {
-  const p = state.player;
   const refill = CONFIG.ammo.shopRefillMags;
-  for (const id of WEAPON_ORDER) {
-    const w = WEAPONS[id];
-    if (!w || w.melee) continue;
-    const cap = Math.round(w.reserveMax * state.reserveMul);
-    p.reserve[id] = Math.min(cap, (p.reserve[id] ?? 0) + Math.round(w.mag * refill));
+  for (const p of state.players) {
+    for (const id of WEAPON_ORDER) {
+      const w = WEAPONS[id];
+      if (!w || w.melee) continue;
+      const cap = Math.round(w.reserveMax * state.reserveMul);
+      p.reserve[id] = Math.min(cap, (p.reserve[id] ?? 0) + Math.round(w.mag * refill));
+    }
+    p.battery = Math.min(CONFIG.flashlight.batteryMax, p.battery + CONFIG.flashlight.shopBattery);
+    p.medkits = Math.min(CONFIG.heal.maxMedkits, p.medkits + CONFIG.heal.shopMedkits);
   }
-  p.battery = Math.min(CONFIG.flashlight.batteryMax, p.battery + CONFIG.flashlight.shopBattery);
-  p.medkits = Math.min(CONFIG.heal.maxMedkits, p.medkits + CONFIG.heal.shopMedkits);
 }
 
-/** Toggle the flashlight (off = no battery drain, but near-blind). */
-export function toggleFlashlight(): void {
-  if (!state.running || state.paused) return;
-  state.player.lightOn = !state.player.lightOn;
-  Audio.click();
+// Flashlight toggle (F) and medkit use (H) are player actions driven through
+// PlayerInput and applied in sysPlayer (so they route to the right player in MP).
+
+/**
+ * Client-mode boot: a renderable run-state with NO local sim (the host drives the
+ * world via snapshots). Phase/day/economy all arrive over the wire; we just start a
+ * fresh state for the static map (walls/barricades/caches are identical code) and show
+ * the HUD. localId + owned/wlevel are filled in by the host's Hello.
+ */
+export function startClientGame(): void {
+  state = newState();
+  state.running = true;
+  lastWeapon = "";
+  Audio.resume();
+  hide("start");
+  hide("over");
+  hide("shop");
+  hide("lobby");
+  show("hud");
+  buildWeaponSlots();
 }
 
-/** Use a carried medkit: a deliberate, rooted heal-over-time. */
-export function useMedkit(): void {
-  if (!state.running || state.paused) return;
-  const p = state.player;
-  if (p.medkits <= 0 || p.healT > 0 || p.hp >= p.maxHp) return;
-  p.medkits--;
-  p.healT = CONFIG.heal.duration;
-  Audio.heal();
+/** Apply the host's Hello: adopt our player id and the host's weapon ownership/levels. */
+export function clientApplyHello(
+  localId: number,
+  owned: Record<string, boolean>,
+  wlevel: Record<string, number>,
+): void {
+  state.localId = localId;
+  state.owned = owned;
+  state.wlevel = wlevel;
+  buildWeaponSlots();
 }

@@ -1,3 +1,5 @@
+import type { PlayerInput } from "./net/playerInput";
+
 export interface WeaponDef {
   name: string;
   dmg: number;
@@ -51,12 +53,21 @@ export interface EnemyType {
 export interface Upgrade {
   name: string;
   desc: string;
-  apply: (s: State) => void;
-  /** optional "current → new" preview string for the shop card */
-  preview?: (s: State) => string;
+  /** mutate run-wide multipliers and/or the buying player `p` */
+  apply: (s: State, p: Player) => void;
+  /** optional "current → new" preview string for the shop card (p = local buyer) */
+  preview?: (s: State, p: Player) => string;
 }
 
 export interface Player {
+  /** stable per-player id (host-assigned); local player is state.localId */
+  id: number;
+  /** display name shown above remote players */
+  name: string;
+  /** per-player input snapshot — the only input source sysPlayer reads */
+  input: PlayerInput;
+  /** semi-auto edge latch: blocks auto-repeat while the fire button is held */
+  firedThisHold: boolean;
   x: number;
   y: number;
   r: number;
@@ -93,6 +104,8 @@ export interface Player {
 }
 
 export interface Zombie {
+  /** stable id for network snapshot matching (host-authoritative; positive) */
+  id: number;
   x: number;
   y: number;
   r: number;
@@ -130,6 +143,8 @@ export interface Zombie {
 }
 
 export interface Bullet {
+  /** stable id for snapshot matching; host bullets are positive, client-predicted ghosts negative */
+  id: number;
   x: number;
   y: number;
   px: number;
@@ -153,12 +168,14 @@ export interface PickupDef {
   glow: [number, number, number];
   /** draw hint: "box" | "cross" */
   shape: string;
-  /** mutates state when collected (reads the current weapon for ammo top-ups) */
-  apply: (s: State) => void;
+  /** mutates the collecting player `p` when picked up (reads their weapon for ammo top-ups) */
+  apply: (s: State, p: Player) => void;
 }
 
 /** A collectible instance on the ground. Type/behaviour lives in PICKUP_TYPES, referenced by defId. */
 export interface Pickup {
+  /** stable id for network snapshot matching (host-authoritative; positive) */
+  id: number;
   x: number;
   y: number;
   defId: string;
@@ -262,8 +279,16 @@ export interface Cam {
 export interface State {
   running: boolean;
   paused: boolean;
+  /** between-nights arsenal shop is open (host-authoritative; synced in snapshots so
+   *  clients show the same shop overlay). Distinct from `paused` (manual pause). */
+  inShop: boolean;
   time: number;
-  player: Player;
+  /** monotonic id allocator for zombies/bullets/pickups (host-authoritative) */
+  nextId: number;
+  /** all players in the session (1 in single-player); see localId for "me" */
+  players: Player[];
+  /** id of the player controlled on this client */
+  localId: number;
   zombies: Zombie[];
   bullets: Bullet[];
   pickups: Pickup[];
@@ -301,7 +326,6 @@ export interface State {
   surrounded: number;
   /** nearby zombies that are outside the flashlight cone (behind / in the dark) */
   lurking: number;
-  _firedThisHold: boolean;
 }
 
 /** Structural type so state.ts need not import the engine class directly. */

@@ -1,5 +1,5 @@
 import { CONFIG } from "../config";
-import type { State, WeaponDef } from "../types";
+import type { Player, State, WeaponDef } from "../types";
 import { UPGRADES } from "./upgrades";
 import { WEAPONS, WEAPON_ORDER } from "./weapons";
 
@@ -13,6 +13,11 @@ export function scaledMag(base: number, level: number): number {
 /** credits to go from `level` to `level + 1` */
 export function levelCost(level: number): number {
   return CONFIG.arsenal.levelBaseCost + level * CONFIG.arsenal.levelStep;
+}
+
+/** SALVAGE banked for a run lasting `day` nights with `kills` total kills. */
+export function salvageEarned(day: number, kills: number): number {
+  return Math.round(day * CONFIG.arsenal.salvagePerDay + kills * CONFIG.arsenal.salvagePerKill);
 }
 
 /**
@@ -33,7 +38,9 @@ export interface StoreItem {
   desc: string;
   price: number;
   canBuy: (s: State) => boolean;
-  buy: (s: State) => void;
+  /** apply the purchase. `buyer` is the player who paid (perks affecting personal
+   *  stats apply to them; run-wide perks/weapon levels ignore it). */
+  buy: (s: State, buyer: Player) => void;
 }
 
 /** Build the store list for the current run: weapon upgrades + field perks. */
@@ -66,7 +73,7 @@ export function storeItems(state: State): StoreItem[] {
       desc: u.desc,
       price: a.perkCost,
       canBuy: (s) => s.money >= a.perkCost,
-      buy: (s) => u.apply(s),
+      buy: (s, buyer) => u.apply(s, buyer),
     });
   }
 

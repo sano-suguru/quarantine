@@ -11,6 +11,9 @@ import type { Segment } from "../types";
 const HW = 180;
 const HH = 150;
 
+/** Default spawn / respawn point, inside HOME and clear of the walls. */
+export const HOME_SPAWN = { x: 0, y: 80 };
+
 export const HOME: { walls: Segment[]; openings: Segment[] } = {
   walls: [
     { x1: -HW, y1: -HH, x2: -50, y2: -HH },

@@ -7,6 +7,8 @@
   "scripts": {
     "prepare": "lefthook install",
     "dev": "vite",
+    "signal": "cd signaling && bunx wrangler dev",
+    "dev:coop": "concurrently -k -n game,signal -c green,cyan \"vite\" \"bun run signal\"",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -19,6 +21,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "concurrently": "^10.0.3",
     "lefthook": "^2.1.9",
     "typescript": "^5.7.2",
     "vite": "^6.0.0",

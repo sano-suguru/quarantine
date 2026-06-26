@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG } from "../config";
-import { levelCost, scaledDmg, scaledMag } from "./arsenal";
+import { levelCost, salvageEarned, scaledDmg, scaledMag } from "./arsenal";
 
 describe("weapon level scaling", () => {
   it("is the base value at level 0", () => {
@@ -21,5 +21,15 @@ describe("weapon level scaling", () => {
 
   it("level cost rises by the step each level", () => {
     expect(levelCost(1) - levelCost(0)).toBe(CONFIG.arsenal.levelStep);
+  });
+});
+
+describe("salvage earned per run", () => {
+  const a = CONFIG.arsenal;
+  it("is zero for a run that earned nothing", () => {
+    expect(salvageEarned(0, 0)).toBe(0);
+  });
+  it("sums day + kill contributions, rounded", () => {
+    expect(salvageEarned(3, 20)).toBe(Math.round(3 * a.salvagePerDay + 20 * a.salvagePerKill));
   });
 });

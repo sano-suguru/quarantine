@@ -66,8 +66,12 @@ export function killZombie(state: State, idx: number): void {
   const big = z.type === "brute";
   fxKill(state, z.x, z.y, z.color, z.glow, big);
   Audio.kill(big);
-  state.cam.shake = Math.min(state.cam.shake + (big ? 9 : 3), 20);
-  state.hitstopT = Math.max(state.hitstopT, CONFIG.feel.hitstop * (big ? 1.8 : 1));
+  // hit-stop slows the WHOLE sim and cam-shake is a local-view kick — in co-op these
+  // would slow/shake the shared host view on every player's kill, so apply solo only
+  if (state.players.length === 1) {
+    state.cam.shake = Math.min(state.cam.shake + (big ? 9 : 3), 20);
+    state.hitstopT = Math.max(state.hitstopT, CONFIG.feel.hitstop * (big ? 1.8 : 1));
+  }
   state.money += z.bounty;
   state.kills++;
   dropFromKill(state, z.x, z.y, big);

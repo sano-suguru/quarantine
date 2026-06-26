@@ -6,6 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 QUARANTINE is a top-down **day/night siege survival-horror** built on a custom WebGL2 engine. The simulation is fixed-timestep and rendered with a single instanced draw call. The core loop: by **day** you explore POIs, loot caches, and repair barricades around your shelter; by **night** you survive a zombie horde; on death you bank **SALVAGE** to permanently unlock weapons across runs (meta-progression). The codebase is **data-driven by design** — adding a weapon, enemy, upgrade, pickup, or tuning the difficulty curve means adding/editing a data entry under `src/data/` (or a constant in `src/config.ts`), not touching the engine or systems.
 
+## Design principles
+
+Two non-negotiables that shape how to work here:
+
+- **Feel-first, playtest-verified.** This is a horror game; fear and game-feel (the "juice") are the product. Anything touching feel — movement, firing, camera, audio/dread, lighting, netcode latency — is **not done until it's been played and felt**, not just compiled and tested. State results honestly; never claim a feel change works without it having been exercised.
+- **Data-driven, zero special-case debt.** New content/behavior rides the existing data tables and config (`src/data/`, `CONFIG`) and the established system seams — don't bolt on bespoke code paths or one-off branches. If something doesn't fit the existing mechanism, extend the mechanism rather than carve an exception.
+
 ## Toolchain
 
 - **Bun** — package manager + script runner (`bun install`, `bun run <script>`).
@@ -17,7 +24,10 @@ QUARANTINE is a top-down **day/night siege survival-horror** built on a custom W
 
 ```bash
 bun install            # install deps (run `bun pm trust @biomejs/biome` once if postinstall is blocked)
-bun run dev            # Vite dev server at http://localhost:5173 (HMR)
+bun run dev            # Vite dev server at http://localhost:5173 (HMR). Single-player + manual-SDP co-op need nothing else.
+bun run dev:coop       # game (Vite) + signaling relay (wrangler dev) together — needed only for ROOM-CODE co-op.
+                       #   one-time: `cd signaling && bun install`. Ctrl-C stops both.
+bun run signal         # just the signaling relay (cd signaling && wrangler dev → ws://127.0.0.1:8787)
 bun run build          # tsc --noEmit && vite build  → dist/
 bun run preview        # serve the production build
 bun run typecheck      # tsc --noEmit
@@ -86,3 +96,35 @@ Entry: `index.html` (markup + CSS) loads `src/main.ts` as a module.
 - Coordinates are world-space; camera/grid convert to clip space in the shaders. Y is flipped in the vertex shader (`-clip.y`).
 - Tune gameplay through the `src/data/` tables and `CONFIG`, not the systems.
 - Upgrades mutate `state`, so data types are intentionally mutable (no `as const`).
+
+## Multiplayer (co-op)
+
+2–4 player co-op PvE, **method C = host-as-peer (listen server)**. WebRTC DataChannel P2P; **one player's browser is the authoritative host** (no dedicated game server). Only the host runs `update()`; clients don't re-run the sim — they **predict their own player and interpolate snapshots**. Because clients never re-simulate, **no RNG seeding is needed**. Feel-first: own player/bullets are predicted, others/enemies interpolated, hit SFX/blood/kills re-derived by the client from snapshot diffs. Two DataChannels per peer: `snap` (unreliable/unordered, latest-wins world snapshots) and `rel` (reliable/ordered: input, hello, co-op events).
+
+Co-op spans host-authoritative shop/economy, death/spectate/dawn-respawn, gameOver + salvage sync, and room-code auto-connect. Systems stay **net-agnostic** — they communicate via state + events, never importing net code.
+
+- **`src/net/`** — the networking layer (kept out of `systems/`):
+  - `transport.ts` — `PeerLink` (one `RTCPeerConnection` + the two channels) and manual-SDP helpers `createHostLink`/`createClientLink` (non-trickle ICE: wait for gathering, ship one SDP code). `ICE` config is read from `CONFIG.net.iceServers`.
+  - `host.ts` — `Host`: holds N `PeerLink`s (hub & spoke), assigns pids, sends Hello + `addPlayer` on open, applies each peer's input/buy/deploy/nightStart, `broadcast(tick)` + `broadcastGameOver`.
+  - `client.ts` — `Client`: buffers snapshots, interpolates remote entities at `now - interpDelay`, predicts the local player (`integrateMovement`) and reconciles on each snapshot, re-derives hit/kill/hurt fx + audio from snapshot diffs, predicts firing feel + ghost tracers.
+  - `snapshot.ts` — binary `encode`/`decode` (int16-quantized positions, type indices, id-matched), `captureSnapshot`/`applySnapshot`, `lerpSnapshots`. **Full snapshots only — delta compression not implemented** (≤16KB even with ~60 zombies; revisit if bandwidth bites).
+  - `signaling.ts` — room-code auto-connect: `hostRoom`/`joinRoom` wrap the transport helpers and carry the SDP codes over a WebSocket relay. ws/wss chosen from `location.protocol`.
+  - `events.ts` — `CoopEvent` (client→host: `buy`/`deploy`/`nightStart`) and `HostEvent` (host→client: `gameover`). `net.ts` — `NetMsg` union + the `Net` mode/host/client singleton.
+  - `playerInput.ts` (serializable per-player input), `localInput.ts` (the only DOM/Input boundary; returns empty input when the local player is dead), `ticker.ts` (Blob Web Worker clock so the host keeps simming + broadcasting while its tab is backgrounded), `ghost.ts` (pure `advanceGhosts` for visual-only predicted tracers).
+- **`src/engine/players.ts`** — `players[]` helpers: `makePlayer`/`localPlayer`/`nearestPlayer`/`cameraTarget` (spectate a teammate while down)/`anyAlive`/`addPlayer`/`removePlayer`/`revivePlayer` (dawn respawn).
+- **`signaling/`** — Cloudflare Worker + Durable Object signaling relay (`room.ts`, `wrangler.toml`, `README.md`). Per-code `idFromName` routing (room codes upper-cased), relays offer/answer host↔client. **SQLite-backed DO class** (`new_sqlite_classes`) so it runs on the free Workers plan; **Hibernation deliberately NOT used** (it would discard the in-memory socket map between idle signaling messages). Host close → `hostgone`. Excluded from the main tsc/biome/build (own `tsconfig.json`).
+
+### Run modes
+- `bun run dev` — game only (single-player + manual-SDP co-op need nothing else).
+- `bun run dev:coop` — game (Vite) + signaling (`wrangler dev`) together via `concurrently`; needed for room-code co-op. One-time: `cd signaling && bun install`.
+- `bun run signal` — signaling relay only (`ws://127.0.0.1:8787`).
+
+The three frame paths in `main.ts`: **single** runs `update()` in rAF; **host** runs `update()` + `broadcast` on the worker ticker (rAF only draws); **client** sends input + renders interpolated/predicted snapshots (no `update()`). Single-player must stay byte-for-byte unchanged when touching co-op code.
+
+### Networking conventions
+- Host-authoritative everything. Clients send intent (input + reliable co-op events); the host validates and applies once (idempotent guards on deploy/nightStart). Buy routes the buyer by the requesting peer's pid (`StoreItem.buy(s, buyer)`).
+- Shared run state lives directly on `state` (money/kills/dmgMul/fireRateMul/reserveMul/owned/wlevel); per-player gear (ammo/reserve/mags/medkits/weapon/battery/speed) lives on `Player` and is synced in snapshots.
+- Lobby (`wireCoop` in `main.ts` + `#lobby` in `index.html`): room code is primary; manual SDP is a `<details>` fallback that hides the room-code UI while open. Squad count comes from `host.connected`.
+
+### Deploy
+The signaling Worker deploys via **GitHub Actions only** (`.github/workflows/deploy-signaling.yml`), never a local `wrangler deploy`. The workflow is `workflow_dispatch`-only and requires a GitHub remote plus `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` repo secrets; after deploying, point `CONFIG.net.signalUrl` at the Worker host. NAT reality: home↔home connects on STUN alone; symmetric NAT/CGNAT/mobile need a TURN entry in `CONFIG.net.iceServers` (no code change); corporate SASE/SWG (Netskope/Zscaler) typically blocks WebRTC → personal devices only. The game itself can be served from the same Worker via Static Assets (one origin) or a separate Pages deploy.

@@ -1,29 +1,36 @@
 #version 300 es
 precision mediump float;
+#define MAX_LIGHTS 4
 in vec2 v_local; in vec4 v_color; in float v_shape; in vec2 v_world;
-uniform vec2 u_player;   // flashlight origin (player)
-uniform vec2 u_aim;      // normalized aim direction
-uniform vec3 u_cone;     // x: cos(halfAngle), y: range, z: ambient floor
-uniform vec2 u_personal; // x: radius, y: max brightness of the dim pool
-uniform float u_intensity; // cone brightness (battery / flicker), 0 = off
+uniform int u_lightCount;              // active flashlights (one per player)
+uniform vec2 u_lightPos[MAX_LIGHTS];   // each light's world origin
+uniform vec2 u_lightAim[MAX_LIGHTS];   // each light's normalized aim direction
+uniform float u_lightInt[MAX_LIGHTS];  // each cone's brightness (battery/flicker), 0 = off
+uniform vec3 u_cone;     // shared: x: cos(halfAngle), y: range, z: ambient floor
+uniform vec2 u_personal; // shared: x: radius, y: max brightness of the dim pool
 uniform float u_emissive;  // darkness floor for this pass (0 normal, >0 additive)
 out vec4 frag;
 
 /* shape flags: 0 rect, 1 circle, 2 soft glow, 3 ring, 4 triangle, 5 hexagon */
 
-// how lit a world point is: a dim personal pool + the aimed flashlight cone
+// how lit a world point is: ambient + the brightest of every player's pool/cone
 float lightAt(vec2 w){
-  vec2 d = w - u_player;
-  float dist = length(d);
-  // dim bubble right around the player so your feet aren't pitch black
-  float pool = smoothstep(u_personal.x, u_personal.x * 0.3, dist) * u_personal.y;
-  // aimed cone: angle gate * distance falloff * intensity
-  vec2 dir = dist > 1e-3 ? d / dist : u_aim;
-  float ca = dot(dir, u_aim);
-  float edge = smoothstep(u_cone.x, mix(u_cone.x, 1.0, 0.35), ca);
-  float reach = smoothstep(u_cone.y, u_cone.y * 0.25, dist);
-  float cone = edge * reach * u_intensity;
-  return clamp(u_cone.z + max(pool, cone), 0.0, 1.0);
+  float best = 0.0;
+  for(int i = 0; i < MAX_LIGHTS; i++){
+    if(i >= u_lightCount) break;
+    vec2 d = w - u_lightPos[i];
+    float dist = length(d);
+    // dim bubble right around each player so feet aren't pitch black
+    float pool = smoothstep(u_personal.x, u_personal.x * 0.3, dist) * u_personal.y;
+    // aimed cone: angle gate * distance falloff * intensity
+    vec2 dir = dist > 1e-3 ? d / dist : u_lightAim[i];
+    float ca = dot(dir, u_lightAim[i]);
+    float e = smoothstep(u_cone.x, mix(u_cone.x, 1.0, 0.35), ca);
+    float reach = smoothstep(u_cone.y, u_cone.y * 0.25, dist);
+    float cone = e * reach * u_lightInt[i];
+    best = max(best, max(pool, cone));
+  }
+  return clamp(u_cone.z + best, 0.0, 1.0);
 }
 
 // regular hexagon signed distance (negative inside), p/r in local space

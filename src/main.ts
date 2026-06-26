@@ -1,26 +1,39 @@
 import { CONFIG } from "./config";
 import { Audio } from "./engine/audio";
+import { localPlayer } from "./engine/players";
 import { Renderer } from "./engine/renderer";
 import {
   buyItem,
+  clientAmbience,
   draw,
   getState,
   renderArsenal,
   shopBuySelected,
   shopDeploy,
   shopMove,
-  shopVisible,
   startGame,
   startNightNow,
+  syncShopUI,
   toTitle,
-  toggleFlashlight,
   togglePause,
   update,
   updateHUD,
-  useMedkit,
 } from "./game";
 import { Input } from "./input";
-import { el } from "./ui";
+import { Client } from "./net/client";
+import { Host } from "./net/host";
+import { sampleLocalInput } from "./net/localInput";
+import { Net } from "./net/net";
+import { hostRoom, joinRoom } from "./net/signaling";
+import { startTicker } from "./net/ticker";
+import { createClientLink, createHostLink } from "./net/transport";
+import { sysCamera } from "./systems/camera";
+import { sysFx } from "./systems/fx";
+import { el, hide, show } from "./ui";
+
+// host lobby gate: host builds the world on "Host co-op" but the sim stays frozen
+// (no day countdown / no spawns) until the host presses Start — see wireCoop()/frame().
+let hostStarted = false;
 
 function main(): void {
   const canvas = el<HTMLCanvasElement>("game");
@@ -31,6 +44,7 @@ function main(): void {
   el("restartBtn").onclick = toTitle;
   el("deployBtn").onclick = shopDeploy;
   renderArsenal(); // populate the title-screen arsenal panel on first load
+  wireCoop();
 
   const cross = el("cross");
   const muteTag = el("mute");
@@ -46,7 +60,7 @@ function main(): void {
       refreshMute();
       return;
     }
-    if (shopVisible()) {
+    if (state.inShop) {
       const digit = /^Digit([1-9])$/.exec(e.code);
       if (digit) buyItem(Number(digit[1]) - 1);
       else if (e.code === "ArrowUp" || e.code === "KeyW") shopMove(-1);
@@ -59,36 +73,88 @@ function main(): void {
       e.preventDefault();
       togglePause();
     }
-    if (e.code === "KeyF" && state.running) toggleFlashlight();
-    if (e.code === "KeyH" && state.running) useMedkit();
     if (e.code === "Enter" && state.running) startNightNow();
   });
 
   const step = 1 / CONFIG.simHz;
-  let last = performance.now();
-  let acc = 0;
-  function frame(now: number): void {
-    const dt = (now - last) / 1000;
-    last = now;
-    acc += Math.min(dt, 0.1);
-    while (acc >= step) {
-      update(step);
-      acc -= step;
-    }
-    draw();
-    const state = getState();
-    if (state.running) updateHUD();
+  const sendStep = 1 / CONFIG.net.sendHz;
 
-    // custom crosshair
-    if (state.running && !state.paused) {
+  // --- host authoritative loop: driven by a background-immune Web Worker tick, so the
+  // host keeps simulating + broadcasting even when its tab is hidden (rAF would pause,
+  // freezing every client). onTick runs on the main thread → full DOM/Input access. ---
+  let hLast = performance.now();
+  let hAcc = 0;
+  let hNet = 0;
+  let tick = 0;
+  startTicker(1000 / CONFIG.simHz, () => {
+    const now = performance.now();
+    const dt = Math.min((now - hLast) / 1000, 0.1);
+    hLast = now;
+    if (Net.mode !== "host" || !hostStarted) {
+      hAcc = 0;
+      hNet = 0;
+      return; // only the running host sims here; single/client/lobby do not
+    }
+    const st = getState();
+    if (st.running && !st.paused) localPlayer(st).input = sampleLocalInput(st);
+    hAcc += dt;
+    while (hAcc >= step) {
+      update(step);
+      hAcc -= step;
+    }
+    hNet += dt;
+    if (hNet >= sendStep) {
+      hNet = 0;
+      Net.host?.broadcast(tick++);
+    }
+  });
+
+  // --- render loop (rAF): draws always; runs single-player sim + client input/camera.
+  // Host sim/broadcast is NOT here (it's on the worker tick above) so backgrounding the
+  // host tab only pauses its rendering, never the shared simulation. ---
+  let rLast = performance.now();
+  let rAcc = 0;
+  function frame(now: number): void {
+    const dt = (now - rLast) / 1000;
+    rLast = now;
+    const st = getState();
+    const live = st.running && !st.paused;
+
+    if (Net.mode === "single") {
+      rAcc += Math.min(dt, 0.1);
+      if (live) localPlayer(st).input = sampleLocalInput(st);
+      while (rAcc >= step) {
+        update(step);
+        rAcc -= step;
+      }
+    } else if (Net.mode === "client") {
+      // no authoritative sim — predict our player, interpolate the world, ship input
+      const inp = live ? sampleLocalInput(st) : null;
+      if (inp) Net.client?.send(inp);
+      Net.client?.render(performance.now(), inp, dt);
+      if (st.running) {
+        sysFx(st, dt); // advance client-spawned particles/blood/damage text
+        clientAmbience(dt); // dread / heartbeat / groan from the snapshot world
+      }
+      if (live) sysCamera(st, dt);
+    }
+    // host: rendering only here; sim + broadcast run on the worker tick
+
+    // reconcile the shop overlay with state.inShop (all modes; clients open it from the
+    // snapshot). After the sim/render step so single-player opens it the same frame.
+    if (st.running) syncShopUI();
+
+    draw();
+    if (st.running) updateHUD();
+
+    // custom crosshair (hidden while downed — you're spectating, not aiming)
+    if (st.running && !st.paused && localPlayer(st).hp > 0) {
+      const me = localPlayer(st);
       cross.style.opacity = "1";
       cross.style.transform = `translate(${Input.mouseX}px,${Input.mouseY}px)`;
-      cross.classList.toggle("empty", state.player.dryT > 0);
-      cross.classList.toggle(
-        "fire",
-        Input.firing && state.player.reloadT <= 0 && state.player.dryT <= 0,
-      );
-      cross.classList.toggle("reload", state.player.reloadT > 0);
+      cross.classList.toggle("empty", me.dryT > 0);
+      cross.classList.toggle("fire", Input.firing && me.reloadT <= 0 && me.dryT <= 0);
+      cross.classList.toggle("reload", me.reloadT > 0);
     } else {
       cross.style.opacity = "0";
     }
@@ -96,6 +162,213 @@ function main(): void {
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+}
+
+/* ------------------------- co-op lobby ------------------------- */
+// Room-code auto-connect is the primary path (offer/answer brokered by the signaling
+// relay, see net/signaling.ts). Manual SDP copy-paste is kept as a zero-dependency
+// fallback, tucked into a <details>. The game world only appears on Deploy (host) /
+// first snapshot (client) — the lobby never shows the live world.
+
+/** A short, human-friendly room code (no ambiguous I/O/0/1/L). */
+function makeRoomCode(): string {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  let s = "";
+  for (let i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
+function wireCoop(): void {
+  const role = el("lobby-role");
+  const guide = el("lobby-guide");
+  const roomHost = el("lobby-room-host");
+  const roomJoin = el("lobby-room-join");
+  const roomCode = el<HTMLInputElement>("lobby-room-code");
+  const roomInput = el<HTMLInputElement>("lobby-room-input");
+  const roomGo = el("lobby-room-go");
+  const squad = el("lobby-squad");
+  const status = el("lobby-status");
+  const deploy = el("lobby-deploy");
+  const manual = el<HTMLDetailsElement>("lobby-manual");
+  // manual-fallback elements
+  const out = el<HTMLTextAreaElement>("lobby-out");
+  const inEl = el<HTMLTextAreaElement>("lobby-in");
+  const go = el("lobby-go");
+  const sendBlock = el("lobby-send");
+  const sendLabel = el("lobby-send-label");
+  const recvLabel = el("lobby-recv-label");
+
+  let hostHandle: { close(): void } | null = null;
+
+  const openLobby = (kind: "host" | "join"): void => {
+    hide("start");
+    show("lobby");
+    roomHost.style.display = kind === "host" ? "flex" : "none";
+    roomJoin.style.display = kind === "join" ? "flex" : "none";
+    deploy.style.display = "none";
+    squad.textContent = "";
+    status.textContent = "";
+    out.value = "";
+    inEl.value = "";
+    manual.open = false;
+    manual.ontoggle = null;
+  };
+  const closeLobby = (): void => {
+    hostHandle?.close();
+    hostHandle = null;
+    Net.mode = "single";
+    Net.host = null;
+    Net.client = null;
+    hostStarted = false;
+    hide("lobby");
+    show("start");
+  };
+  el("lobby-back").onclick = closeLobby;
+  el("lobby-room-copy").onclick = () => {
+    roomCode.select();
+    navigator.clipboard?.writeText(roomCode.value).catch(() => {});
+  };
+  el("lobby-copy").onclick = () => {
+    out.select();
+    navigator.clipboard?.writeText(out.value).catch(() => {});
+  };
+
+  // ---- HOST ----
+  el("mpHostBtn").onclick = () => {
+    openLobby("host");
+    role.textContent = "Hosting";
+    guide.textContent = "Share the room code with your squad, then Deploy.";
+    const host = new Host();
+    Net.mode = "host";
+    Net.host = host;
+    hostStarted = false;
+
+    const refreshSquad = (): void => {
+      const n = host.connected; // authoritative open-peer count (relay AND manual)
+      squad.textContent = `Squad: you (host)${n ? ` + ${n} joined` : " — waiting for players"}`;
+    };
+    refreshSquad();
+    deploy.style.display = "inline-block";
+    deploy.textContent = "Deploy raid";
+    deploy.onclick = () => {
+      startGame(); // builds the fresh world + shows the HUD (hides this lobby)
+      host.start(); // spawn a player for everyone already connected
+      hostStarted = true; // frame loop now sims + broadcasts
+    };
+
+    const code = makeRoomCode();
+    roomCode.value = code;
+    status.textContent = "room open — share the code";
+    hostHandle = hostRoom(
+      code,
+      (link) => host.add(link),
+      (s) => {
+        refreshSquad();
+        if (s.error) status.textContent = `signaling: ${s.error} — use manual connect below`;
+      },
+    );
+
+    // manual fallback: opening <details> hides the room code (so the mode is unambiguous)
+    // and lazily builds an offer on first open.
+    let manualReady = false;
+    manual.ontoggle = (): void => {
+      roomHost.style.display = manual.open ? "none" : "flex";
+      guide.textContent = manual.open
+        ? "Manual connect — share your code, paste their reply."
+        : "Share the room code with your squad, then Deploy.";
+      if (!manual.open || manualReady) return;
+      manualReady = true;
+      sendBlock.style.order = "-1"; // your code first, their reply below
+      sendLabel.textContent = "Your code — send to a friend";
+      recvLabel.textContent = "Their reply — paste it here";
+      go.textContent = "Connect";
+      void (async () => {
+        try {
+          const { link, offer, accept } = await createHostLink();
+          host.add(link);
+          link.onOpen(refreshSquad);
+          link.onClose(refreshSquad);
+          out.value = offer;
+          go.onclick = async () => {
+            const c = inEl.value.trim();
+            if (!c) return;
+            try {
+              await accept(c);
+              status.textContent = "manual peer linked ✓";
+            } catch {
+              status.textContent = "that reply code didn't parse";
+            }
+          };
+        } catch (err) {
+          status.textContent = `manual offer failed: ${err}`;
+        }
+      })();
+    };
+  };
+
+  // ---- JOIN ----
+  el("mpJoinBtn").onclick = () => {
+    openLobby("join");
+    role.textContent = "Joining";
+    guide.textContent = "Enter the host's room code to connect.";
+    roomInput.value = "";
+    roomInput.focus();
+
+    const join = async (): Promise<void> => {
+      const code = roomInput.value.trim().toUpperCase(); // idFromName is case-sensitive
+      if (!code) return;
+      status.textContent = "connecting…";
+      try {
+        const link = await joinRoom(code);
+        Net.mode = "client";
+        Net.client = new Client(link, () => {
+          status.textContent = "in!";
+        });
+        squad.textContent = "Squad: you — waiting for the host to deploy…";
+        status.textContent = "connected — waiting for host";
+      } catch (err) {
+        status.textContent = `${err instanceof Error ? err.message : err} — try manual connect below`;
+        manual.open = true;
+      }
+    };
+    roomGo.onclick = () => void join();
+    roomInput.onkeydown = (e) => {
+      if (e.key === "Enter") void join();
+    };
+
+    // manual fallback: opening <details> hides the room-code input (mode is unambiguous)
+    // and lazily wires the paste-host-code → generate-reply flow on first open.
+    let manualReady = false;
+    manual.ontoggle = (): void => {
+      roomJoin.style.display = manual.open ? "none" : "flex";
+      guide.textContent = manual.open
+        ? "Manual connect — paste the host's code to get a reply."
+        : "Enter the host's room code to connect.";
+      if (!manual.open || manualReady) return;
+      manualReady = true;
+      sendBlock.style.order = ""; // host's code (recv) first, your reply (send) below
+      sendBlock.style.display = "none"; // reply revealed once generated
+      recvLabel.textContent = "Host's code — paste it here";
+      sendLabel.textContent = "Your reply — send it back to the host";
+      go.textContent = "Generate reply";
+      go.onclick = async () => {
+        const offer = inEl.value.trim();
+        if (!offer) return;
+        try {
+          const { link, answer } = await createClientLink(offer);
+          Net.mode = "client";
+          Net.client = new Client(link, () => {
+            status.textContent = "in!";
+          });
+          out.value = answer;
+          sendBlock.style.display = "flex";
+          status.textContent = "reply ready — send it to the host, then wait";
+        } catch {
+          status.textContent = "that host code didn't parse";
+        }
+      };
+    };
+  };
 }
 
 main();

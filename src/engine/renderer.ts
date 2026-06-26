@@ -17,32 +17,36 @@ let gridVAO: WebGLVertexArrayObject;
 let quadVBO: WebGLBuffer;
 let u_cam: WebGLUniformLocation | null;
 let u_half: WebGLUniformLocation | null;
-let u_player: WebGLUniformLocation | null;
-let u_aim: WebGLUniformLocation | null;
+let u_lightCount: WebGLUniformLocation | null;
+let u_lightPos: WebGLUniformLocation | null;
+let u_lightAim: WebGLUniformLocation | null;
+let u_lightInt: WebGLUniformLocation | null;
 let u_cone: WebGLUniformLocation | null;
 let u_personal: WebGLUniformLocation | null;
-let u_intensity: WebGLUniformLocation | null;
 let u_emissive: WebGLUniformLocation | null;
 let g_cam: WebGLUniformLocation | null;
 let g_half: WebGLUniformLocation | null;
-let g_player: WebGLUniformLocation | null;
-let g_aim: WebGLUniformLocation | null;
+let g_lightCount: WebGLUniformLocation | null;
+let g_lightPos: WebGLUniformLocation | null;
+let g_lightAim: WebGLUniformLocation | null;
+let g_lightInt: WebGLUniformLocation | null;
 let g_cone: WebGLUniformLocation | null;
 let g_personal: WebGLUniformLocation | null;
-let g_intensity: WebGLUniformLocation | null;
 let viewHalfX = 400;
 let viewHalfY = 300;
-// flashlight state (set each frame via setLight + setFlashlight)
-let lightX = 0;
-let lightY = 0;
-let aimX = 1;
-let aimY = 0;
+// flashlight state — up to MAX_LIGHTS aimed cones (one per player), set each frame via
+// setLightParams (shared) + beginLights()/addLight() (per player). MAX_LIGHTS mirrors the shaders.
+const MAX_LIGHTS = 4;
+let lightCount = 0;
+const lightPos = new Float32Array(MAX_LIGHTS * 2);
+const lightAim = new Float32Array(MAX_LIGHTS * 2);
+const lightInt = new Float32Array(MAX_LIGHTS);
+// shared cone/pool params (every player uses the same flashlight config)
 let coneCos = 0.85;
 let coneRange = 620;
 let coneAmbient = 0.05;
 let personalRadius = 130;
 let personalMax = 0.5;
-let intensity = 1;
 let emissiveFloor = 0.4;
 
 interface Layer {
@@ -109,11 +113,12 @@ function init(cv: HTMLCanvasElement): void {
   instProg = program(instanceVert, instanceFrag);
   u_cam = gl.getUniformLocation(instProg, "u_cam");
   u_half = gl.getUniformLocation(instProg, "u_half");
-  u_player = gl.getUniformLocation(instProg, "u_player");
-  u_aim = gl.getUniformLocation(instProg, "u_aim");
+  u_lightCount = gl.getUniformLocation(instProg, "u_lightCount");
+  u_lightPos = gl.getUniformLocation(instProg, "u_lightPos");
+  u_lightAim = gl.getUniformLocation(instProg, "u_lightAim");
+  u_lightInt = gl.getUniformLocation(instProg, "u_lightInt");
   u_cone = gl.getUniformLocation(instProg, "u_cone");
   u_personal = gl.getUniformLocation(instProg, "u_personal");
-  u_intensity = gl.getUniformLocation(instProg, "u_intensity");
   u_emissive = gl.getUniformLocation(instProg, "u_emissive");
 
   quadVBO = gl.createBuffer() as WebGLBuffer;
@@ -126,11 +131,12 @@ function init(cv: HTMLCanvasElement): void {
   gridProg = program(gridVert, gridFrag);
   g_cam = gl.getUniformLocation(gridProg, "u_cam");
   g_half = gl.getUniformLocation(gridProg, "u_half");
-  g_player = gl.getUniformLocation(gridProg, "u_player");
-  g_aim = gl.getUniformLocation(gridProg, "u_aim");
+  g_lightCount = gl.getUniformLocation(gridProg, "u_lightCount");
+  g_lightPos = gl.getUniformLocation(gridProg, "u_lightPos");
+  g_lightAim = gl.getUniformLocation(gridProg, "u_lightAim");
+  g_lightInt = gl.getUniformLocation(gridProg, "u_lightInt");
   g_cone = gl.getUniformLocation(gridProg, "u_cone");
   g_personal = gl.getUniformLocation(gridProg, "u_personal");
-  g_intensity = gl.getUniformLocation(gridProg, "u_intensity");
   gridVAO = gl.createVertexArray() as WebGLVertexArrayObject;
   gl.bindVertexArray(gridVAO);
   const triVBO = gl.createBuffer();
@@ -158,33 +164,37 @@ function begin(): void {
   additive.count = 0;
 }
 
-/** set the world-space flashlight origin (the player) */
-function setLight(x: number, y: number): void {
-  lightX = x;
-  lightY = y;
-}
-
-/** configure the aimed flashlight cone for this frame */
-function setFlashlight(
-  ax: number,
-  ay: number,
+/** configure the shared flashlight cone/pool params for this frame (same for all players) */
+function setLightParams(
   cosHalf: number,
   range: number,
   ambient: number,
   personalR: number,
   personalM: number,
-  intens: number,
   emissive: number,
 ): void {
-  aimX = ax;
-  aimY = ay;
   coneCos = cosHalf;
   coneRange = range;
   coneAmbient = ambient;
   personalRadius = personalR;
   personalMax = personalM;
-  intensity = intens;
   emissiveFloor = emissive;
+}
+
+/** start a new frame's light list (call before addLight) */
+function beginLights(): void {
+  lightCount = 0;
+}
+
+/** add one aimed flashlight (one per player); silently ignored past MAX_LIGHTS */
+function addLight(x: number, y: number, ax: number, ay: number, intens: number): void {
+  if (lightCount >= MAX_LIGHTS) return;
+  lightPos[lightCount * 2] = x;
+  lightPos[lightCount * 2 + 1] = y;
+  lightAim[lightCount * 2] = ax;
+  lightAim[lightCount * 2 + 1] = ay;
+  lightInt[lightCount] = intens;
+  lightCount++;
 }
 
 function write(
@@ -375,22 +385,24 @@ function flush(camX: number, camY: number): void {
   gl.useProgram(gridProg);
   gl.uniform2f(g_cam, camX, camY);
   gl.uniform2f(g_half, viewHalfX, viewHalfY);
-  gl.uniform2f(g_player, lightX, lightY);
-  gl.uniform2f(g_aim, aimX, aimY);
+  gl.uniform1i(g_lightCount, lightCount);
+  gl.uniform2fv(g_lightPos, lightPos);
+  gl.uniform2fv(g_lightAim, lightAim);
+  gl.uniform1fv(g_lightInt, lightInt);
   gl.uniform3f(g_cone, coneCos, coneRange, coneAmbient);
   gl.uniform2f(g_personal, personalRadius, personalMax);
-  gl.uniform1f(g_intensity, intensity);
   gl.bindVertexArray(gridVAO);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   gl.useProgram(instProg);
   gl.uniform2f(u_cam, camX, camY);
   gl.uniform2f(u_half, viewHalfX, viewHalfY);
-  gl.uniform2f(u_player, lightX, lightY);
-  gl.uniform2f(u_aim, aimX, aimY);
+  gl.uniform1i(u_lightCount, lightCount);
+  gl.uniform2fv(u_lightPos, lightPos);
+  gl.uniform2fv(u_lightAim, lightAim);
+  gl.uniform1fv(u_lightInt, lightInt);
   gl.uniform3f(u_cone, coneCos, coneRange, coneAmbient);
   gl.uniform2f(u_personal, personalRadius, personalMax);
-  gl.uniform1f(u_intensity, intensity);
 
   // normal pass (bodies, ground): fully darkened outside the light
   gl.uniform1f(u_emissive, 0);
@@ -410,8 +422,9 @@ function worldToScreenHalf(): { x: number; y: number } {
 export const Renderer = {
   init,
   begin,
-  setLight,
-  setFlashlight,
+  setLightParams,
+  beginLights,
+  addLight,
   sprite,
   circle,
   rect,

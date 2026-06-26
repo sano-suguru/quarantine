@@ -54,7 +54,7 @@ export function fxMuzzle(state: State, x: number, y: number, aim: number, color:
       6,
     );
   }
-  state.player.muzzle = 0.05;
+  // the firing player's muzzle-flash timer is set in fireWeapon (per-player)
 }
 
 /** sparks where a bullet bites a zombie */

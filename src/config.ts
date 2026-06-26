@@ -3,6 +3,26 @@ export const CONFIG = {
   arena: 1600,
   zoom: 1.0,
   maxInstances: 40000,
+  // co-op networking (host-authoritative). client interpolation / prediction params.
+  net: {
+    sendHz: 30, // host snapshot broadcast rate
+    interpDelayMs: 100, // render remote entities this far in the past
+    smoothCorrect: 0.2, // reconciliation lerp factor
+    snapTeleportThresh: 80, // px error above which we hard-snap instead of lerp
+    maxExtrapolateMs: 120, // cap on dead-reckoning when snapshots stall
+    bufferTargetCount: 2, // target snapshot buffer depth
+    // client-predicted "ghost" tracer lifetime (visual only). ~interpDelayMs/1000 so the
+    // ghost fades just as the host-authoritative bullet (drawn ~interpDelay in the past)
+    // becomes visible — minimizing the double-tracer window. Tune by feel.
+    ghostLife: 0.12,
+    // signaling host:port for room-code auto-connect (the ws/wss scheme is chosen from
+    // location.protocol at connect time). Default = local `wrangler dev`. Swap to the
+    // deployed Worker host for internet play.
+    signalUrl: "127.0.0.1:8787",
+    // ICE servers for WebRTC. STUN only by default (covers most home↔home NATs). Add a
+    // TURN entry here (no code change) if a peer behind symmetric NAT/CGNAT can't connect.
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }] as RTCIceServer[],
+  },
   player: { radius: 16, speed: 230, sprint: 1.55, maxHp: 100 },
   cam: { lerp: 8, shakeDecay: 8 },
   feel: {
@@ -59,6 +79,7 @@ export const CONFIG = {
     repairCd: 0.35, // seconds between repair presses
     interactRadius: 70, // how close you must be to interact (repair / search)
     roamersPerDay: 5, // wandering zombies seeded across the map each day
+    spawnRing: 680, // base radius (world units) of the off-screen night-spawn ring
   },
   cache: {
     searchTime: 1.5, // seconds of holding interact (and standing still) to loot

@@ -1,0 +1,13 @@
+name = "quarantine-signaling"
+main = "room.ts"
+compatibility_date = "2025-04-01"
+
+# Durable Object that relays WebRTC signaling per room code.
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+# SQLite-backed DO class => available on the free Workers plan (we don't use storage).
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

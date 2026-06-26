@@ -4,20 +4,75 @@ import { WEAPON_ORDER } from "../data/weapons";
 import { Audio } from "../engine/audio";
 import { circlePushFromSegment } from "../engine/geometry";
 import { clamp, len, rand } from "../engine/math";
-import { Renderer } from "../engine/renderer";
-import { Input } from "../input";
-import type { Player, State, WeaponDef } from "../types";
+import type { PlayerInput } from "../net/playerInput";
+import { allocId } from "../state";
+import type { Cache, Player, Segment, State, WeaponDef } from "../types";
+
+/**
+ * Integrate one entity's WASD/sprint movement for `dt` and resolve solid walls.
+ * Shared by the host sim (sysPlayer) and the client's local-player prediction
+ * so both move identically. Operates on anything with x/y/r/speed.
+ */
+export function integrateMovement(
+  p: { x: number; y: number; r: number; speed: number },
+  inp: PlayerInput,
+  walls: Segment[],
+  dt: number,
+): void {
+  let dx = inp.moveX;
+  let dy = inp.moveY;
+  const l = len(dx, dy);
+  const sprint = inp.sprint ? CONFIG.player.sprint : 1;
+  if (l > 0) {
+    dx /= l;
+    dy /= l;
+  }
+  p.x = clamp(p.x + dx * p.speed * sprint * dt, -CONFIG.arena, CONFIG.arena);
+  p.y = clamp(p.y + dy * p.speed * sprint * dt, -CONFIG.arena, CONFIG.arena);
+  // solid walls block movement (openings/barricades do not — you slip through)
+  for (const w of walls) {
+    const push = circlePushFromSegment(p.x, p.y, p.r, w);
+    if (push) {
+      p.x += push.dx;
+      p.y += push.dy;
+    }
+  }
+}
 import { ammoTransfer } from "./ammo";
 import { killZombie } from "./bullets";
 import { lootCache } from "./caches";
 import { fxDamageText, fxImpact, fxMuzzle } from "./fx";
 
 export function sysPlayer(state: State, dt: number): void {
-  const p = state.player;
+  // caches a player is actively searching this tick (co-op: more than one player can
+  // search, and a cache only loses progress when NOBODY is on it — see reset below)
+  const searched = new Set<Cache>();
+  for (const p of state.players) {
+    if (p.hp > 0) sysPlayerOne(state, p, dt, searched);
+  }
+  // a cache not searched by anyone this tick loses its progress
+  for (const c of state.caches) if (!searched.has(c) && c.searchT > 0) c.searchT = 0;
+}
+
+function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>): void {
+  const inp = p.input;
+
+  // F = toggle the flashlight (off = no drain, near-blind). Edge, consumed below.
+  if (inp.lightToggle) {
+    p.lightOn = !p.lightOn;
+    Audio.click();
+  }
 
   // drain the flashlight while it's on
   if (p.lightOn && p.battery > 0) {
     p.battery = Math.max(0, p.battery - CONFIG.flashlight.drainPerSec * dt);
+  }
+
+  // H = use a carried medkit: a deliberate, rooted heal-over-time. Edge, consumed below.
+  if (inp.heal && p.medkits > 0 && p.healT <= 0 && p.hp < p.maxHp) {
+    p.medkits--;
+    p.healT = CONFIG.heal.duration;
+    Audio.heal();
   }
 
   // healing roots the player: HP ticks up, but no moving or shooting (vulnerable)
@@ -27,48 +82,20 @@ export function sysPlayer(state: State, dt: number): void {
     p.hp = Math.min(p.maxHp, p.hp + (CONFIG.heal.amount / CONFIG.heal.duration) * dt);
   }
 
-  const moving = movementPressed();
-  let dx = 0;
-  let dy = 0;
-  if (!healing) {
-    if (Input.keys.has("KeyW") || Input.keys.has("ArrowUp")) dy -= 1;
-    if (Input.keys.has("KeyS") || Input.keys.has("ArrowDown")) dy += 1;
-    if (Input.keys.has("KeyA") || Input.keys.has("ArrowLeft")) dx -= 1;
-    if (Input.keys.has("KeyD") || Input.keys.has("ArrowRight")) dx += 1;
-  }
-  const l = len(dx, dy);
-  const sprint =
-    Input.keys.has("ShiftLeft") || Input.keys.has("ShiftRight") ? CONFIG.player.sprint : 1;
-  if (l > 0) {
-    dx /= l;
-    dy /= l;
-  }
-  p.x = clamp(p.x + dx * p.speed * sprint * dt, -CONFIG.arena, CONFIG.arena);
-  p.y = clamp(p.y + dy * p.speed * sprint * dt, -CONFIG.arena, CONFIG.arena);
-  // solid walls block the player (openings/barricades do not — you slip through)
-  for (const w of state.walls) {
-    const push = circlePushFromSegment(p.x, p.y, p.r, w);
-    if (push) {
-      p.x += push.dx;
-      p.y += push.dy;
-    }
-  }
+  const moving = inp.moveX !== 0 || inp.moveY !== 0;
+  // healing roots you in place; otherwise integrate movement + wall collision
+  if (!healing) integrateMovement(p, inp, state.walls, dt);
 
   // E = context interact: repair a barricade you're next to, else search a cache
-  interact(state, p, dt, healing, moving);
+  interact(state, p, dt, healing, moving, searched);
 
-  const half = Renderer.worldToScreenHalf();
-  const cv = document.getElementById("game") as HTMLCanvasElement;
-  const mxN = (Input.mouseX / cv.clientWidth) * 2 - 1;
-  const myN = (Input.mouseY / cv.clientHeight) * 2 - 1;
-  const wx = state.cam.x + mxN * half.x;
-  const wy = state.cam.y + myN * half.y;
-  p.aim = Math.atan2(wy - p.y, wx - p.x);
+  // aim is computed client-locally and arrives via the input snapshot
+  p.aim = inp.aim;
 
   // switch weapons — only to ones you own; magazine state is preserved per weapon
-  for (let i = 0; i < WEAPON_ORDER.length; i++) {
-    const id = WEAPON_ORDER[i] as string;
-    if (Input.keys.has(`Digit${i + 1}`) && p.weapon !== id && state.owned[id]) {
+  if (inp.weaponSlot !== null) {
+    const id = WEAPON_ORDER[inp.weaponSlot];
+    if (id && p.weapon !== id && state.owned[id]) {
       p.mags[p.weapon] = p.ammo; // stash the rounds left in the current mag
       p.weapon = id;
       p.ammo = p.mags[id] ?? 0; // restore the new weapon's mag
@@ -80,12 +107,7 @@ export function sysPlayer(state: State, dt: number): void {
   // reload draws from this weapon's finite reserve (melee weapons never reload)
   if (!wd.melee) {
     const reserve = p.reserve[p.weapon] ?? 0;
-    if (
-      (Input.keys.has("KeyR") || p.ammo <= 0) &&
-      p.reloadT <= 0 &&
-      p.ammo < wd.mag &&
-      reserve > 0
-    ) {
+    if ((inp.reload || p.ammo <= 0) && p.reloadT <= 0 && p.ammo < wd.mag && reserve > 0) {
       p.reloadT = wd.reload;
       Audio.reload();
     }
@@ -101,22 +123,28 @@ export function sysPlayer(state: State, dt: number): void {
   }
 
   if (p.fireCd > 0) p.fireCd -= dt;
-  const wantFire = Input.firing && (wd.auto || !state._firedThisHold);
+  const wantFire = inp.firing && (wd.auto || !p.firedThisHold);
   if (wantFire && p.fireCd <= 0 && p.reloadT <= 0 && !healing) {
     if (wd.melee || p.ammo > 0) {
       fireWeapon(state, p, wd);
       if (!wd.melee) p.ammo--;
       p.fireCd = 1 / (wd.fireRate * state.fireRateMul);
-      state._firedThisHold = true;
+      p.firedThisHold = true;
     } else {
       // empty magazine: the desperate dry-fire click
       Audio.dryFire();
       p.dryT = 0.12;
       p.fireCd = 0.18;
-      state._firedThisHold = true;
+      p.firedThisHold = true;
     }
   }
-  if (!Input.firing) state._firedThisHold = false;
+  if (!inp.firing) p.firedThisHold = false;
+
+  // consume one-shot edges so multiple sim sub-steps in a frame don't re-fire them
+  inp.reload = false;
+  inp.heal = false;
+  inp.lightToggle = false;
+  inp.weaponSlot = null;
 
   // decay feel timers (visual offsets / cooldowns)
   const rk = Math.exp(-CONFIG.feel.recoilDecay * dt);
@@ -138,6 +166,7 @@ export function fireWeapon(state: State, p: Player, wd: WeaponDef): void {
   for (let i = 0; i < wd.pellets; i++) {
     const a = p.aim + rand(-wd.spread, wd.spread);
     state.bullets.push({
+      id: allocId(state),
       x: tipX,
       y: tipY,
       px: tipX,
@@ -152,11 +181,13 @@ export function fireWeapon(state: State, p: Player, wd: WeaponDef): void {
       color: wd.color,
     });
   }
-  // recoil: kick the camera and shove the player back a touch
-  state.cam.shake = Math.min(state.cam.shake + wd.recoil, 18);
+  // recoil: shove the player back (per-player visual) + kick the camera (local view only,
+  // so a teammate's gunfire doesn't shake the host's screen)
+  if (p.id === state.localId) state.cam.shake = Math.min(state.cam.shake + wd.recoil, 18);
   p.recoilX -= Math.cos(p.aim) * wd.recoil * 0.9;
   p.recoilY -= Math.sin(p.aim) * wd.recoil * 0.9;
   fxMuzzle(state, tipX, tipY, p.aim, wd.color);
+  p.muzzle = 0.05;
   Audio.shot(p.weapon);
 }
 
@@ -189,26 +220,12 @@ function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
   dead.sort((a, b) => b - a);
   for (const zi of dead) killZombie(state, zi);
 
-  // swing feel — same kick/shake channel as a gun, plus a whoosh
-  state.cam.shake = Math.min(state.cam.shake + wd.recoil, 18);
+  // swing feel — same kick/shake channel as a gun, plus a whoosh (shake = local view only)
+  if (p.id === state.localId) state.cam.shake = Math.min(state.cam.shake + wd.recoil, 18);
   p.recoilX -= Math.cos(p.aim) * wd.recoil * 0.6;
   p.recoilY -= Math.sin(p.aim) * wd.recoil * 0.6;
   p.muzzle = 0.04;
   Audio.melee();
-}
-
-/** Any movement key currently held? (input-based so a shove can't cancel a search) */
-function movementPressed(): boolean {
-  return (
-    Input.keys.has("KeyW") ||
-    Input.keys.has("KeyS") ||
-    Input.keys.has("KeyA") ||
-    Input.keys.has("KeyD") ||
-    Input.keys.has("ArrowUp") ||
-    Input.keys.has("ArrowDown") ||
-    Input.keys.has("ArrowLeft") ||
-    Input.keys.has("ArrowRight")
-  );
 }
 
 /**
@@ -216,10 +233,17 @@ function movementPressed(): boolean {
  * costs credits, rate-limited) takes priority; otherwise an unsearched cache
  * (search while standing still, day only). Anything not actively searched resets.
  */
-function interact(state: State, p: Player, dt: number, healing: boolean, moving: boolean): void {
+function interact(
+  state: State,
+  p: Player,
+  dt: number,
+  healing: boolean,
+  moving: boolean,
+  searched: Set<Cache>,
+): void {
   if (p.repairCd > 0) p.repairCd -= dt;
   const reach = CONFIG.siege.interactRadius;
-  const holding = Input.keys.has("KeyE");
+  const holding = p.input.interactHeld;
 
   let bar: (typeof state.barricades)[number] | null = null;
   let barD = reach;
@@ -247,7 +271,6 @@ function interact(state: State, p: Player, dt: number, healing: boolean, moving:
     }
   }
 
-  let searching: (typeof state.caches)[number] | null = null;
   if (holding && !healing) {
     if (bar) {
       // repair takes priority over searching
@@ -259,7 +282,7 @@ function interact(state: State, p: Player, dt: number, healing: boolean, moving:
       }
     } else if (cache && !moving) {
       cache.searchT += dt;
-      searching = cache;
+      searched.add(cache); // mark; sysPlayer resets only caches nobody searched
       if (cache.searchT >= CONFIG.cache.searchTime) {
         lootCache(state, cache.x, cache.y, cache.tier);
         cache.looted = true;
@@ -268,6 +291,4 @@ function interact(state: State, p: Player, dt: number, healing: boolean, moving:
       }
     }
   }
-  // any cache not actively being searched loses its progress
-  for (const c of state.caches) if (c !== searching && c.searchT > 0) c.searchT = 0;
 }

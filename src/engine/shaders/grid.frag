@@ -1,28 +1,35 @@
 #version 300 es
 precision mediump float;
+#define MAX_LIGHTS 4
 in vec2 v_clip; uniform vec2 u_cam; uniform vec2 u_half;
-uniform vec2 u_player;   // flashlight origin
-uniform vec2 u_aim;      // normalized aim direction
-uniform vec3 u_cone;     // x: cos(halfAngle), y: range, z: ambient floor
-uniform vec2 u_personal; // x: radius, y: max brightness of the dim pool
-uniform float u_intensity;
+uniform int u_lightCount;
+uniform vec2 u_lightPos[MAX_LIGHTS];
+uniform vec2 u_lightAim[MAX_LIGHTS];
+uniform float u_lightInt[MAX_LIGHTS];
+uniform vec3 u_cone;     // shared: x: cos(halfAngle), y: range, z: ambient floor
+uniform vec2 u_personal; // shared: x: radius, y: max brightness of the dim pool
 out vec4 frag;
 float gridLine(vec2 w, float g){
   vec2 a = abs(fract(w/g - 0.5) - 0.5) / fwidth(w/g);
   float l = min(a.x,a.y);
   return 1.0 - min(l,1.0);
 }
-// matches instance.frag: dim personal pool + aimed flashlight cone
+// matches instance.frag: ambient + the brightest of every player's pool/cone
 float lightAt(vec2 w){
-  vec2 d = w - u_player;
-  float dist = length(d);
-  float pool = smoothstep(u_personal.x, u_personal.x * 0.3, dist) * u_personal.y;
-  vec2 dir = dist > 1e-3 ? d / dist : u_aim;
-  float ca = dot(dir, u_aim);
-  float edge = smoothstep(u_cone.x, mix(u_cone.x, 1.0, 0.35), ca);
-  float reach = smoothstep(u_cone.y, u_cone.y * 0.25, dist);
-  float cone = edge * reach * u_intensity;
-  return clamp(u_cone.z + max(pool, cone), 0.0, 1.0);
+  float best = 0.0;
+  for(int i = 0; i < MAX_LIGHTS; i++){
+    if(i >= u_lightCount) break;
+    vec2 d = w - u_lightPos[i];
+    float dist = length(d);
+    float pool = smoothstep(u_personal.x, u_personal.x * 0.3, dist) * u_personal.y;
+    vec2 dir = dist > 1e-3 ? d / dist : u_lightAim[i];
+    float ca = dot(dir, u_lightAim[i]);
+    float e = smoothstep(u_cone.x, mix(u_cone.x, 1.0, 0.35), ca);
+    float reach = smoothstep(u_cone.y, u_cone.y * 0.25, dist);
+    float cone = e * reach * u_lightInt[i];
+    best = max(best, max(pool, cone));
+  }
+  return clamp(u_cone.z + best, 0.0, 1.0);
 }
 void main(){
   vec2 world = u_cam + vec2(v_clip.x, -v_clip.y) * u_half;

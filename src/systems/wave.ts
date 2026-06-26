@@ -3,13 +3,21 @@ import { ENEMY_TYPES } from "../data/enemies";
 import { waveDef } from "../data/waves";
 import { circlePushFromSegment } from "../engine/geometry";
 import { clamp, len, rand } from "../engine/math";
-import { Renderer } from "../engine/renderer";
+import { allocId } from "../state";
 import type { State } from "../types";
 
 /** Is this point clear of every shelter/POI wall (with a little margin)? */
 function clearOfWalls(state: State, x: number, y: number, r: number): boolean {
   for (const w of state.walls) {
     if (circlePushFromSegment(x, y, r, w)) return false;
+  }
+  return true;
+}
+
+/** Is this point at least `min` from every player? (roamers avoid popping into view) */
+function farFromAllPlayers(state: State, x: number, y: number, min: number): boolean {
+  for (const p of state.players) {
+    if (len(x - p.x, y - p.y) <= min) return false;
   }
   return true;
 }
@@ -29,26 +37,34 @@ export function spawnZombie(
 ): void {
   const t = ENEMY_TYPES[type] as (typeof ENEMY_TYPES)[string];
   const aroundPlayer = opts.aroundPlayer ?? true;
-  const half = Renderer.worldToScreenHalf();
-  const ringR = Math.max(half.x, half.y) + rand(60, 220);
+  const ringR = CONFIG.siege.spawnRing + rand(60, 220);
 
-  let x = state.player.x;
-  let y = state.player.y;
+  // anchor the spawn ring on a random living player (arena centre if everyone is down)
+  const alive = state.players.filter((p) => p.hp > 0);
+  const anchor = alive.length
+    ? (alive[Math.floor(rand(0, alive.length))] as (typeof alive)[number])
+    : null;
+  const ax = anchor?.x ?? 0;
+  const ay = anchor?.y ?? 0;
+
+  let x = ax;
+  let y = ay;
   for (let attempt = 0; attempt < 12; attempt++) {
     if (aroundPlayer) {
       const ang = rand(0, Math.PI * 2);
-      x = clamp(state.player.x + Math.cos(ang) * ringR, -CONFIG.arena, CONFIG.arena);
-      y = clamp(state.player.y + Math.sin(ang) * ringR, -CONFIG.arena, CONFIG.arena);
+      x = clamp(ax + Math.cos(ang) * ringR, -CONFIG.arena, CONFIG.arena);
+      y = clamp(ay + Math.sin(ang) * ringR, -CONFIG.arena, CONFIG.arena);
     } else {
       x = rand(-CONFIG.arena, CONFIG.arena);
       y = rand(-CONFIG.arena, CONFIG.arena);
     }
-    // roamers also keep their distance from the player so they don't pop in view
-    const farEnough = aroundPlayer || len(x - state.player.x, y - state.player.y) > 600;
+    // roamers keep their distance from every player so they don't pop into view
+    const farEnough = aroundPlayer || farFromAllPlayers(state, x, y, 600);
     if (farEnough && clearOfWalls(state, x, y, t.radius + 6)) break;
   }
 
   state.zombies.push({
+    id: allocId(state),
     x,
     y,
     r: t.radius,
