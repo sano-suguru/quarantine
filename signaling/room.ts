@@ -16,6 +16,13 @@ export interface Env {
   // Cloudflare Realtime TURN key (set as Worker secrets; absent => /turn returns STUN-only).
   TURN_KEY_ID?: string;
   TURN_TOKEN?: string;
+  // Hard budget cap. /turn refuses to mint creds once this month's TURN egress crosses the
+  // threshold (default 800 GB, under the 1000 GB free tier) — so usage can't reach a charge.
+  // Requires an "Account Analytics" API token; without it the cap can't be verified and /turn
+  // fails CLOSED (no creds), which also forces the safety config to exist before TURN works.
+  CF_ACCOUNT_ID?: string;
+  CF_ANALYTICS_TOKEN?: string;
+  TURN_BUDGET_GB?: string;
 }
 
 export default {
@@ -23,7 +30,7 @@ export default {
     const url = new URL(req.url);
     // Mint short-lived ICE servers (incl. TURN/TURNS) for clients behind UDP-blocking / symmetric
     // NAT. The TURN key secret never leaves the Worker; clients only ever see ephemeral creds.
-    if (url.pathname === "/turn" && req.method === "POST") return turnIceServers(env);
+    if (url.pathname === "/turn" && req.method === "POST") return turnIceServers(req, env);
     const match = url.pathname.match(/^\/room\/([^/]+)$/);
     if (!match) return new Response("not found", { status: 404 });
     if (req.headers.get("Upgrade") !== "websocket") {
@@ -36,27 +43,42 @@ export default {
   },
 };
 
+const DEFAULT_BUDGET_GB = 800; // stop well under the 1000 GB free tier
+
+const json = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+
 /**
- * Ask Cloudflare Realtime TURN for a set of ephemeral ICE servers and relay them to the client.
- * Returns `{ iceServers: [] }` when the TURN key isn't configured, so the game falls back to
- * STUN-only without erroring. JSON shape matches RTCConfiguration.iceServers.
+ * Mint ephemeral ICE servers (incl. TURN/TURNS) from Cloudflare Realtime TURN. The TURN key
+ * secret never leaves the Worker; clients only see short-lived creds. Returns `{ iceServers: [] }`
+ * (graceful STUN-only fallback) when:
+ *   - the request isn't same-origin (cheap anti-abuse on this public endpoint),
+ *   - the TURN key isn't configured, or
+ *   - the monthly budget guard says we're over (or CAN'T be verified — fail closed so usage can
+ *     never reach a charge).
  */
-async function turnIceServers(env: Env): Promise<Response> {
-  const json = (body: unknown, status = 200): Response =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-    });
+async function turnIceServers(req: Request, env: Env): Promise<Response> {
+  // Only our own page may mint creds. Same-origin POSTs always carry Origin; a missing/foreign
+  // Origin (e.g. a scripted abuser) is refused. Not bulletproof, but raises the bar cheaply.
+  if (req.headers.get("Origin") !== new URL(req.url).origin) return json({ iceServers: [] }, 403);
   if (!env.TURN_KEY_ID || !env.TURN_TOKEN) return json({ iceServers: [] });
+
+  // Hard cap: only mint when usage is VERIFIED under budget. over===true (over budget) or
+  // null (can't verify / guard unconfigured) both deny → no path to a charge.
+  const over = await turnOverBudget(env);
+  if (over !== false) {
+    return json({ iceServers: [], reason: over ? "budget-reached" : "budget-guard-unconfigured" });
+  }
+
   try {
     const res = await fetch(
       `https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.TURN_TOKEN}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${env.TURN_TOKEN}`, "Content-Type": "application/json" },
         body: JSON.stringify({ ttl: 86400 }), // 24h — comfortably outlives a play session
       },
     );
@@ -64,6 +86,67 @@ async function turnIceServers(env: Env): Promise<Response> {
     return json(await res.json());
   } catch {
     return json({ iceServers: [] }, 200);
+  }
+}
+
+/**
+ * Is this month's TURN egress at/over the budget? Returns true/false, or null when it can't be
+ * determined (no analytics token, or the query failed) — callers treat null as "deny" (fail
+ * closed). The decision is cached per-colo for 15 min via the Cache API, so /turn stays fast and
+ * we don't hammer the analytics API. NOTE: TURN analytics lag slightly and the cache adds ≤15 min,
+ * so the cap reacts with up to ~an hour of lag — which the 200 GB buffer below the free tier
+ * absorbs.
+ */
+async function turnOverBudget(env: Env): Promise<boolean | null> {
+  if (!env.CF_ACCOUNT_ID || !env.CF_ANALYTICS_TOKEN) return null;
+  const cacheKey = new Request("https://turn-budget.internal/decision");
+  const cache = caches.default;
+  const hit = await cache.match(cacheKey);
+  if (hit) return ((await hit.json()) as { over: boolean }).over;
+
+  const over = await queryTurnOverBudget(env);
+  if (over !== null) {
+    await cache.put(
+      cacheKey,
+      new Response(JSON.stringify({ over }), {
+        headers: { "Cache-Control": "max-age=900", "Content-Type": "application/json" },
+      }),
+    );
+  }
+  return over;
+}
+
+/** Sum this calendar month's TURN egress via the GraphQL Analytics API; compare to the budget. */
+async function queryTurnOverBudget(env: Env): Promise<boolean | null> {
+  try {
+    const now = new Date();
+    const from = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;
+    const to = now.toISOString().slice(0, 10);
+    const query =
+      "query($a:String!,$f:Date!,$t:Date!){viewer{accounts(filter:{accountTag:$a})" +
+      "{callsTurnUsageAdaptiveGroups(filter:{date_geq:$f,date_leq:$t},limit:1){sum{egressBytes}}}}}";
+    const res = await fetch("https://api.cloudflare.com/client/v4/graphql", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query, variables: { a: env.CF_ACCOUNT_ID, f: from, t: to } }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      data?: {
+        viewer?: {
+          accounts?: { callsTurnUsageAdaptiveGroups?: { sum?: { egressBytes?: number } }[] }[];
+        };
+      };
+    };
+    const groups = data.data?.viewer?.accounts?.[0]?.callsTurnUsageAdaptiveGroups;
+    const bytes = groups?.[0]?.sum?.egressBytes ?? 0;
+    const limitGb = env.TURN_BUDGET_GB ? Number(env.TURN_BUDGET_GB) : DEFAULT_BUDGET_GB;
+    return bytes >= limitGb * 1e9;
+  } catch {
+    return null;
   }
 }
 
