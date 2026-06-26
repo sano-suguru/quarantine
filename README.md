@@ -1,7 +1,10 @@
 # QUARANTINE
 
-A top-down, wave-survival zombie shooter prototype, built on a custom WebGL2 engine.
-Hold the line, bank credits between waves, pick a field upgrade, repeat.
+A top-down **day/night siege survival-horror**, built on a custom WebGL2 engine. By **day**,
+explore POIs and loot caches to scavenge gear, and repair the barricades around your shelter.
+By **night**, survive the zombie horde with a finite flashlight, finite ammo, and your squad.
+On death you bank **SALVAGE** to permanently unlock weapons across runs. Playable solo or in
+**2–4 player online co-op**.
 
 ## Stack
 
@@ -26,7 +29,9 @@ If the Biome postinstall is blocked on first install, run `bun pm trust @biomejs
 
 | Command | Description |
 | --- | --- |
-| `bun run dev` | Vite dev server with HMR |
+| `bun run dev` | Vite dev server with HMR (single-player + manual-SDP co-op) |
+| `bun run dev:coop` | Game + local signaling relay together (room-code co-op) |
+| `bun run signal` | Signaling relay only (`ws://127.0.0.1:8787`) |
 | `bun run build` | Type-check then build to `dist/` |
 | `bun run preview` | Serve the production build |
 | `bun run test` | Run the test suite (Vitest) |
@@ -40,12 +45,40 @@ If the Biome postinstall is blocked on first install, run `bun pm trust @biomejs
 
 | Input | Action |
 | --- | --- |
-| `WASD` | Move |
+| `WASD` / Arrows | Move |
 | Mouse | Aim |
 | Click (hold) | Fire |
 | `R` | Reload |
 | `1` `2` `3` | Switch weapon |
 | `Shift` | Sprint |
+| `E` (hold) | Interact — repair a barricade / search a cache |
+| `H` | Use a medkit |
+| `F` | Toggle flashlight |
+| `M` | Mute |
+| `P` / `Esc` | Pause |
+| `Enter` | Deploy / start the night early |
+
+## Co-op multiplayer (2–4 players)
+
+Online co-op is **host-as-peer** (one player's browser is the authoritative host) over WebRTC.
+Play the deployed build at **<https://quarantine-signaling.snsgr.workers.dev/>**: one player
+clicks **Host co-op** and shares the room code; the others click **Join co-op** and enter it.
+The host presses **Deploy** to start.
+
+What to expect:
+
+- **Use personal devices / home networks.** Some corporate, VPN, or SASE/SWG networks
+  (e.g. NetSkope, Zscaler) block WebRTC even with the agent toggled off. A TURN relay rescues
+  many restrictive networks, but **not all** — if a peer can't connect, try a personal network.
+- **HTTPS only.** WebRTC needs a secure context; the deployed (https) build is the way to play
+  online — a plain-http host won't work.
+- **The host holds the session.** There's no host migration: if the host leaves or drops, the
+  session ends for everyone.
+- **SALVAGE banks on a clean game-over.** If the run ends because the host disconnected mid-game,
+  that run's SALVAGE isn't banked.
+
+Running your own co-op locally or self-hosting the relay: see
+[`signaling/README.md`](./signaling/README.md).
 
 ## Project layout
 

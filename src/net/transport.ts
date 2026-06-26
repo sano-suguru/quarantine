@@ -272,9 +272,16 @@ function waitIceComplete(pc: RTCPeerConnection, role: Role, wantRelay: boolean):
     };
     const onCand = (e: RTCPeerConnectionIceEvent): void => {
       const c = e.candidate;
-      if (!wantRelay && c?.type === "srflx" && !graceSet) {
+      if (graceSet || !c) return;
+      // We have a usable path once the candidate type we actually need has arrived: a reflexive
+      // candidate for STUN-only, or a relay candidate when TURN is configured. Early-resolve after
+      // a short grace (lets sibling candidates land) instead of blocking on `complete`/the hard cap
+      // — which can sit the full timeout when a transport or DNS lookup stalls (the cross-network
+      // case hit `iceComplete via hard cap` = ~8 s/peer before this).
+      const usable = wantRelay ? c.type === "relay" : c.type === "srflx";
+      if (usable) {
         graceSet = true;
-        timers.push(setTimeout(() => finish("srflx grace"), CONFIG.net.iceGatherGraceMs));
+        timers.push(setTimeout(() => finish("candidate grace"), CONFIG.net.iceGatherGraceMs));
       }
     };
     pc.addEventListener("icegatheringstatechange", onState);

@@ -135,14 +135,19 @@ async function queryTurnOverBudget(env: Env): Promise<boolean | null> {
     });
     if (!res.ok) return null;
     const data = (await res.json()) as {
+      errors?: unknown[];
       data?: {
         viewer?: {
           accounts?: { callsTurnUsageAdaptiveGroups?: { sum?: { egressBytes?: number } }[] }[];
         };
       };
     };
-    const groups = data.data?.viewer?.accounts?.[0]?.callsTurnUsageAdaptiveGroups;
-    const bytes = groups?.[0]?.sum?.egressBytes ?? 0;
+    // Fail CLOSED on a query we can't trust: GraphQL errors, or the expected shape missing (e.g.
+    // schema drift / node rename). Returning a number here would silently disable the cap. An
+    // empty `accounts[0].callsTurnUsageAdaptiveGroups` is a VALID zero-usage result, not drift.
+    const accounts = data.data?.viewer?.accounts;
+    if ((data.errors && data.errors.length > 0) || !accounts) return null;
+    const bytes = accounts[0]?.callsTurnUsageAdaptiveGroups?.[0]?.sum?.egressBytes ?? 0;
     const limitGb = env.TURN_BUDGET_GB ? Number(env.TURN_BUDGET_GB) : DEFAULT_BUDGET_GB;
     return bytes >= limitGb * 1e9;
   } catch {
