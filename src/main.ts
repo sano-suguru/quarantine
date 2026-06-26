@@ -1,4 +1,5 @@
 import { CONFIG } from "./config";
+import { PLAYER_COLORS } from "./data/players";
 import { Audio } from "./engine/audio";
 import { localPlayer } from "./engine/players";
 import { Renderer } from "./engine/renderer";
@@ -200,14 +201,41 @@ function wireCoop(): void {
 
   let hostHandle: { close(): void } | null = null;
 
+  // status with an optional "connecting" pulse dot (CSS .busy::after)
+  const setStatus = (text: string, busy = false): void => {
+    status.textContent = text;
+    status.classList.toggle("busy", busy);
+  };
+  // squad as colored chips (matches the in-game PLAYER_COLORS so teammates are recognizable)
+  const chipColor = (pid: number): string => {
+    const [r, g, b] = PLAYER_COLORS[pid % PLAYER_COLORS.length] ?? [0.49, 1, 0.31];
+    return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+  };
+  const setSquad = (members: { pid: number; label: string }[]): void => {
+    const row = document.createElement("div");
+    row.className = "squad-row";
+    for (const { pid, label } of members) {
+      const chip = document.createElement("span");
+      chip.className = "squad-chip";
+      const dot = document.createElement("span");
+      dot.className = "squad-dot";
+      dot.style.background = chipColor(pid);
+      const name = document.createElement("span");
+      name.textContent = label;
+      chip.append(dot, name);
+      row.append(chip);
+    }
+    squad.replaceChildren(row);
+  };
+
   const openLobby = (kind: "host" | "join"): void => {
     hide("start");
     show("lobby");
     roomHost.style.display = kind === "host" ? "flex" : "none";
     roomJoin.style.display = kind === "join" ? "flex" : "none";
     deploy.style.display = "none";
-    squad.textContent = "";
-    status.textContent = "";
+    squad.replaceChildren();
+    setStatus("");
     out.value = "";
     inEl.value = "";
     manual.open = false;
@@ -244,8 +272,11 @@ function wireCoop(): void {
     hostStarted = false;
 
     const refreshSquad = (): void => {
-      const n = host.connected; // authoritative open-peer count (relay AND manual)
-      squad.textContent = `Squad: you (host)${n ? ` + ${n} joined` : " — waiting for players"}`;
+      // host is player 0; each connected peer gets its pid's color/number
+      setSquad([
+        { pid: 0, label: "You (host)" },
+        ...host.connectedPids().map((pid) => ({ pid, label: `P${pid + 1}` })),
+      ]);
     };
     refreshSquad();
     deploy.style.display = "inline-block";
@@ -258,13 +289,13 @@ function wireCoop(): void {
 
     const code = makeRoomCode();
     roomCode.value = code;
-    status.textContent = "room open — share the code";
+    setStatus("room open — share the code");
     hostHandle = hostRoom(
       code,
       (link) => host.add(link),
       (s) => {
         refreshSquad();
-        if (s.error) status.textContent = `signaling: ${s.error} — use manual connect below`;
+        if (s.error) setStatus(`signaling: ${s.error} — use manual connect below`);
       },
     );
 
@@ -294,13 +325,13 @@ function wireCoop(): void {
             if (!c) return;
             try {
               await accept(c);
-              status.textContent = "manual peer linked ✓";
+              setStatus("manual peer linked ✓");
             } catch {
-              status.textContent = "that reply code didn't parse";
+              setStatus("that reply code didn't parse");
             }
           };
         } catch (err) {
-          status.textContent = `manual offer failed: ${err}`;
+          setStatus(`manual offer failed: ${err}`);
         }
       })();
     };
@@ -317,15 +348,13 @@ function wireCoop(): void {
     const join = async (): Promise<void> => {
       const code = roomInput.value.trim().toUpperCase(); // idFromName is case-sensitive
       if (!code) return;
-      status.textContent = "connecting…";
+      setStatus("connecting via relay…", true);
       try {
         const link = await joinRoom(code);
         Net.mode = "client";
-        Net.client = new Client(link, () => {
-          status.textContent = "in!";
-        });
-        squad.textContent = "Squad: you — connecting to host…";
-        status.textContent = "answer sent — establishing P2P…";
+        Net.client = new Client(link);
+        setSquad([{ pid: 1, label: "You" }]);
+        setStatus("establishing P2P link…", true);
         // joinRoom resolves when our ANSWER is sent, NOT when the P2P link actually opens. A
         // blocked NAT/firewall (e.g. a corporate network) then fails silently. Confirm a real
         // open via link.onOpen, surface link.onClose, and time out otherwise — so the player
@@ -333,25 +362,27 @@ function wireCoop(): void {
         let opened = false;
         const failTimer = setTimeout(() => {
           if (opened) return;
-          status.textContent =
-            "couldn't connect (network/NAT). Try a personal network, or use manual connect below.";
+          setStatus(
+            "couldn't connect (network/NAT). Try a personal network, or manual connect below.",
+          );
           manual.open = true;
         }, CONFIG.net.p2pOpenTimeoutMs);
         link.onOpen(() => {
           opened = true;
           clearTimeout(failTimer);
-          squad.textContent = "Squad: you — waiting for the host to deploy…";
-          status.textContent = "connected — waiting for host";
+          setStatus("connected — waiting for host to deploy");
         });
         link.onClose(() => {
           clearTimeout(failTimer);
-          status.textContent = opened
-            ? "disconnected from host."
-            : "connection failed (network/NAT) — try manual connect below.";
+          setStatus(
+            opened
+              ? "disconnected from host."
+              : "connection failed (network/NAT) — try manual connect below.",
+          );
           if (!opened) manual.open = true;
         });
       } catch (err) {
-        status.textContent = `${err instanceof Error ? err.message : err} — try manual connect below`;
+        setStatus(`${err instanceof Error ? err.message : err} — try manual connect below`);
         manual.open = true;
       }
     };
@@ -381,14 +412,13 @@ function wireCoop(): void {
         try {
           const { link, answer } = await createClientLink(offer);
           Net.mode = "client";
-          Net.client = new Client(link, () => {
-            status.textContent = "in!";
-          });
+          Net.client = new Client(link);
+          link.onOpen(() => setStatus("connected — waiting for host to deploy"));
           out.value = answer;
           sendBlock.style.display = "flex";
-          status.textContent = "reply ready — send it to the host, then wait";
+          setStatus("reply ready — send it to the host, then wait");
         } catch {
-          status.textContent = "that host code didn't parse";
+          setStatus("that host code didn't parse");
         }
       };
     };

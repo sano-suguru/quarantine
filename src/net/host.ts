@@ -82,6 +82,11 @@ export class Host {
     return this.peers.filter((p) => p.open).length;
   }
 
+  /** pids of currently-connected peers (for the lobby squad badges). */
+  connectedPids(): number[] {
+    return this.peers.filter((p) => p.open).map((p) => p.pid);
+  }
+
   /** Broadcast the current world to all peers (called at CONFIG.net.sendHz after start). */
   broadcast(tick: number): void {
     if (this.links.length === 0) return;
