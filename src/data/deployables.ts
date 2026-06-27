@@ -33,6 +33,7 @@ export const DEPLOYABLE_TYPES: Record<string, DeployableDef> = {
     cap: 3,
     weapon: { range: 380, dmg: 14, bulletSpeed: 900, interval: 0.7, magSize: 18, reloadTime: 2.5 },
     destructible: { maxHp: 160, contactRadius: 16, contactDps: 18 },
+    collider: { radius: 12 }, // physical body (~turret base) → blocks a lane; zombies pile & chew it
     color: [0.6, 0.85, 1.0],
   },
   // Append-only (see WIRE CONTRACT above). drone = weapon + movement + destructible.
@@ -81,6 +82,28 @@ export function canPlaceAt(state: State, x: number, y: number, def: DeployableDe
     if (oc && circlePush(x, y, col.radius, d.x, d.y, oc.radius)) return false;
   }
   return true;
+}
+
+/**
+ * Push a moving circle entity (player or zombie) out of every deployable that has a physical
+ * body, so a placed structure blocks the lane. Mutates the entity in place; the deployable is
+ * immovable (full separation applied to the entity). Host-only sim — deliberately NOT run in the
+ * client's own-player prediction (it reconciles to the host position via the snapshot), so a
+ * deployable's destruction can't desync a "phantom wall" between predicted and authoritative sets.
+ */
+export function resolveDeployableCollisions(
+  e: { x: number; y: number; r: number },
+  state: State,
+): void {
+  for (const d of state.deployables) {
+    const oc = DEPLOYABLE_TYPES[d.defId]?.collider;
+    if (!oc) continue;
+    const push = circlePush(e.x, e.y, e.r, d.x, d.y, oc.radius);
+    if (push) {
+      e.x += push.dx;
+      e.y += push.dy;
+    }
+  }
 }
 
 /**

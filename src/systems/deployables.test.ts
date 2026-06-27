@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { DEPLOYABLE_TYPES, deployableCount, placeDeployable } from "../data/deployables";
+import { CONFIG } from "../config";
+import {
+  DEPLOYABLE_TYPES,
+  canPlaceAt,
+  deployableCount,
+  placeDeployable,
+  placeSpot,
+} from "../data/deployables";
 import { len } from "../engine/math";
 import { addPlayer } from "../engine/players";
 import { newState } from "../state";
-import type { Deployable, State } from "../types";
+import type { Deployable, DeployableDef, State } from "../types";
 import { sysDeployables } from "./deployables";
 import { spawnZombie } from "./wave";
 
@@ -48,6 +55,65 @@ describe("placeDeployable / deployableCount", () => {
     const s = newState();
     placeDeployable(s, "nope", 0, 0);
     expect(s.deployables).toHaveLength(0);
+  });
+});
+
+describe("canPlaceAt (pure placement validity)", () => {
+  const SENTRY = DEPLOYABLE_TYPES.sentry as DeployableDef; // has a collider body
+  const STATION = DEPLOYABLE_TYPES.ammostation as DeployableDef; // bodyless
+
+  it("rejects out-of-bounds for any type", () => {
+    const s = newState();
+    expect(canPlaceAt(s, CONFIG.arena, 0, SENTRY)).toBe(false);
+    expect(canPlaceAt(s, 0, CONFIG.arena, STATION)).toBe(false);
+  });
+
+  it("a body type can't overlap a solid wall; a bodyless type ignores walls", () => {
+    const s = newState();
+    s.walls = [{ x1: 0, y1: -50, x2: 0, y2: 50 }]; // vertical wall through the origin
+    s.deployables = [];
+    expect(canPlaceAt(s, 0, 0, SENTRY)).toBe(false); // sitting on the wall
+    expect(canPlaceAt(s, 100, 0, SENTRY)).toBe(true); // clear of it
+    expect(canPlaceAt(s, 0, 0, STATION)).toBe(true); // no body → walls don't matter
+  });
+
+  it("a body type can't stack on another body", () => {
+    const s = newState();
+    s.walls = [];
+    s.deployables = [{ id: 1, defId: "sentry", x: 200, y: 0, aim: 0, hpFrac: 1, reloading: false }];
+    expect(canPlaceAt(s, 205, 0, SENTRY)).toBe(false); // overlaps the existing sentry (12+12 > 5)
+    expect(canPlaceAt(s, 260, 0, SENTRY)).toBe(true); // 60 apart > 24 → clear
+  });
+});
+
+describe("placeSpot (forward offset with feet fallback)", () => {
+  const SENTRY = DEPLOYABLE_TYPES.sentry as DeployableDef;
+
+  it("lands the spot in front of the player along their aim", () => {
+    const s = newState();
+    s.walls = [];
+    s.deployables = [];
+    const p = s.players[0] as State["players"][number];
+    p.x = 0;
+    p.y = 0;
+    p.aim = 0; // facing +x
+    const spot = placeSpot(s, p, SENTRY);
+    expect(spot).not.toBeNull();
+    expect((spot as { x: number }).x).toBeGreaterThan(0);
+    expect(Math.abs((spot as { y: number }).y)).toBeLessThan(1);
+  });
+
+  it("steps back toward the feet when the forward spot is blocked by a wall", () => {
+    const s = newState();
+    s.deployables = [];
+    const p = s.players[0] as State["players"][number];
+    p.x = 0;
+    p.y = 0;
+    p.aim = 0;
+    s.walls = [{ x1: 25, y1: -50, x2: 25, y2: 50 }]; // wall just ahead blocks the full offset (~34)
+    const spot = placeSpot(s, p, SENTRY);
+    expect(spot).not.toBeNull();
+    expect((spot as { x: number }).x).toBeLessThan(34); // fell back to a closer clear spot
   });
 });
 
