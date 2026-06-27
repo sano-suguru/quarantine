@@ -65,6 +65,8 @@ interface SnapPlayer {
   iframe: number;
   dryT: number;
   medkits: number;
+  /** bought-but-unplaced deployables, as DEPLOYABLE_ORDER indices in purchase order */
+  deployQueue: number[];
   /** co-op revive progress on this (downed) player — drives the revive bar on all clients */
   assistT: number;
   /** disconnected, body held for reconnect (P4) — drawn as a faded ghost on other clients */
@@ -173,6 +175,7 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
       iframe: p.iframe,
       dryT: p.dryT,
       medkits: p.medkits,
+      deployQueue: p.deployQueue.map((id) => DEPLOYABLE_ORDER.indexOf(id)).filter((i) => i >= 0),
       assistT: p.assistT,
       absent: p.absent,
     })),
@@ -315,6 +318,9 @@ export function applySnapshot(
     p.iframe = sp.iframe;
     p.dryT = sp.dryT;
     p.medkits = sp.medkits;
+    p.deployQueue = sp.deployQueue
+      .map((i) => DEPLOYABLE_ORDER[i])
+      .filter((id): id is string => id !== undefined);
     p.assistT = sp.assistT;
     p.absent = sp.absent;
     next.push(p);
@@ -536,6 +542,8 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.f32(p.dryT);
     w.f32(p.assistT);
     w.u8(p.medkits);
+    w.u8(p.deployQueue.length);
+    for (const di of p.deployQueue) w.u8(di);
     w.u8((p.lightOn ? 1 : 0) | (p.absent ? 2 : 0)); // flag byte: bit0 lightOn, bit1 absent
   }
 
@@ -651,6 +659,9 @@ export function decode(buf: ArrayBuffer): Snapshot {
     const dryT = r.f32();
     const assistT = r.f32();
     const medkits = r.u8();
+    const deployQueue: number[] = [];
+    const dqc = r.u8();
+    for (let j = 0; j < dqc; j++) deployQueue.push(r.u8());
     const pflags = r.u8();
     const lightOn = (pflags & 1) === 1;
     const absent = (pflags & 2) !== 0;
@@ -682,6 +693,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
       dryT,
       assistT,
       medkits,
+      deployQueue,
       absent,
     });
   }

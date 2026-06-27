@@ -242,6 +242,9 @@ export class Client {
   requestBuy(itemId: string): void {
     this.link.sendRel({ t: "buy", itemId });
   }
+  requestPlace(): void {
+    this.link.sendRel({ t: "place" });
+  }
   requestDeploy(): void {
     this.link.sendRel({ t: "deploy" });
   }

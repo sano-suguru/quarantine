@@ -1,6 +1,6 @@
 import { CONFIG } from "../config";
 import type { DeployableDef, Player, State, WeaponDef } from "../types";
-import { DEPLOYABLE_TYPES, deployableCount, placeDeployable } from "./deployables";
+import { DEPLOYABLE_TYPES, deployableCount } from "./deployables";
 import { UPGRADES } from "./upgrades";
 import { WEAPONS, WEAPON_ORDER } from "./weapons";
 
@@ -80,17 +80,22 @@ export function storeItems(state: State, buyer: Player): StoreItem[] {
     });
   }
 
-  // Fortify: buy with your own credits, auto-placed at the base, benefits the whole squad
-  // (the buyer included — the turret/station guards the shelter they're in too).
+  // Fortify: buy with your own credits into your personal deploy queue, then drop it at your
+  // feet in the field (Q). A placed structure benefits the whole squad. The cap is the shared
+  // world-placed limit; the buy gate is the per-player view (placed + what you already hold), so
+  // you can't stockpile beyond what you could place — the hard cap is re-checked at place time.
   for (const id of Object.keys(DEPLOYABLE_TYPES)) {
     const d = DEPLOYABLE_TYPES[id] as DeployableDef;
+    const queued = (b: Player) => b.deployQueue.reduce((n, q) => (q === id ? n + 1 : n), 0);
     items.push({
       id: `deploy:${id}`,
       name: `${d.name} (Fortify)`,
-      desc: `${d.desc} · ${deployableCount(state, id)}/${d.cap} built`,
+      desc: `${d.desc} · ${deployableCount(state, id)}/${d.cap} built${queued(buyer) ? ` · ${queued(buyer)} queued` : ""}`,
       price: d.cost,
-      canBuy: (s, b) => b.money >= d.cost && deployableCount(s, id) < d.cap,
-      buy: (s) => placeDeployable(s, id),
+      canBuy: (s, b) => b.money >= d.cost && deployableCount(s, id) + queued(b) < d.cap,
+      buy: (_s, b) => {
+        b.deployQueue.push(id);
+      },
     });
   }
 

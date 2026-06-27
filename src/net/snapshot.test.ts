@@ -13,6 +13,7 @@ function populated(): State {
   const s = newState();
   s.phase = "night";
   (s.players[0] as State["players"][number]).money = 137; // per-player wallet
+  (s.players[0] as State["players"][number]).deployQueue = ["sentry", "ammostation", "sentry"];
   s.kills = 9;
   addPlayer(s, 1, 250, -120);
   (s.players[1] as State["players"][number]).hp = 64;
@@ -55,6 +56,9 @@ describe("snapshot binary round-trip", () => {
     expect(back.phase).toBe("night");
     expect(back.isFull).toBe(true);
     expect(back.players.find((p) => p.id === 0)?.money).toBe(137); // per-player wallet
+    // bought-but-unplaced deployable queue survives as DEPLOYABLE_ORDER indices, order preserved
+    expect(back.players.find((p) => p.id === 0)?.deployQueue).toEqual([1, 0, 1]);
+    expect(back.players.find((p) => p.id === 1)?.deployQueue).toEqual([]);
     expect(back.kills).toBe(9);
     expect(back.day).toBe(snap.day);
     expect(back.players).toHaveLength(2);
@@ -113,7 +117,7 @@ describe("snapshot binary round-trip", () => {
       h = Math.imul(h, 0x01000193);
     }
     expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
-      `"len=281 fnv=2e480224"`,
+      `"len=283 fnv=b1987312"`,
     );
   });
 
@@ -174,6 +178,12 @@ describe("applySnapshot (id-matched apply to a client state)", () => {
     expect(client.zombies[0]?.r).toBeGreaterThan(0);
     expect(client.pickups).toHaveLength(1);
     expect(client.players.find((p) => p.id === 0)?.money).toBe(137); // per-player wallet
+    // queue indices are decoded back to defId strings on the client
+    expect(client.players.find((p) => p.id === 0)?.deployQueue).toEqual([
+      "sentry",
+      "ammostation",
+      "sentry",
+    ]);
     expect(client.phase).toBe("night");
   });
 

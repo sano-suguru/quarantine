@@ -45,6 +45,7 @@ export function makePlayer(id: number, x: number, y: number, name = `P${id + 1}`
     battery: CONFIG.flashlight.batteryMax,
     lightOn: true,
     medkits: CONFIG.heal.startMedkits,
+    deployQueue: [],
     healT: 0,
     repairCd: 0,
     money: 0,

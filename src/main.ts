@@ -6,6 +6,7 @@ import { Renderer } from "./engine/renderer";
 import {
   buyItem,
   clientAmbience,
+  deployPlace,
   draw,
   getState,
   renderArsenal,
@@ -43,6 +44,9 @@ let hostStarted = false;
 // none of which can auto-reconnect), and a re-entrancy guard so the watchdog fires one loop.
 let coopRoomCode: string | null = null;
 let reconnecting = false;
+// Q-to-place: a small local cooldown so a held/mashed key doesn't fire several reliable place
+// requests before the host's snapshot reflects the first (each would consume another queued item).
+let lastPlaceAt = -1e9;
 
 // public-room registry (D): the active host's signaling handle + whether it's listed publicly.
 // Read by the Worker-clock tick to push registry meta (so a backgrounded public host isn't pruned).
@@ -189,6 +193,17 @@ function main(): void {
       else if (e.code === "ArrowDown" || e.code === "KeyS") shopMove(1);
       else if (e.code === "Space") shopBuySelected();
       else if (e.code === "Enter") shopDeploy();
+      return;
+    }
+    // Q: drop the next queued deployable at your feet. Combat-time single key, so guard hard
+    // (alive, running, not in the shop [early-returned above], options, or reconnecting) and
+    // throttle (ignore auto-repeat + a short cooldown) to avoid multi-placing on a held key.
+    if (e.code === "KeyQ" && state.running && !settingsOpen && !reconnecting) {
+      if (e.repeat || localPlayer(state).hp <= 0) return;
+      const now = performance.now();
+      if (now - lastPlaceAt < 300) return;
+      lastPlaceAt = now;
+      deployPlace();
       return;
     }
     // O: open/close personal options in-game (title uses the Options button). Disabled in

@@ -1,5 +1,6 @@
 import { CONFIG } from "../config";
 import { effWeapon } from "../data/arsenal";
+import { resolveDeployableCollisions } from "../data/deployables";
 import { WEAPON_ORDER } from "../data/weapons";
 import { Audio } from "../engine/audio";
 import { circlePushFromSegment } from "../engine/geometry";
@@ -94,6 +95,9 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   );
   // healing roots you in place; otherwise integrate movement + wall collision
   if (!healing) integrateMovement(p, inp, state.walls, dt, p.curMoveMul);
+  // push out of solid deployable bodies (host-only — kept OUT of integrateMovement so the
+  // client's own-player prediction stays collider-free; it reconciles to this via the snapshot)
+  if (!healing) resolveDeployableCollisions(p, state);
 
   // E = context interact: repair a barricade you're next to, else search a cache
   interact(state, p, dt, healing, moving, searched);

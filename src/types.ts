@@ -103,6 +103,10 @@ export interface Player {
   lightOn: boolean;
   /** medkits carried */
   medkits: number;
+  /** purchase-ordered queue of bought-but-unplaced deployables (defId per entry). Buying a
+   *  fortification pushes its id; the place action (Q) pops the front and drops it at the
+   *  player's feet. Per-player (individual wallets), synced in snapshots (changes on buy/place). */
+  deployQueue: string[];
   /** active heal timer; while > 0 the player is rooted and can't fire */
   healT: number;
   /** cooldown between barricade repair presses */
@@ -304,6 +308,10 @@ export interface DeployableDef {
   movement?: { speed: number; leashMax: number; hoverDist: number; switchMargin: number };
   /** takes contact damage from adjacent zombies; removed at hp<=0 */
   destructible?: { maxHp: number; contactRadius: number; contactDps: number };
+  /** a physical body: pushes zombies and players out of `radius`, so a placed structure blocks
+   *  a lane (chokepoint). Bodyless types (drone hovers, station has none) omit this and are
+   *  walked through. `canPlaceAt` also uses it to forbid placing inside walls / on another body. */
+  collider?: { radius: number };
   /** draw hint; inferred from capabilities when omitted */
   visual?: "turret" | "drone" | "crate";
 }

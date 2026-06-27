@@ -1,4 +1,5 @@
 import { CONFIG } from "../config";
+import { resolveDeployableCollisions } from "../data/deployables";
 import { Audio } from "../engine/audio";
 import { circlePush, circlePushFromSegment } from "../engine/geometry";
 import { len, rand } from "../engine/math";
@@ -196,6 +197,8 @@ export function sysAI(state: State, dt: number): void {
         z.y += pp.dy;
       }
     }
+    // solid deployable bodies (e.g. a sentry) block zombies too → a placed turret is a chokepoint
+    resolveDeployableCollisions(z, state);
     // walls have the final say so nothing gets shoved through them
     resolveWalls(state, z);
   }
