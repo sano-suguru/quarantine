@@ -79,6 +79,9 @@
   #medkit{margin-bottom:8px;}
   #medkit .stat-val{color:var(--toxic);}
   #medkit.empty .stat-val{color:var(--dim);}
+  /* deploy queue (bought-but-unplaced fortifications) */
+  #deploybar{margin-bottom:8px;}
+  #deploybar .stat-val{color:var(--amber);font-size:13px;}
 
   .weapons{display:flex;gap:7px;margin-top:7px;}
   .wslot{font-size:10px;letter-spacing:.12em;padding:3px 8px;border:1px solid var(--dim);
@@ -361,6 +364,8 @@
       <div id="prompt">[E] repair barricade</div>
     </div>
     <div class="hud-block r">
+      <div id="deploybar" class="hidden"><div class="stat-label">Deploy [Q]</div>
+      <div class="stat-val" id="deploy-q"></div></div>
       <div id="medkit"><div class="stat-label">Medkits [H]</div>
       <div class="stat-val">&times;<span id="medkit-val">1</span></div></div>
       <div class="stat-label">Credits</div>
@@ -398,7 +403,8 @@
       <span><b>Click</b> fire (hold)</span><span><b>R</b> reload</span>
       <span><b>1 2 3</b> guns &middot; <b>4</b> knife</span><span><b>F</b> flashlight</span>
       <span><b>H</b> use medkit</span><span><b>E</b> repair / heal ally (hold)</span>
-      <span><b>Enter</b> start night early</span><span>weapon sets move speed (light=fast)</span>
+      <span><b>Q</b> deploy (buy in shop)</span><span><b>Enter</b> start night early</span>
+      <span>weapon sets move speed (light=fast)</span>
       <span><b>Esc/P</b> pause</span><span><b>M</b> mute</span>
       <span>auto: revive downed ally &middot; search</span><span><b>O</b> options &middot; aim assist</span>
     </div>

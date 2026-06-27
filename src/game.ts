@@ -1,6 +1,6 @@
 import { CONFIG } from "./config";
 import { type StoreItem, effWeapon, salvageEarned, storeItems } from "./data/arsenal";
-import { DEPLOYABLE_TYPES } from "./data/deployables";
+import { DEPLOYABLE_TYPES, deployableCount, placeDeployable, placeSpot } from "./data/deployables";
 import { PICKUP_TYPES } from "./data/pickups";
 import { PLAYER_COLORS } from "./data/players";
 import { UNLOCKABLE, WEAPONS, WEAPON_ORDER } from "./data/weapons";
@@ -563,6 +563,19 @@ export function updateHUD(): void {
   el("medkit-val").textContent = String(p.medkits);
   el("medkit").classList.toggle("empty", p.medkits <= 0);
 
+  // deploy queue: bought-but-unplaced fortifications. Q drops the front (▸) at your feet.
+  // Grouped by type in purchase order, so the first token is what places next.
+  if (p.deployQueue.length === 0) {
+    hide("deploybar");
+  } else {
+    show("deploybar");
+    const counts = new Map<string, number>();
+    for (const id of p.deployQueue) counts.set(id, (counts.get(id) ?? 0) + 1);
+    el("deploy-q").textContent = `▸ ${[...counts]
+      .map(([id, n]) => `${DEPLOYABLE_TYPES[id]?.name ?? id} ×${n}`)
+      .join(" · ")}`;
+  }
+
   // day/night phase
   const phaseEl = el("phase");
   if (state.phase === "day") {
@@ -703,6 +716,25 @@ export function applyBuy(s: State, itemId: string, buyer: Player | undefined): b
   return true;
 }
 
+/**
+ * Place the front of `player`'s deploy queue at their feet (in front, along aim), host-
+ * authoritatively. Returns false (consuming nothing) if the player is down, holds nothing,
+ * the world is at the type's cap, or there's no valid spot. The hard cap is re-checked here
+ * (the buy gate is only a per-player view), so co-op buy races can't exceed it.
+ */
+export function applyPlace(s: State, player: Player | undefined): boolean {
+  if (!player || player.hp <= 0) return false;
+  const defId = player.deployQueue[0];
+  if (!defId) return false;
+  const def = DEPLOYABLE_TYPES[defId];
+  if (!def || deployableCount(s, defId) >= def.cap) return false;
+  const spot = placeSpot(s, player, def);
+  if (!spot) return false;
+  placeDeployable(s, defId, spot.x, spot.y);
+  player.deployQueue.shift();
+  return true;
+}
+
 function renderShop(): void {
   const me = localPlayer(state);
   el("shop-credits").textContent = String(me.money);
@@ -758,6 +790,21 @@ export function buyItem(i: number): void {
   } else {
     Audio.ui(false);
   }
+}
+
+/**
+ * Place the next queued deployable at the local player's feet. On a client this ships a
+ * reliable request to the host (the placement + queue decrement arrive via the snapshot);
+ * on host/single it applies authoritatively. Gating (alive, not in shop, etc.) is done by
+ * the caller in main.ts.
+ */
+export function deployPlace(): void {
+  if (Net.mode === "client") {
+    Net.client?.requestPlace();
+    Audio.ui(true);
+    return;
+  }
+  Audio.ui(applyPlace(state, localPlayer(state)));
 }
 
 export function shopBuySelected(): void {

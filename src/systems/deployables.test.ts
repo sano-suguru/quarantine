@@ -18,7 +18,7 @@ function zombieAt(s: State, x: number, y: number, hp = 50): State["zombies"][num
 }
 
 function place(s: State, defId: string): Deployable {
-  placeDeployable(s, defId);
+  placeDeployable(s, defId, 0, 0);
   return s.deployables[s.deployables.length - 1] as Deployable;
 }
 
@@ -26,7 +26,7 @@ describe("placeDeployable / deployableCount", () => {
   it("places a deployable and counts it by type", () => {
     const s = newState();
     expect(deployableCount(s, "sentry")).toBe(0);
-    placeDeployable(s, "sentry");
+    placeDeployable(s, "sentry", 0, 0);
     expect(s.deployables).toHaveLength(1);
     expect(deployableCount(s, "sentry")).toBe(1);
     expect(s.deployables[0]?.defId).toBe("sentry");
@@ -46,7 +46,7 @@ describe("placeDeployable / deployableCount", () => {
 
   it("ignores an unknown defId", () => {
     const s = newState();
-    placeDeployable(s, "nope");
+    placeDeployable(s, "nope", 0, 0);
     expect(s.deployables).toHaveLength(0);
   });
 });

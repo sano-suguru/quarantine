@@ -1,6 +1,7 @@
+import { CONFIG } from "../config";
+import { circlePush, circlePushFromSegment } from "../engine/geometry";
 import { allocId } from "../state";
-import type { Deployable, DeployableDef, State } from "../types";
-import { HOME_SPAWN } from "./map";
+import type { Deployable, DeployableDef, Player, State } from "../types";
 
 /**
  * Data-driven fortification catalogue. A deployable is bought in the shop with the buyer's
@@ -56,45 +57,60 @@ export function deployableCount(state: State, defId: string): number {
   return n;
 }
 
-/**
- * Auto-placement: spread fortifications across the boarded HOME openings (the chokepoints
- * worth defending). Pick the opening with the fewest deployables nearby and set the new one
- * just inside it (offset toward the HOME spawn). Falls back to the spawn if there are no
- * openings. Deterministic so host & clients agree.
- */
-function placePos(state: State): { x: number; y: number } {
-  const bars = state.barricades;
-  if (bars.length === 0) return { x: HOME_SPAWN.x, y: HOME_SPAWN.y };
-  let best = bars[0];
-  let bestCount = Number.POSITIVE_INFINITY;
-  for (const b of bars) {
-    const mx = (b.x1 + b.x2) / 2;
-    const my = (b.y1 + b.y2) / 2;
-    let count = 0;
-    for (const d of state.deployables) {
-      if ((d.x - mx) ** 2 + (d.y - my) ** 2 < 60 * 60) count++;
-    }
-    if (count < bestCount) {
-      bestCount = count;
-      best = b;
-    }
-  }
-  const b = best as NonNullable<typeof best>;
-  const mx = (b.x1 + b.x2) / 2;
-  const my = (b.y1 + b.y2) / 2;
-  const dx = HOME_SPAWN.x - mx;
-  const dy = HOME_SPAWN.y - my;
-  const l = Math.hypot(dx, dy) || 1;
-  return { x: mx + (dx / l) * 40, y: my + (dy / l) * 40 };
+/** Placement footprint used to offset a fresh deployable in front of the player, even for
+ *  bodyless types (drone/station) so they don't spawn dead-centre on the player sprite. */
+function footprint(def: DeployableDef): number {
+  return def.collider?.radius ?? 14;
 }
 
-/** Place a freshly-bought deployable at the base (called from the shop buy path). Initialises
- *  the host-only sim state for whichever capabilities the def has, plus the synced display
- *  defaults (full hp, not reloading). */
-export function placeDeployable(state: State, defId: string): void {
+/**
+ * Can a deployable of `def` sit at (x, y)? Always rejects out-of-bounds. A type WITH a collider
+ * (a physical body) additionally can't overlap a solid wall or another body — so it never lands
+ * inside geometry or stacked on an existing turret. Bodyless types (drone hovers, station has no
+ * body) only need to be in-bounds. Barricades (boardable openings = the chokepoints you fortify)
+ * are intentionally NOT rejected. Pure/deterministic so host & clients agree.
+ */
+export function canPlaceAt(state: State, x: number, y: number, def: DeployableDef): boolean {
+  const bound = CONFIG.arena - 8;
+  if (x < -bound || x > bound || y < -bound || y > bound) return false;
+  const col = def.collider;
+  if (!col) return true;
+  for (const w of state.walls) if (circlePushFromSegment(x, y, col.radius, w)) return false;
+  for (const d of state.deployables) {
+    const oc = DEPLOYABLE_TYPES[d.defId]?.collider;
+    if (oc && circlePush(x, y, col.radius, d.x, d.y, oc.radius)) return false;
+  }
+  return true;
+}
+
+/**
+ * Where a fresh `def` lands when `player` places it: just in front along their aim, stepping the
+ * offset down toward the feet if the forward spot is blocked (a wall-facing press still places
+ * rather than silently failing). Returns null only if even the feet are invalid. Host-authoritative
+ * (host runs this against the requesting player's synced pos/aim — no coords cross the wire).
+ */
+export function placeSpot(
+  state: State,
+  player: Player,
+  def: DeployableDef,
+): { x: number; y: number } | null {
+  const dist0 = player.r + footprint(def) + 6;
+  const ux = Math.cos(player.aim);
+  const uy = Math.sin(player.aim);
+  for (const f of [1, 0.6, 0.3, 0]) {
+    const x = player.x + ux * dist0 * f;
+    const y = player.y + uy * dist0 * f;
+    if (canPlaceAt(state, x, y, def)) return { x, y };
+  }
+  return null;
+}
+
+/** Place a deployable at (x, y) (the field placement spot from `placeSpot`). Initialises the
+ *  host-only sim state for whichever capabilities the def has, plus the synced display defaults
+ *  (full hp, not reloading). */
+export function placeDeployable(state: State, defId: string, x: number, y: number): void {
   const def = DEPLOYABLE_TYPES[defId];
   if (!def) return;
-  const { x, y } = placePos(state);
   const d: Deployable = { id: allocId(state), defId, x, y, aim: 0, hpFrac: 1, reloading: false };
   if (def.weapon) {
     d.weaponCd = 0;

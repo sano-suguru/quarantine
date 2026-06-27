@@ -1,7 +1,7 @@
 import { CONFIG } from "../config";
 import { HOME_SPAWN } from "../data/map";
 import { addPlayer, removePlayer } from "../engine/players";
-import { applyBuy, getState, shopDeploy, startNightNow } from "../game";
+import { applyBuy, applyPlace, getState, shopDeploy, startNightNow } from "../game";
 import { type NetMsg, PROTOCOL_VERSION } from "./net";
 import { encodeSnapshot } from "./snapshot";
 import type { PeerLink } from "./transport";
@@ -95,6 +95,11 @@ export class Host {
           msg.itemId,
           st.players.find((pl) => pl.id === peer.pid),
         );
+      } else if (msg.t === "place") {
+        applyPlace(
+          st,
+          st.players.find((pl) => pl.id === peer.pid),
+        ); // host drops the requester's queued deployable at their feet (validated, idempotent-safe)
       } else if (msg.t === "deploy") {
         shopDeploy(); // idempotent (no-op unless the shop is open)
       } else if (msg.t === "nightStart") {
