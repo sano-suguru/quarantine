@@ -2,7 +2,7 @@ import { CONFIG } from "../config";
 import type { DeployableDef, Player, State, WeaponDef } from "../types";
 import { DEPLOYABLE_TYPES, deployableCount } from "./deployables";
 import { UPGRADES } from "./upgrades";
-import { WEAPONS, WEAPON_ORDER } from "./weapons";
+import { WEAPON_ORDER, WEAPONS } from "./weapons";
 
 /* ---- pure stat scaling (unit-tested) ---- */
 export function scaledDmg(base: number, level: number): number {

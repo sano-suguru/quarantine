@@ -1,6 +1,6 @@
 name = "quarantine-signaling"
 main = "room.ts"
-compatibility_date = "2025-04-01"
+compatibility_date = "2026-06-01"
 
 # Durable Object that relays WebRTC signaling per room code.
 [[durable_objects.bindings]]

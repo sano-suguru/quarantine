@@ -40,6 +40,7 @@ export function integrateMovement(
     }
   }
 }
+
 import { ammoTransfer } from "./ammo";
 import { killZombie } from "./bullets";
 import { lootCache } from "./caches";

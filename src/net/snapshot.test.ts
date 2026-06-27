@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { addPlayer } from "../engine/players";
-import { allocId } from "../state";
-import { newState } from "../state";
+import { allocId, newState } from "../state";
 import { spawnPickup } from "../systems/pickups";
 import { spawnZombie } from "../systems/wave";
 import type { Bullet, State } from "../types";

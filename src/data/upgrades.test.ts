@@ -3,7 +3,7 @@ import { CONFIG } from "../config";
 import { newState } from "../state";
 import type { Player, State } from "../types";
 import { UPGRADES } from "./upgrades";
-import { WEAPONS, WEAPON_ORDER } from "./weapons";
+import { WEAPON_ORDER, WEAPONS } from "./weapons";
 
 const byName = (name: string) => {
   const u = UPGRADES.find((x) => x.name === name);

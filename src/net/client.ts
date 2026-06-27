@@ -11,7 +11,7 @@ import type { Bullet } from "../types";
 import { advanceGhosts } from "./ghost";
 import { type NetMsg, PROTOCOL_VERSION } from "./net";
 import type { PlayerInput } from "./playerInput";
-import { type Snapshot, applySnapshot, decode, lerpSnapshots } from "./snapshot";
+import { applySnapshot, decode, lerpSnapshots, type Snapshot } from "./snapshot";
 import type { PeerLink } from "./transport";
 
 type RGB = [number, number, number];

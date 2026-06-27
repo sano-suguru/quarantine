@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROTOCOL_VERSION } from "./net";
-import { type RoomInfo, isJoinable, selectQuickMatch, versionMatches } from "./registry";
+import { isJoinable, type RoomInfo, selectQuickMatch, versionMatches } from "./registry";
 
 const room = (over: Partial<RoomInfo>): RoomInfo => ({
   code: "AAAA",

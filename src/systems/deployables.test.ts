@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG } from "../config";
 import {
-  DEPLOYABLE_TYPES,
   canPlaceAt,
+  DEPLOYABLE_TYPES,
   deployableCount,
   placeDeployable,
   placeSpot,
