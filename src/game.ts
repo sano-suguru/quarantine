@@ -1,9 +1,9 @@
 import { CONFIG } from "./config";
-import { type StoreItem, effWeapon, salvageEarned, storeItems } from "./data/arsenal";
+import { effWeapon, type StoreItem, salvageEarned, storeItems } from "./data/arsenal";
 import { DEPLOYABLE_TYPES, deployableCount, placeDeployable, placeSpot } from "./data/deployables";
 import { PICKUP_TYPES } from "./data/pickups";
 import { PLAYER_COLORS } from "./data/players";
-import { UNLOCKABLE, WEAPONS, WEAPON_ORDER } from "./data/weapons";
+import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "./data/weapons";
 import { Audio } from "./engine/audio";
 import { anyAlive, localPlayer, nearestPlayer, revivePlayer } from "./engine/players";
 import { Renderer, SHAPE } from "./engine/renderer";
@@ -911,7 +911,7 @@ function openShop(): void {
 export function applyBuy(s: State, itemId: string, buyer: Player | undefined): boolean {
   if (!s.inShop || !buyer) return false;
   const it = storeItems(s, buyer).find((x) => x.id === itemId);
-  if (!it || !it.canBuy(s, buyer)) return false;
+  if (!it?.canBuy(s, buyer)) return false;
   buyer.money -= it.price;
   it.buy(s, buyer);
   return true;
@@ -958,7 +958,9 @@ function renderShop(): void {
 
 /** Update only the selection highlight — no DOM teardown, so clicks survive. */
 function highlightShop(): void {
-  shopEls.forEach((d, i) => d.classList.toggle("sel", i === shopSel));
+  shopEls.forEach((d, i) => {
+    d.classList.toggle("sel", i === shopSel);
+  });
 }
 
 export function shopMove(dir: number): void {

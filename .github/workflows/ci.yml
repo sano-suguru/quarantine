@@ -12,7 +12,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2 # bun version resolved from root package.json `packageManager`
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
@@ -29,7 +29,7 @@ jobs:
   signaling:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile # root — provides typescript
       - run: cd signaling && bun install --frozen-lockfile # worker deps (wrangler, workers-types)

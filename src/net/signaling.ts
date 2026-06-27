@@ -1,6 +1,6 @@
 import { CONFIG } from "../config";
 import { PROTOCOL_VERSION } from "./net";
-import { type PeerLink, createClientLink, createHostLink } from "./transport";
+import { createClientLink, createHostLink, type PeerLink } from "./transport";
 
 /**
  * Room-code auto-connect over a WebSocket signaling relay (see signaling/). This is a thin

@@ -1,6 +1,6 @@
 import { CONFIG } from "../config";
 import type { Upgrade } from "../types";
-import { WEAPONS, WEAPON_ORDER } from "./weapons";
+import { WEAPON_ORDER, WEAPONS } from "./weapons";
 
 const pct = (m: number): string => `${Math.round(m * 100)}%`;
 

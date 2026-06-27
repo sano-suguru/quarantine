@@ -16,8 +16,8 @@ import {
   startGame,
   startNightNow,
   syncShopUI,
-  toTitle,
   togglePause,
+  toTitle,
   update,
   updateHUD,
 } from "./game";
@@ -27,10 +27,10 @@ import { Host } from "./net/host";
 import { sampleLocalInput } from "./net/localInput";
 import { Net } from "./net/net";
 import { emptyInput } from "./net/playerInput";
-import { type RoomInfo, listRooms, selectQuickMatch, versionMatches } from "./net/registry";
+import { listRooms, type RoomInfo, selectQuickMatch, versionMatches } from "./net/registry";
 import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
-import { NETLOG, createClientLink, createHostLink, getTurnStatus } from "./net/transport";
+import { createClientLink, createHostLink, getTurnStatus, NETLOG } from "./net/transport";
 import { getSettings, setAimAssist } from "./settings";
 import { sysCamera } from "./systems/camera";
 import { sysFx } from "./systems/fx";

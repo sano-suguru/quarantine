@@ -4,7 +4,7 @@ import { Renderer } from "../engine/renderer";
 import { Input } from "../input";
 import { getSettings } from "../settings";
 import type { State } from "../types";
-import { type PlayerInput, emptyInput } from "./playerInput";
+import { emptyInput, type PlayerInput } from "./playerInput";
 
 /**
  * Samples the local player's input from the `Input` singleton + DOM into a serializable

@@ -26,14 +26,17 @@
     "format:check": "biome format src index.html"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
+    "@biomejs/biome": "^2.5.1",
     "@vitest/coverage-v8": "^4.1.9",
     "concurrently": "^10.0.3",
-    "knip": "^6.21.0",
+    "knip": "^6.22.0",
     "lefthook": "^2.1.9",
-    "typescript": "^5.7.2",
-    "vite": "^6.0.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0",
     "vitest": "^4.1.9"
   },
-  "trustedDependencies": ["@biomejs/biome", "lefthook"]
+  "trustedDependencies": [
+    "@biomejs/biome",
+    "lefthook"
+  ]
 }
