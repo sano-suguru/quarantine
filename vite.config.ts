@@ -69,9 +69,10 @@ export default defineConfig({
         "src/net/ticker.ts",
       ],
       // branch coverage is coarse under v8 — track lines/functions/statements only.
-      // Regression floor: measured baseline (L 67.3 / F 64.3 / S 64.9) rounded down ~2pts.
-      // Raise opportunistically as untested pure logic (caches/siege/upgrades/bullets/pickups) gains tests.
-      thresholds: { lines: 65, functions: 62, statements: 62 },
+      // Regression floor: measured baseline (L 78.9 / F 81.0 / S 76.2) rounded down ~2pts after
+      // adding pure-logic tests (upgrades/siege/wave/caches/pickups/state/meta).
+      // Raise opportunistically as remaining untested pure logic (bullets hit-resolution) gains tests.
+      thresholds: { lines: 77, functions: 78, statements: 74 },
     },
   },
 });
