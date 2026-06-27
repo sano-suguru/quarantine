@@ -35,6 +35,62 @@ const TOXIC: [number, number, number] = [0.49, 1.0, 0.31];
 let hbT = 0; // heartbeat timer
 let groanT = 2; // ambient groan timer
 
+/* ---- horror "feel" layer (light/sound polish) ----
+ * All of this is pure visual/audio re-derived from `state` on whichever machine renders:
+ * it never touches the sim (`update`/`state`/`sysFx`/`sysAI`), so single-player stays
+ * byte-for-byte and every co-op client produces its own fear locally from the snapshot world. */
+
+/** Time-correlated 0..1 flicker value: a smooth low tremor with occasional brief surges, so the
+ *  cone reads as a failing bulb rather than per-frame static. Decorrelated per `seed` (player id). */
+function flickerNoise(t: number, seed: number): number {
+  const s = seed * 1.37;
+  const base = 0.5 + 0.3 * Math.sin(t * 9.1 + s) + 0.2 * Math.sin(t * 23.7 + s * 2.3);
+  const surge = Math.max(0, Math.sin(t * 2.3 + s * 5)) ** 6; // sparse deeper dip
+  return Math.max(0, Math.min(1, base * 0.5 + surge));
+}
+
+// dust motes: fixed per-mote seeds, animated purely from state.time (no per-frame state)
+const DUST = Array.from({ length: CONFIG.flashlight.dustCount }, () => ({
+  ang: Math.random() * 2 - 1, // -1..1 → fraction of the cone half-angle
+  dist: 0.18 + Math.random() * 0.72, // fraction of cone range
+  phase: Math.random() * Math.PI * 2,
+  spd: 0.25 + Math.random() * 0.7,
+  size: 0.6 + Math.random() * 1.3,
+}));
+
+// darting shadows: visual-only streaks (NOT in state.particles → single-player safe)
+interface Dart {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+}
+let darts: Dart[] = [];
+let lastDrawT = 0; // for a render-side dt derived from state.time (advances on host & client)
+
+// per-zombie voice bookkeeping (groan while lurking / screech on entering the cone). Keyed by
+// zombie id; pure audio state, never synced. recentVoices throttles to avoid 4p×horde saturation.
+const voiceMem = new Map<number, { wasLit: boolean; nextGroan: number }>();
+let recentVoices: number[] = []; // state.time stamps of recent individual voices
+
+// heartbeat→vignette pulse: set when a heartbeat fires, read (and decayed) in updateHUD
+let lastBeatT = -10;
+let beatStrength = 0;
+// local flashlight die edge (battery → 0): play a one-shot "going dark" cue
+let prevBattery = 1;
+
+/** Reset the per-run atmosphere bookkeeping so stale zombie ids / darts don't carry across runs. */
+function resetAtmosphere(): void {
+  voiceMem.clear();
+  recentVoices = [];
+  darts = [];
+  lastBeatT = -10;
+  beatStrength = 0;
+  prevBattery = 1;
+}
+
 export function update(dt: number): void {
   if (!state.running || state.paused) return;
 
@@ -77,33 +133,164 @@ function audioAmbience(dt: number): void {
   // running dry feeds the dread too — the fear of an empty gun
   const totalAmmo = p.ammo + (p.reserve[p.weapon] ?? 0);
   const lowAmmo = !wd.melee && wd.mag > 0 && totalAmmo < wd.mag * CONFIG.horror.lowAmmo;
+  // dread = the low-frequency drone of VISIBLE pressure. The floor is low so quiet moments go
+  // near-silent (the "silence" dynamic) and the next threat lands harder. Unseen threats no
+  // longer feed the drone — they drive the separate high tension layer below (role split).
   const dread = Math.min(
     1,
-    0.12 +
+    CONFIG.horror.dreadFloor +
       state.surrounded / (CONFIG.horror.surroundCount * 1.6) +
-      // unseen threats in the dark weigh heavier than ones in your light
-      state.lurking / (CONFIG.horror.surroundCount * 1.2) +
       (hpf < CONFIG.horror.lowHp ? 0.35 : 0) +
       (lowAmmo ? 0.2 : 0) +
-      (state.phase === "night" ? 0.15 : 0),
+      (state.phase === "night" ? 0.12 : 0),
   );
   Audio.setDread(dread);
+  // tension = the rising dissonance of UNSEEN threats crowding the dark behind/around you
+  Audio.setTension(Math.min(1, state.lurking / CONFIG.horror.surroundCount));
 
   if (hpf < CONFIG.horror.lowHp) {
     hbT -= dt;
     if (hbT <= 0) {
       const strength = 1 - hpf / CONFIG.horror.lowHp; // closer to death = stronger
       Audio.heartbeat(0.6 + strength * 0.6);
+      lastBeatT = state.time; // pulse the vignette in time with the beat (read in updateHUD)
+      beatStrength = 0.5 + strength * 0.5;
       hbT = 0.9 - strength * 0.4;
     }
   } else {
     hbT = 0.3;
   }
 
+  // local flashlight dying (battery → 0 while lit): a one-shot "going dark" cue. Edge-detected
+  // from the local player's synced battery so it fires once on host/client/single alike.
+  const batf = p.battery / CONFIG.flashlight.batteryMax;
+  if (p.lightOn && prevBattery > 0 && batf <= 0) Audio.lightDie();
+  prevBattery = batf;
+
+  // per-zombie groans / cone-entry screeches, re-derived locally from the world
+  zombieVoices();
+
   groanT -= dt;
   if (groanT <= 0 && state.zombies.length > 0) {
     Audio.groan((Math.random() * 2 - 1) * 0.8);
     groanT = Math.max(0.6, 3.5 - state.zombies.length * 0.06);
+  }
+}
+
+/**
+ * Per-zombie horror voices, re-derived LOCALLY (no snapshot fields, no sim state). For each
+ * nearby zombie relative to the local player we fire:
+ *  - a screech the instant it crosses from the dark into the flashlight cone ("it was right there"),
+ *  - an occasional groan while it lurks unseen and close.
+ * A rolling concurrency cap keeps a 4-player horde from saturating into noise; when many lurk we
+ * thin the individual voices and let the tension layer carry the dread (quantity → quality).
+ */
+function zombieVoices(): void {
+  const lp = localPlayer(state);
+  const now = state.time;
+  const coneCos = Math.cos(CONFIG.flashlight.halfAngle);
+  const aimX = Math.cos(lp.aim);
+  const aimY = Math.sin(lp.aim);
+  const nearR = CONFIG.horror.surroundRadius * 1.4; // voices carry a little past the dread radius
+  const nearR2 = nearR * nearR;
+
+  // anti-saturation budget: drop voices older than the window, then cap how many may sound
+  const win = CONFIG.horror.voiceWindowMs / 1000;
+  recentVoices = recentVoices.filter((t) => now - t <= win);
+  const cap =
+    state.lurking > CONFIG.horror.lurkThinAt
+      ? Math.max(1, CONFIG.horror.maxConcurrentVoices - 2)
+      : CONFIG.horror.maxConcurrentVoices;
+  const canVoice = (): boolean => {
+    if (recentVoices.length >= cap) return false;
+    recentVoices.push(now);
+    return true;
+  };
+
+  for (const z of state.zombies) {
+    const dx = z.x - lp.x;
+    const dy = z.y - lp.y;
+    const d2 = dx * dx + dy * dy;
+    let m = voiceMem.get(z.id);
+    if (d2 > nearR2) {
+      // far away: forget its lit-state so a later approach re-triggers a screech cleanly
+      if (m) voiceMem.delete(z.id);
+      continue;
+    }
+    const d = Math.sqrt(d2) || 1;
+    const lit = (dx / d) * aimX + (dy / d) * aimY > coneCos; // caught in the cone
+    const pan = Math.max(-1, Math.min(1, dx / 400));
+    const vol = Math.max(0.3, 1 - d / nearR);
+    if (!m) {
+      m = { wasLit: lit, nextGroan: now + Math.random() * CONFIG.horror.groanCooldown };
+      voiceMem.set(z.id, m);
+    }
+    // screech the moment it enters the light from the dark
+    if (lit && !m.wasLit && canVoice()) Audio.screech(pan, vol);
+    m.wasLit = lit;
+    // groan while lurking unseen and close, on an irregular per-zombie cadence
+    if (!lit && now >= m.nextGroan) {
+      m.nextGroan = now + CONFIG.horror.groanCooldown * (0.6 + Math.random() * 0.8);
+      if (Math.random() < CONFIG.horror.groanChance && canVoice()) Audio.groan(pan, z.type, vol);
+    }
+  }
+}
+
+/** spawn one shadow streak near a cone edge, sweeping across the beam. */
+function spawnDart(lp: Player): void {
+  if (darts.length >= 6) return;
+  const flc = CONFIG.flashlight;
+  const side = Math.random() < 0.5 ? -1 : 1;
+  const dist = flc.range * (0.35 + Math.random() * 0.45);
+  const ang = lp.aim + side * flc.halfAngle * (0.7 + Math.random() * 0.5); // start near a cone edge
+  const cross = lp.aim - (Math.PI / 2) * side; // sweep toward the opposite edge
+  const sp = CONFIG.horror.dartSpeed * (0.8 + Math.random() * 0.4);
+  darts.push({
+    x: lp.x + Math.cos(ang) * dist,
+    y: lp.y + Math.sin(ang) * dist,
+    vx: Math.cos(cross) * sp,
+    vy: Math.sin(cross) * sp,
+    life: CONFIG.horror.dartLife,
+    maxLife: CONFIG.horror.dartLife,
+  });
+}
+
+/** Visual atmosphere drawn inside the local player's cone: drifting dust + occasional darting
+ *  shadows. Pure render (no sim state) so single-player stays byte-for-byte; `ddt` is derived
+ *  from state.time (which advances on host & client) since draw() has no dt of its own. */
+function drawAtmosphere(R: typeof Renderer, lp: Player, ddt: number): void {
+  const flc = CONFIG.flashlight;
+  const ambient = state.phase === "day" ? CONFIG.siege.dayAmbient : CONFIG.siege.nightAmbient;
+  const lit = lp.lightOn && lp.battery > 0 && ambient < 0.2; // only meaningful in the dark
+  if (lit) {
+    // dust motes: faint additive specks drifting in the beam
+    for (const m of DUST) {
+      const ang = lp.aim + m.ang * flc.halfAngle * 0.92;
+      const drift = Math.sin(state.time * m.spd + m.phase);
+      const dist = m.dist * flc.range * 0.62 + drift * 22;
+      const x = lp.x + Math.cos(ang) * dist + Math.cos(state.time * m.spd * 0.6 + m.phase) * 10;
+      const y = lp.y + Math.sin(ang) * dist + Math.sin(state.time * m.spd * 0.8 + m.phase) * 10;
+      const tw = 0.45 + 0.55 * Math.sin(state.time * 1.6 + m.phase * 3); // slow twinkle
+      if (tw <= 0) continue;
+      const c = flc.dustColor;
+      R.glow(x, y, m.size * flc.dustSize, c[0], c[1], c[2], flc.dustAlpha * tw);
+    }
+    // darting shadows: more likely the more unseen threats crowd the dark
+    if (state.lurking > 0 && Math.random() < state.lurking * CONFIG.horror.dartChancePerLurk * ddt)
+      spawnDart(lp);
+  }
+  for (let i = darts.length - 1; i >= 0; i--) {
+    const d = darts[i] as Dart;
+    d.life -= ddt;
+    if (d.life <= 0) {
+      darts.splice(i, 1);
+      continue;
+    }
+    d.x += d.vx * ddt;
+    d.y += d.vy * ddt;
+    const a = d.life / d.maxLife;
+    // a near-black streak that briefly occludes the beam (a thing crossing your light)
+    R.rect(d.x, d.y, 28, 7, Math.atan2(d.vy, d.vx), 0.02, 0.02, 0.03, 0.7 * a);
   }
 }
 
@@ -138,6 +325,10 @@ export function clientAmbience(dt: number): void {
 export function draw(): void {
   const R = Renderer;
   const lp = localPlayer(state);
+  // render-side dt from state.time (advances on host via update + client via snapshot); clamped
+  // so a backgrounded tab's time jump can't fling darts across the map.
+  const ddt = Math.max(0, Math.min(0.1, state.time - lastDrawT));
+  lastDrawT = state.time;
   const c = state.cam;
   const sh = c.shake;
   const camX = c.x + (Math.random() * 2 - 1) * sh;
@@ -162,7 +353,8 @@ export function draw(): void {
       pl.lightOn,
       flc.lowThreshold,
       flc.flickerDepth,
-      Math.random(),
+      flc.baseFlickerDepth,
+      flickerNoise(state.time, pl.id),
     );
     R.addLight(pl.x, pl.y, Math.cos(pl.aim), Math.sin(pl.aim), intensity);
   }
@@ -324,6 +516,9 @@ export function draw(): void {
         SHAPE.ring,
       );
   }
+
+  // --- atmosphere: dust motes + darting shadows in the local cone ---
+  drawAtmosphere(R, lp, ddt);
 
   // --- floating damage numbers ---
   for (const t of state.texts) {
@@ -607,7 +802,12 @@ export function updateHUD(): void {
 
   // dread vignette intensity
   const hud = el("hud");
-  hud.classList.toggle("low", hpf < CONFIG.horror.lowHp);
+  const low = hpf < CONFIG.horror.lowHp;
+  hud.classList.toggle("low", low);
+  // heartbeat-synced red pulse: a quick throb in time with the heartbeat audio (set in
+  // audioAmbience). Decays from state.time so audio and visuals beat together.
+  const pulse = low ? beatStrength * Math.exp(-(state.time - lastBeatT) * 7) : 0;
+  el("dread-pulse").style.opacity = String(Math.min(0.5, pulse));
 
   // damage flash overlay
   const fl = el("flash");
@@ -655,6 +855,7 @@ export function startGame(): void {
   state = newState();
   state.running = true;
   lastWeapon = "";
+  resetAtmosphere();
   Audio.resume();
   hide("start");
   hide("over");
@@ -1021,6 +1222,7 @@ export function startClientGame(): void {
   state = newState();
   state.running = true;
   lastWeapon = "";
+  resetAtmosphere();
   Audio.resume();
   hide("start");
   hide("over");

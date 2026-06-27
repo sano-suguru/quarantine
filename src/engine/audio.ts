@@ -11,6 +11,8 @@ let noiseBuf: AudioBuffer | null = null;
 // ambient drone (continuous bed of dread)
 let droneGain: GainNode | null = null;
 let droneTarget = 0;
+// tension layer (high dissonant cluster for unseen threats)
+let tensionGain: GainNode | null = null;
 
 let muted = false;
 try {
@@ -55,6 +57,25 @@ function resume(): void {
       const g = ctx.createGain();
       g.gain.value = 0.4;
       o.connect(g).connect(droneGain);
+      o.start();
+    }
+
+    // tension: a quiet, deliberately dissonant high cluster (minor-second + tritone) through a
+    // bandpass. Rides on unseen-threat count via setTension — unsettling, never blaring.
+    tensionGain = ctx.createGain();
+    tensionGain.gain.value = 0;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 1300;
+    bp.Q.value = 0.7;
+    tensionGain.connect(bp).connect(master);
+    for (const f of [330, 349, 466]) {
+      const o = ctx.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.value = 0.05;
+      o.connect(g).connect(tensionGain);
       o.start();
     }
   }
@@ -221,22 +242,27 @@ function gameOver(): void {
   noise(1.4, 0.3, "lowpass", 600);
 }
 
-function groan(pan: number): void {
+/** zombie vocalisation. `type` shapes the timbre (brute deep, runner raspy-high, walker mid);
+ *  `vol` (0..1) is a distance attenuation so far threats murmur and near ones loom. */
+function groan(pan: number, type = "walker", vol = 1): void {
   if (!ctx) return;
   const o = ctx.createOscillator();
   o.type = "sawtooth";
   const t = ctx.currentTime;
-  const f0 = 90 + Math.random() * 60;
+  // per-type pitch + filter: brute = low rumble, runner = higher rasp, walker = mid
+  const base = type === "brute" ? 55 : type === "runner" ? 130 : 90;
+  const cutoff = type === "brute" ? 320 : type === "runner" ? 760 : 500;
+  const f0 = base + Math.random() * base * 0.5;
   o.frequency.setValueAtTime(f0, t);
   o.frequency.linearRampToValueAtTime(f0 * 0.7, t + 0.5);
   const lp = ctx.createBiquadFilter();
   lp.type = "lowpass";
-  lp.frequency.value = 500;
+  lp.frequency.value = cutoff;
   const p = ctx.createStereoPanner();
   p.pan.value = Math.max(-1, Math.min(1, pan));
   const g = ctx.createGain();
   g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(0.18, t + 0.1);
+  g.gain.linearRampToValueAtTime(0.18 * vol, t + 0.1);
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
   o.connect(lp)
     .connect(p)
@@ -244,6 +270,42 @@ function groan(pan: number): void {
     .connect(master as GainNode);
   o.start(t);
   o.stop(t + 0.7);
+}
+
+/** a sharp rising shriek — fired when a lurking zombie is suddenly caught in the flashlight cone. */
+function screech(pan: number, vol = 1): void {
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  const o = ctx.createOscillator();
+  o.type = "sawtooth";
+  const f0 = 820 + Math.random() * 320;
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f0 * 1.7, t + 0.1);
+  o.frequency.exponentialRampToValueAtTime(f0 * 0.6, t + 0.22);
+  const hp = ctx.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 700;
+  const p = ctx.createStereoPanner();
+  p.pan.value = Math.max(-1, Math.min(1, pan));
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.13 * vol, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+  o.connect(hp)
+    .connect(p)
+    .connect(g)
+    .connect(master as GainNode);
+  o.start(t);
+  o.stop(t + 0.28);
+  // a breath of grit on top
+  noise(0.12, 0.12 * vol, "bandpass", 2600, 1.4);
+}
+
+/** the flashlight bulb cutting out: a short electrical "jjt" as you drop into the dark. */
+function lightDie(): void {
+  if (!ctx) return;
+  noise(0.09, 0.3, "highpass", 2600, 0.6);
+  tone(900, 0.06, "square", 0.08, 120);
 }
 
 function heartbeat(strength: number): void {
@@ -274,6 +336,14 @@ function setDread(level: number): void {
   }
 }
 
+/** high dissonant tension layer 0..1 (smoothed); driven by unseen-threat count */
+function setTension(level: number): void {
+  if (tensionGain && ctx) {
+    const v = Math.max(0, Math.min(1, level));
+    tensionGain.gain.setTargetAtTime(v * 0.05, ctx.currentTime, 0.5);
+  }
+}
+
 function setMuted(m: boolean): void {
   muted = m;
   if (master && ctx) master.gain.setTargetAtTime(m ? 0 : 0.9, ctx.currentTime, 0.05);
@@ -295,6 +365,7 @@ function isMuted(): boolean {
 
 function stopDread(): void {
   setDread(0);
+  setTension(0);
 }
 
 export const Audio = {
@@ -316,8 +387,11 @@ export const Audio = {
   waveStart,
   gameOver,
   groan,
+  screech,
+  lightDie,
   heartbeat,
   setDread,
+  setTension,
   stopDread,
   toggleMute,
   setMuted,
