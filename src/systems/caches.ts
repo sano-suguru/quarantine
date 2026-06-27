@@ -1,4 +1,3 @@
-import { CONFIG } from "../config";
 import type { State } from "../types";
 import { spawnPickup } from "./pickups";
 
@@ -25,6 +24,3 @@ export function lootCache(state: State, x: number, y: number, tier: number): voi
   }
   state.money += 10 * tier; // credits to spend on repairs/upgrades
 }
-
-/** seconds of holding interact (and standing still) needed to crack a cache */
-export const SEARCH_TIME = CONFIG.cache.searchTime;

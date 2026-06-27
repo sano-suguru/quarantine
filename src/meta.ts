@@ -33,7 +33,7 @@ export function loadMeta(): Meta {
   }
 }
 
-export function saveMeta(m: Meta): void {
+function saveMeta(m: Meta): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(m));
   } catch {

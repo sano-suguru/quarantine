@@ -31,7 +31,7 @@ const TAU = Math.PI * 2;
 
 /* ----------------------------- logical snapshot ----------------------------- */
 
-export interface SnapPlayer {
+interface SnapPlayer {
   id: number;
   x: number;
   y: number;
@@ -59,7 +59,7 @@ export interface SnapPlayer {
   absent: boolean;
 }
 
-export interface SnapZombie {
+interface SnapZombie {
   id: number;
   x: number;
   y: number;
@@ -70,7 +70,7 @@ export interface SnapZombie {
   flash: number;
 }
 
-export interface SnapBullet {
+interface SnapBullet {
   id: number;
   x: number;
   y: number;
@@ -79,7 +79,7 @@ export interface SnapBullet {
   color: [number, number, number];
 }
 
-export interface SnapPickup {
+interface SnapPickup {
   id: number;
   x: number;
   y: number;

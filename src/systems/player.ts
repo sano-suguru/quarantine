@@ -156,7 +156,7 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   if (p.dryT > 0) p.dryT -= dt;
 }
 
-export function fireWeapon(state: State, p: Player, wd: WeaponDef): void {
+function fireWeapon(state: State, p: Player, wd: WeaponDef): void {
   if (wd.melee) {
     meleeSwing(state, p, wd);
     return;

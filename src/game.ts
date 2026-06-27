@@ -611,7 +611,7 @@ const shopSigOf = (items: StoreItem[]): string => items.map((x) => `${x.id}:${x.
 
 /** Authoritative: open the arsenal between nights (host/single sim). The overlay itself
  *  is shown by syncShopUI from `state.inShop`, so clients open it from the snapshot. */
-export function openShop(): void {
+function openShop(): void {
   state.inShop = true;
   state.paused = true;
   Audio.setDread(0.1);
@@ -767,7 +767,7 @@ function endRun(salvage: number, day: number, kills: number, money: number): voi
   show("over");
 }
 
-export function gameOver(): void {
+function gameOver(): void {
   // the run's SALVAGE is a party pot, split evenly (floor so co-op never over-banks);
   // each player banks their own share to their own localStorage via the gameover event.
   const total = salvageEarned(state.day, state.kills);
@@ -830,7 +830,7 @@ export function togglePause(): void {
   // every client via the snapshot) — no imperative show/hide here.
 }
 
-export function shopVisible(): boolean {
+function shopVisible(): boolean {
   return !el("shop").classList.contains("hidden");
 }
 
