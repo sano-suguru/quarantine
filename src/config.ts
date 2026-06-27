@@ -61,6 +61,22 @@ export const CONFIG = {
     surroundCount: 5, // nearby zombies that count as "surrounded"
     surroundRadius: 170,
     lowAmmo: 0.25, // total-ammo fraction (vs one mag) that adds to dread
+    // baseline dread when nothing's near. low → the soundscape drops near-silent between
+    // threats so the next groan/attack lands harder ("silence" dynamic).
+    dreadFloor: 0.04,
+    // per-zombie voices (groan while lurking / screech when caught in the light). Re-derived
+    // LOCALLY on host/client/single from the world relative to the local player — they never
+    // travel in snapshots, so each client hears its own fear (see zombieVoices in game.ts).
+    voiceWindowMs: 700, // rolling window for the concurrency cap (anti-saturation)
+    maxConcurrentVoices: 3, // max individual zombie voices per window (4p × horde would clip)
+    groanCooldown: 4.0, // per-zombie min seconds between groans
+    groanChance: 0.55, // probability a due lurker actually groans (keeps the cadence irregular)
+    lurkThinAt: 6, // lurking count above which individual voices thin out (lean on tension)
+    // "something darts across the light": a fast shadow streak across the cone when unseen
+    // threats crowd the dark. Visual only, drawn in draw() (no sim state → single-player safe).
+    dartChancePerLurk: 0.05, // per-second dart probability contributed by each lurking zombie
+    dartSpeed: 900, // world units/sec the streak crosses at
+    dartLife: 0.16, // seconds a streak lives
   },
   flashlight: {
     halfAngle: 0.55, // cone half-angle in radians (~63° total)
@@ -71,10 +87,17 @@ export const CONFIG = {
     emissiveFloor: 0.4, // how much glows/eyes show in the dark (additive pass)
     batteryMax: 100,
     drainPerSec: 1.6, // ~60s of light on a full battery
-    lowThreshold: 0.25, // battery fraction where flicker begins
-    flickerDepth: 0.4, // how deep the flicker dips the cone
+    lowThreshold: 0.25, // battery fraction where the DEEP flicker begins
+    flickerDepth: 0.4, // how deep the low-battery flicker dips the cone
+    baseFlickerDepth: 0.04, // subtle constant flicker even at full battery (a failing bulb)
     shopBattery: 60, // safe-room battery resupply
     dropChance: 0.04, // chance a kill drops a battery (rarer than ammo)
+    // dust motes drifting in the cone (visual only, drawn in draw() from state.time — no sim
+    // state, so single-player stays byte-for-byte and each client renders its own).
+    dustCount: 46, // motes sampled in the local player's cone
+    dustSize: 2.0, // base mote radius in world units (per-mote variance on top)
+    dustAlpha: 0.08, // faint — should read as "in the beam", not snow
+    dustColor: [0.82, 0.8, 0.7] as [number, number, number],
   },
   heal: {
     duration: 2.0, // seconds a medkit takes (rooted + can't fire)

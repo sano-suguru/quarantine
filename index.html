@@ -29,6 +29,11 @@
     transition:box-shadow .4s;}
   #hud.low ~ #vignette, body.low #vignette{}
 
+  /* heartbeat-synced dread pulse: a red inner vignette throbbing in time with the heartbeat
+     (opacity driven from JS each frame, so NO transition here or it would smear the beat) */
+  #dread-pulse{position:fixed;inset:0;pointer-events:none;z-index:1;opacity:0;
+    box-shadow:inset 0 0 200px 80px rgba(150,0,0,.55);}
+
   /* full-screen damage / heal flash */
   #flash{position:fixed;inset:0;pointer-events:none;z-index:3;opacity:0;
     transition:opacity .12s ease-out;}
@@ -331,6 +336,7 @@
 <body>
 <canvas id="game"></canvas>
 <div id="vignette"></div>
+<div id="dread-pulse"></div>
 <div id="flash"></div>
 <div id="cross"></div>
 <div id="mute"></div>
