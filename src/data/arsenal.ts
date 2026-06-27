@@ -1,5 +1,6 @@
 import { CONFIG } from "../config";
-import type { Player, State, WeaponDef } from "../types";
+import type { DeployableDef, Player, State, WeaponDef } from "../types";
+import { DEPLOYABLE_TYPES, deployableCount, placeDeployable } from "./deployables";
 import { UPGRADES } from "./upgrades";
 import { WEAPONS, WEAPON_ORDER } from "./weapons";
 
@@ -21,12 +22,13 @@ export function salvageEarned(day: number, kills: number): number {
 }
 
 /**
- * The weapon's effective stats this run: base table plus the run-scoped upgrade
- * level (damage and magazine only). WEAPONS itself is never mutated.
+ * The weapon's effective stats this run: base table plus the player's run-scoped upgrade
+ * level (damage and magazine only). Upgrades are per-player now, so this reads the player's
+ * own wlevel. WEAPONS itself is never mutated.
  */
-export function effWeapon(state: State, id: string): WeaponDef {
+export function effWeapon(p: Player, id: string): WeaponDef {
   const base = WEAPONS[id] as WeaponDef;
-  const lvl = state.wlevel[id] ?? 0;
+  const lvl = p.wlevel[id] ?? 0;
   if (lvl <= 0) return base;
   return { ...base, dmg: scaledDmg(base.dmg, lvl), mag: scaledMag(base.mag, lvl) };
 }
@@ -37,21 +39,22 @@ export interface StoreItem {
   name: string;
   desc: string;
   price: number;
-  canBuy: (s: State) => boolean;
-  /** apply the purchase. `buyer` is the player who paid (perks affecting personal
-   *  stats apply to them; run-wide perks/weapon levels ignore it). */
+  /** can `buyer` afford + still upgrade this? Money and weapon levels are per-player now. */
+  canBuy: (s: State, buyer: Player) => boolean;
+  /** apply the purchase to `buyer` (the player who paid): their money, weapon level, perks. */
   buy: (s: State, buyer: Player) => void;
 }
 
-/** Build the store list for the current run: weapon upgrades + field perks. */
-export function storeItems(state: State): StoreItem[] {
+/** Build the store list for `buyer`: weapon upgrades + field perks priced off their own
+ *  wallet/levels (the shop is each player's personal locker). `owned` is still shared. */
+export function storeItems(state: State, buyer: Player): StoreItem[] {
   const items: StoreItem[] = [];
   const a = CONFIG.arsenal;
 
   for (const id of WEAPON_ORDER) {
     const w = WEAPONS[id];
     if (!w || w.melee || !state.owned[id]) continue;
-    const lvl = state.wlevel[id] ?? 0;
+    const lvl = buyer.wlevel[id] ?? 0;
     if (lvl >= a.maxLevel) continue;
     const price = levelCost(lvl);
     items.push({
@@ -59,9 +62,9 @@ export function storeItems(state: State): StoreItem[] {
       name: `${w.name} ▸ Mk ${lvl + 2}`,
       desc: `+${Math.round(a.dmgPerLevel * 100)}% dmg · +${Math.round(a.magPerLevel * 100)}% mag`,
       price,
-      canBuy: (s) => s.money >= price && (s.wlevel[id] ?? 0) < a.maxLevel,
-      buy: (s) => {
-        s.wlevel[id] = (s.wlevel[id] ?? 0) + 1;
+      canBuy: (_s, b) => b.money >= price && (b.wlevel[id] ?? 0) < a.maxLevel,
+      buy: (_s, b) => {
+        b.wlevel[id] = (b.wlevel[id] ?? 0) + 1;
       },
     });
   }
@@ -72,8 +75,22 @@ export function storeItems(state: State): StoreItem[] {
       name: u.name,
       desc: u.desc,
       price: a.perkCost,
-      canBuy: (s) => s.money >= a.perkCost,
-      buy: (s, buyer) => u.apply(s, buyer),
+      canBuy: (_s, b) => b.money >= a.perkCost,
+      buy: (s, b) => u.apply(s, b),
+    });
+  }
+
+  // Fortify: buy with your own credits, auto-placed at the base, benefits the whole squad
+  // (the buyer included — the turret/station guards the shelter they're in too).
+  for (const id of Object.keys(DEPLOYABLE_TYPES)) {
+    const d = DEPLOYABLE_TYPES[id] as DeployableDef;
+    items.push({
+      id: `deploy:${id}`,
+      name: `${d.name} (Fortify)`,
+      desc: `${d.desc} · ${deployableCount(state, id)}/${d.cap} built`,
+      price: d.cost,
+      canBuy: (s, b) => b.money >= d.cost && deployableCount(s, id) < d.cap,
+      buy: (s) => placeDeployable(s, id),
     });
   }
 

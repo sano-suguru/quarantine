@@ -180,7 +180,6 @@ export class Host {
       t: "hello",
       localId: peer.pid,
       owned: st.owned,
-      wlevel: st.wlevel,
       nonce: peer.nonce,
       v: PROTOCOL_VERSION,
     };

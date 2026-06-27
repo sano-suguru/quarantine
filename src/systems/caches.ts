@@ -1,4 +1,5 @@
 import type { State } from "../types";
+import { awardBounty } from "./economy";
 import { spawnPickup } from "./pickups";
 
 /** Reset every cache to unsearched — called at the start of each day. */
@@ -22,5 +23,7 @@ export function lootCache(state: State, x: number, y: number, tier: number): voi
     // spread the loot a little so it doesn't stack on one pixel
     spawnPickup(state, x + (i - drops / 2) * 14, y - 10, id);
   }
-  state.money += 10 * tier; // credits to spend on repairs/upgrades
+  // credits to spend on repairs/upgrades — split to players near the cache (the searcher is
+  // right on it; a passing teammate shares). Pickups above stay "nearest grabs" as before.
+  awardBounty(state, x, y, 10 * tier);
 }

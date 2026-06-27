@@ -101,6 +101,18 @@ export interface Player {
   healT: number;
   /** cooldown between barricade repair presses */
   repairCd: number;
+  /** credits this player has earned/banked this run (co-op individual wallet; in SP this is
+   *  the whole economy). Spent on their own weapon upgrades, perks, repairs, deployables. */
+  money: number;
+  /** run-scoped weapon upgrade level per weapon, per player (resets each run). Buying an
+   *  upgrade strengthens only the buyer's copy of that weapon. */
+  wlevel: Record<string, number>;
+  /** per-player damage multiplier (perks like Hollow Points apply to the buyer only) */
+  dmgMul: number;
+  /** per-player fire-rate multiplier (Quick Hands) */
+  fireRateMul: number;
+  /** per-player spare-ammo capacity multiplier (Bandolier) */
+  reserveMul: number;
   /** co-op (P4): true while this player's client is disconnected and the host is holding the
    *  body for a possible reconnect. An absent player is inert — not a zombie target, not
    *  counted by anyAlive, no input sim — and rendered as a faded ghost. Always false in SP. */
@@ -253,6 +265,44 @@ export interface Cache {
   tier: number;
 }
 
+/** Data-driven deployable type: a fortification bought in the shop and auto-placed at the
+ *  base. Behaviour (emit pickups / auto-fire) lives in DEPLOYABLE_TYPES, referenced by defId. */
+export interface DeployableDef {
+  id: string;
+  name: string;
+  desc: string;
+  /** credits the buyer pays (individual wallet); the placed structure benefits everyone */
+  cost: number;
+  /** how many of this type may exist at once this run */
+  cap: number;
+  /** "emitter" periodically drops a pickup; "turret" auto-fires at the nearest zombie */
+  kind: "emitter" | "turret";
+  /** emitter: pickup defId to drop. turret: unused. */
+  emit?: string;
+  /** seconds between emits / shots */
+  interval: number;
+  /** turret: targeting + bullet range (world units) */
+  range?: number;
+  /** turret: bullet damage */
+  dmg?: number;
+  /** turret: bullet speed */
+  bulletSpeed?: number;
+  color: [number, number, number];
+}
+
+/** A placed fortification instance. Type/behaviour lives in DEPLOYABLE_TYPES via defId. */
+export interface Deployable {
+  /** stable id for network snapshot matching (host-authoritative; positive) */
+  id: number;
+  defId: string;
+  x: number;
+  y: number;
+  /** countdown to the next emit/shot (host-only; clients don't simulate it) */
+  cd: number;
+  /** turret: current barrel aim (radians), for rendering */
+  aim: number;
+}
+
 /** Day = lit scavenge/repair window; night = the dark horde siege. */
 export type SiegePhase = "day" | "night";
 
@@ -305,6 +355,8 @@ export interface State {
   barricades: Barricade[];
   /** searchable loot caches across the map (daytime scavenging) */
   caches: Cache[];
+  /** placed fortifications (turrets / supply stations); bought in the shop, persist the run */
+  deployables: Deployable[];
   /** day/night siege phase */
   phase: SiegePhase;
   /** current day number (drives night horde intensity) */
@@ -313,16 +365,11 @@ export interface State {
   phaseT: number;
   cam: Cam;
   wave: Wave;
-  money: number;
+  /** total kills this run (shared run stat; drives wave count and SALVAGE) */
   kills: number;
-  dmgMul: number;
-  fireRateMul: number;
-  /** run-scoped multiplier on every weapon's spare-ammo capacity */
-  reserveMul: number;
-  /** which weapons are available this run (starters + meta-unlocked) */
+  /** which weapons are available this run (starters + meta-unlocked). Shared = account-level
+   *  unlock axis; per-player power (wlevel/muls/money) lives on Player. */
   owned: Record<string, boolean>;
-  /** run-scoped upgrade level per weapon (resets each run) */
-  wlevel: Record<string, number>;
   hash: SpatialHashLike;
   hitstopT: number;
   flashT: number;

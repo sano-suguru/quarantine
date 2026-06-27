@@ -98,7 +98,9 @@ export function spawnZombie(
 }
 
 export function startWave(state: State, n: number): void {
-  const def = waveDef(n);
+  // squad size scales the horde count; absent (held) bodies don't inflate it. Min 1 = SP.
+  const players = state.players.filter((p) => !p.absent).length || 1;
+  const def = waveDef(n, players);
   state.wave = { n, phase: "active", t: 0, queue: def.spawn.slice(), def, spawnT: 0 };
 }
 

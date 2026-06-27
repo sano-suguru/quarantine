@@ -1,5 +1,5 @@
 import { CONFIG } from "../config";
-import type { PickupDef, Player, State } from "../types";
+import type { PickupDef, Player } from "../types";
 import { WEAPONS } from "./weapons";
 
 /**
@@ -13,7 +13,7 @@ export const PICKUP_TYPES: Record<string, PickupDef> = {
     color: [1.0, 0.82, 0.3],
     glow: [1.0, 0.7, 0.2],
     shape: "box",
-    apply: (s, p) => refillAmmo(s, p),
+    apply: (_s, p) => refillAmmo(p),
   },
   health: {
     id: "health",
@@ -43,12 +43,12 @@ export const PICKUP_TYPES: Record<string, PickupDef> = {
  * reserveMax). If a melee weapon is equipped, the pistol is resupplied so the
  * pickup is never wasted.
  */
-function refillAmmo(s: State, p: Player): void {
+function refillAmmo(p: Player): void {
   const cur = WEAPONS[p.weapon];
   const targetId = cur && !cur.melee ? p.weapon : "pistol";
   const w = WEAPONS[targetId];
   if (!w) return;
   const add = Math.round(w.mag * CONFIG.ammo.ammoMagMul);
-  const cap = Math.round(w.reserveMax * s.reserveMul);
+  const cap = Math.round(w.reserveMax * p.reserveMul);
   p.reserve[targetId] = Math.min(cap, (p.reserve[targetId] ?? 0) + add);
 }

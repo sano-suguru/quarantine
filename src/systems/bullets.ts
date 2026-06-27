@@ -3,6 +3,7 @@ import { Audio } from "../engine/audio";
 import { segmentHitsSegment } from "../engine/geometry";
 import { len } from "../engine/math";
 import type { State } from "../types";
+import { awardBounty } from "./economy";
 import { fxDamageText, fxImpact, fxKill } from "./fx";
 import { dropFromKill } from "./pickups";
 
@@ -72,7 +73,7 @@ export function killZombie(state: State, idx: number): void {
     state.cam.shake = Math.min(state.cam.shake + (big ? 9 : 3), 20);
     state.hitstopT = Math.max(state.hitstopT, CONFIG.feel.hitstop * (big ? 1.8 : 1));
   }
-  state.money += z.bounty;
+  awardBounty(state, z.x, z.y, z.bounty);
   state.kills++;
   dropFromKill(state, z.x, z.y, big);
   state.zombies[idx] = state.zombies[state.zombies.length - 1] as (typeof state.zombies)[number];

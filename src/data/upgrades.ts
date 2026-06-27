@@ -4,8 +4,8 @@ import { WEAPONS, WEAPON_ORDER } from "./weapons";
 
 const pct = (m: number): string => `${Math.round(m * 100)}%`;
 
-// Perks split into two kinds: run-wide multipliers (s.* — affect the whole party) and
-// personal stats (p.* — apply to the buying player). The buyer is passed in as `p`.
+// Every perk is personal now (co-op individual wallets): it applies to the buying player
+// `p` only. The `s` arg is kept for signature symmetry and any future run-wide table lookups.
 export const UPGRADES: Upgrade[] = [
   {
     name: "Field Medic",
@@ -19,10 +19,10 @@ export const UPGRADES: Upgrade[] = [
   {
     name: "Hollow Points",
     desc: "+25% weapon damage",
-    apply: (s) => {
-      s.dmgMul *= 1.25;
+    apply: (_s, p) => {
+      p.dmgMul *= 1.25;
     },
-    preview: (s) => `damage ${pct(s.dmgMul)} → ${pct(s.dmgMul * 1.25)}`,
+    preview: (_s, p) => `damage ${pct(p.dmgMul)} → ${pct(p.dmgMul * 1.25)}`,
   },
   {
     name: "Adrenaline",
@@ -35,10 +35,10 @@ export const UPGRADES: Upgrade[] = [
   {
     name: "Quick Hands",
     desc: "+30% fire rate",
-    apply: (s) => {
-      s.fireRateMul *= 1.3;
+    apply: (_s, p) => {
+      p.fireRateMul *= 1.3;
     },
-    preview: (s) => `fire rate ${pct(s.fireRateMul)} → ${pct(s.fireRateMul * 1.3)}`,
+    preview: (_s, p) => `fire rate ${pct(p.fireRateMul)} → ${pct(p.fireRateMul * 1.3)}`,
   },
   {
     name: "First Aid Cache",
@@ -51,24 +51,24 @@ export const UPGRADES: Upgrade[] = [
   {
     name: "Bandolier",
     desc: "+50% spare ammo capacity, top off now",
-    apply: (s, p) => {
-      s.reserveMul *= 1.5;
+    apply: (_s, p) => {
+      p.reserveMul *= 1.5;
       for (const id of WEAPON_ORDER) {
         const w = WEAPONS[id];
         if (!w || w.melee) continue;
-        p.reserve[id] = Math.round(w.reserveMax * s.reserveMul);
+        p.reserve[id] = Math.round(w.reserveMax * p.reserveMul);
       }
     },
-    preview: (s) => `spare capacity ${pct(s.reserveMul)} → ${pct(s.reserveMul * 1.5)}`,
+    preview: (_s, p) => `spare capacity ${pct(p.reserveMul)} → ${pct(p.reserveMul * 1.5)}`,
   },
   {
     name: "Scavenger",
     desc: "Full resupply — all magazines and spare ammo",
-    apply: (s, p) => {
+    apply: (_s, p) => {
       for (const id of WEAPON_ORDER) {
         const w = WEAPONS[id];
         if (!w || w.melee) continue;
-        p.reserve[id] = Math.round(w.reserveMax * s.reserveMul);
+        p.reserve[id] = Math.round(w.reserveMax * p.reserveMul);
         p.mags[id] = w.mag;
       }
       p.ammo = WEAPONS[p.weapon]?.mag ?? p.ammo;

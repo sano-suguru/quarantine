@@ -34,7 +34,6 @@ export class Client {
   private hello: {
     localId: number;
     owned: Record<string, boolean>;
-    wlevel: Record<string, number>;
   } | null = null;
   private buf: { snap: Snapshot; at: number }[] = [];
   private prev: Snapshot | null = null; // last snapshot, for combat-fx diffing
@@ -97,9 +96,9 @@ export class Client {
           this.hooks.onVersionMismatch?.();
           return;
         }
-        this.hello = { localId: msg.localId, owned: msg.owned, wlevel: msg.wlevel };
+        this.hello = { localId: msg.localId, owned: msg.owned };
         this.hooks.onIdentity?.(msg.localId, msg.nonce ?? "");
-        if (this.started) clientApplyHello(msg.localId, msg.owned, msg.wlevel);
+        if (this.started) clientApplyHello(msg.localId, msg.owned);
       } else if (msg.t === "gameover") {
         clientGameOver(msg.salvage, msg.day, msg.kills, msg.money);
       } else if (msg.t === "pong") {
@@ -130,7 +129,7 @@ export class Client {
       if (!this.started) {
         startClientGame(); // host has deployed — leave the lobby, show the game
         this.started = true;
-        if (this.hello) clientApplyHello(this.hello.localId, this.hello.owned, this.hello.wlevel);
+        if (this.hello) clientApplyHello(this.hello.localId, this.hello.owned);
         this.onStart?.();
       }
       this.buf.push({ snap, at: performance.now() });
@@ -386,7 +385,7 @@ export class Client {
     // authoritative ammo/reload/heal (from the snapshot) so we never flash on an empty mag.
     if (this.fireCdLocal > 0) this.fireCdLocal -= dt;
     if (inp) {
-      const wd = effWeapon(st, lp.weapon);
+      const wd = effWeapon(lp, lp.weapon);
       const wantFire = inp.firing && (wd.auto || !this.firedThisHoldLocal);
       if (
         wantFire &&
@@ -426,7 +425,7 @@ export class Client {
             });
           }
         }
-        this.fireCdLocal = 1 / (wd.fireRate * st.fireRateMul);
+        this.fireCdLocal = 1 / (wd.fireRate * lp.fireRateMul);
         this.firedThisHoldLocal = true;
       }
       if (!inp.firing) this.firedThisHoldLocal = false;

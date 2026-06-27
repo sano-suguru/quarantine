@@ -15,15 +15,11 @@ describe("newState", () => {
     expect(s.phase).toBe("day");
     expect(s.phaseT).toBe(CONFIG.siege.dayDuration);
     expect(s.running).toBe(false);
-    expect(s.money).toBe(0);
     expect(s.kills).toBe(0);
-    expect(s.dmgMul).toBe(1);
-    expect(s.fireRateMul).toBe(1);
-    expect(s.reserveMul).toBe(1);
     expect(s.nextId).toBe(1);
   });
 
-  it("seeds a single local player at the origin", () => {
+  it("seeds a single local player at the origin with a fresh individual wallet", () => {
     const s = newState();
     expect(s.players.length).toBe(1);
     const p = s.players[0];
@@ -31,6 +27,12 @@ describe("newState", () => {
     expect(p?.x).toBe(0);
     expect(p?.y).toBe(0);
     expect(s.localId).toBe(0);
+    // per-player economy (individual wallets) starts neutral
+    expect(p?.money).toBe(0);
+    expect(p?.dmgMul).toBe(1);
+    expect(p?.fireRateMul).toBe(1);
+    expect(p?.reserveMul).toBe(1);
+    expect(p?.wlevel).toEqual({});
   });
 
   it("boards every HOME opening at full hp and builds the cache set (one per POI + the HOME-edge cache)", () => {

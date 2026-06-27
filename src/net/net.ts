@@ -16,7 +16,7 @@ export type NetMode = "single" | "host" | "client";
  * unions, or the Hello fields. The golden byte test in `snapshot.test.ts` fails on any encode change
  * to force a conscious bump (don't just silence it — bump here too).
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 3;
 
 /** Messages on the reliable channel (JSON). Snapshots go on the binary channel. */
 export type NetMsg =
@@ -24,7 +24,6 @@ export type NetMsg =
       t: "hello";
       localId: number;
       owned: Record<string, boolean>;
-      wlevel: Record<string, number>;
       /** per-player reconnect token (P4): client stores {localId, nonce} and replays it on
        *  rejoin so the host re-attaches to the same player slot. Optional for back-compat. */
       nonce?: string;
