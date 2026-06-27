@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CONFIG } from "../config";
 import { addPlayer } from "../engine/players";
 import { newState } from "../state";
 import type { State } from "../types";
@@ -30,5 +31,41 @@ describe("co-op cache search", () => {
 
     // with the bug this would be stuck near one frame (~0.05); fixed it accumulates
     expect(cache.searchT).toBeGreaterThan(0.2);
+  });
+});
+
+/** Phase 3: repairing the shared barricade is near-free support labor (refund < cost,
+ *  scaled by hp actually restored) — viable for a support role, never a money fountain. */
+describe("repair labor reward", () => {
+  function repairSetup(barHp: number): { s: State; p: State["players"][number] } {
+    const s = newState();
+    s.phase = "day";
+    s.caches.length = 0; // no cache nearby so repair is the chosen interaction
+    const bar = s.barricades[0] as State["barricades"][number];
+    bar.hp = barHp;
+    const p = s.players[0] as State["players"][number];
+    p.x = (bar.x1 + bar.x2) / 2;
+    p.y = (bar.y1 + bar.y2) / 2;
+    p.money = 100;
+    p.input = { ...p.input, interactHeld: true, moveX: 0, moveY: 0 };
+    return { s, p };
+  }
+
+  it("refunds most of the cost when the wall takes a full repair's worth of damage", () => {
+    const { s, p } = repairSetup(10); // far below max → a full repairAmount is restored
+    sysPlayer(s, 0.05);
+    // net = -repairCost + repairReward (full effect), always negative (no profit)
+    const net = p.money - 100;
+    expect(net).toBe(-(CONFIG.siege.repairCost - CONFIG.econ.repairReward));
+    expect(net).toBeLessThan(0); // anti-fountain: repairing never profits
+  });
+
+  it("scales the refund down with hp actually restored (effect-linked)", () => {
+    const bar0 = newState().barricades[0] as State["barricades"][number];
+    const max = bar0.maxHp;
+    const { s, p } = repairSetup(max - 10); // only 10 hp of room → small restore
+    sysPlayer(s, 0.05);
+    const reward = Math.round(CONFIG.econ.repairReward * (10 / CONFIG.siege.repairAmount));
+    expect(p.money).toBe(100 - CONFIG.siege.repairCost + reward);
   });
 });

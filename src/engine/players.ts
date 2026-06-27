@@ -46,6 +46,11 @@ export function makePlayer(id: number, x: number, y: number, name = `P${id + 1}`
     medkits: CONFIG.heal.startMedkits,
     healT: 0,
     repairCd: 0,
+    money: 0,
+    wlevel: {},
+    dmgMul: 1,
+    fireRateMul: 1,
+    reserveMul: 1,
     absent: false,
   };
 }

@@ -21,8 +21,8 @@ describe("PICKUP_TYPES.apply", () => {
     const add = Math.round(pistol.mag * CONFIG.ammo.ammoMagMul);
     expect(p.reserve.pistol).toBe(add);
 
-    // clamps to round(reserveMax * reserveMul)
-    const cap = Math.round(pistol.reserveMax * s.reserveMul);
+    // clamps to round(reserveMax * reserveMul) — reserveMul is per-player now
+    const cap = Math.round(pistol.reserveMax * p.reserveMul);
     p.reserve.pistol = cap - 1;
     PICKUP_TYPES.ammo?.apply(s, p);
     expect(p.reserve.pistol).toBe(cap);

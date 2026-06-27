@@ -11,7 +11,7 @@ import { applySnapshot, captureSnapshot, decode, encode } from "./snapshot";
 function populated(): State {
   const s = newState();
   s.phase = "night";
-  s.money = 137;
+  (s.players[0] as State["players"][number]).money = 137; // per-player wallet
   s.kills = 9;
   addPlayer(s, 1, 250, -120);
   (s.players[1] as State["players"][number]).hp = 64;
@@ -53,7 +53,7 @@ describe("snapshot binary round-trip", () => {
     expect(back.tick).toBe(42);
     expect(back.phase).toBe("night");
     expect(back.isFull).toBe(true);
-    expect(back.money).toBe(137);
+    expect(back.players.find((p) => p.id === 0)?.money).toBe(137); // per-player wallet
     expect(back.kills).toBe(9);
     expect(back.day).toBe(snap.day);
     expect(back.players).toHaveLength(2);
@@ -99,7 +99,7 @@ describe("snapshot binary round-trip", () => {
     const s = newState();
     s.phase = "night";
     s.day = 3;
-    s.money = 200;
+    (s.players[0] as State["players"][number]).money = 200; // per-player wallet
     s.kills = 5;
     addPlayer(s, 1, 120, -80);
     const p1 = s.players[1] as State["players"][number];
@@ -112,8 +112,22 @@ describe("snapshot binary round-trip", () => {
       h = Math.imul(h, 0x01000193);
     }
     expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
-      `"len=248 fnv=d2e62e"`,
+      `"len=273 fnv=5a5ae184"`,
     );
+  });
+
+  it("round-trips placed deployables (id, type, position, turret aim)", () => {
+    const s = newState();
+    s.deployables.push({ id: 77, defId: "sentry", x: 120, y: -64, cd: 0.3, aim: 1.2 });
+    s.deployables.push({ id: 78, defId: "ammostation", x: -40, y: 200, cd: 5, aim: 0 });
+    const back = decode(encode(captureSnapshot(s, 9)));
+    expect(back.deployables).toHaveLength(2);
+    const sentry = back.deployables.find((d) => d.id === 77);
+    expect(sentry?.defId).toBe("sentry");
+    expect(Math.abs((sentry?.x ?? 0) - 120)).toBeLessThanOrEqual(POS_TOL);
+    expect(Math.abs((sentry?.y ?? 0) - -64)).toBeLessThanOrEqual(POS_TOL);
+    expect(sentry?.aim ?? 0).toBeCloseTo(1.2, 1); // byte-quantized over TAU
+    expect(back.deployables.find((d) => d.id === 78)?.defId).toBe("ammostation");
   });
 
   it("stays under the 16KB SCTP message limit for a heavy night", () => {
@@ -137,7 +151,7 @@ describe("applySnapshot (id-matched apply to a client state)", () => {
     expect(client.zombies[0]?.color).toBeTruthy(); // visuals reconstructed from the table
     expect(client.zombies[0]?.r).toBeGreaterThan(0);
     expect(client.pickups).toHaveLength(1);
-    expect(client.money).toBe(137);
+    expect(client.players.find((p) => p.id === 0)?.money).toBe(137); // per-player wallet
     expect(client.phase).toBe("night");
   });
 

@@ -1,5 +1,6 @@
 import { CONFIG } from "./config";
 import { type StoreItem, effWeapon, salvageEarned, storeItems } from "./data/arsenal";
+import { DEPLOYABLE_TYPES } from "./data/deployables";
 import { PICKUP_TYPES } from "./data/pickups";
 import { PLAYER_COLORS } from "./data/players";
 import { UNLOCKABLE, WEAPONS, WEAPON_ORDER } from "./data/weapons";
@@ -12,6 +13,7 @@ import { newState } from "./state";
 import { sysAI } from "./systems/ai";
 import { sysBullets } from "./systems/bullets";
 import { sysCamera } from "./systems/camera";
+import { sysDeployables } from "./systems/deployables";
 import { flashlightIntensity } from "./systems/flashlight";
 import { sysFx } from "./systems/fx";
 import { sysPickups } from "./systems/pickups";
@@ -50,6 +52,7 @@ export function update(dt: number): void {
     gameOver();
     return;
   }
+  sysDeployables(state, sdt); // turrets fire / stations emit (after AI so the zombie set is current)
   sysBullets(state, sdt);
   sysPickups(state, sdt);
   sysFx(state, sdt);
@@ -68,7 +71,7 @@ export function update(dt: number): void {
 function audioAmbience(dt: number): void {
   const p = localPlayer(state);
   const hpf = p.hp / p.maxHp;
-  const wd = effWeapon(state, p.weapon);
+  const wd = effWeapon(p, p.weapon);
   // running dry feeds the dread too — the fear of an empty gun
   const totalAmmo = p.ammo + (p.reserve[p.weapon] ?? 0);
   const lowAmmo = !wd.melee && wd.mag > 0 && totalAmmo < wd.mag * CONFIG.horror.lowAmmo;
@@ -169,9 +172,10 @@ export function draw(): void {
     R.circle(d.x, d.y, d.r, d.color[0], d.color[1], d.color[2], a);
   }
 
-  // --- shelter: stone walls + boarded openings, and world loot caches ---
+  // --- shelter: stone walls + boarded openings, world loot caches, fortifications ---
   drawShelter(R);
   drawCaches(R);
+  drawDeployables(R);
 
   // --- normal particles (shards / smoke) ---
   for (const pt of state.particles) {
@@ -349,7 +353,7 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
     R.glow(tx, ty, pl.r * 1.6, 1, 0.9, 0.6, Math.min(1, pl.muzzle * 18));
   }
   if (pl.reloadT > 0) {
-    const wd = effWeapon(state, pl.weapon);
+    const wd = effWeapon(pl, pl.weapon);
     const prog = 1 - pl.reloadT / wd.reload;
     R.rect(pl.x, pl.y - pl.r - 12, 34 * prog, 4, 0, 1, 0.75, 0.2, 1);
   }
@@ -431,6 +435,31 @@ function drawShelter(R: typeof Renderer): void {
   }
 }
 
+/** Placed fortifications: supply stations (pulsing crate) and auto-sentries (base + barrel). */
+function drawDeployables(R: typeof Renderer): void {
+  for (const d of state.deployables) {
+    const def = DEPLOYABLE_TYPES[d.defId];
+    if (!def) continue;
+    const [r, g, b] = def.color;
+    if (def.kind === "turret") {
+      // base + a barrel that tracks its target
+      R.glow(d.x, d.y, 26, r, g, b, 0.4);
+      R.circle(d.x, d.y, 11, 0.2, 0.22, 0.24, 1);
+      R.ring(d.x, d.y, 11, r, g, b, 0.8);
+      const bx = d.x + Math.cos(d.aim) * 14;
+      const by = d.y + Math.sin(d.aim) * 14;
+      R.rect(bx, by, 20, 5, d.aim, r, g, b, 1);
+    } else {
+      // supply station: a glowing crate that pulses as it nears its next drop
+      const pulse = 0.5 + 0.3 * Math.sin(state.time * 3 + d.x);
+      R.glow(d.x, d.y, 24, r, g, b, 0.35 + pulse * 0.2);
+      R.rect(d.x, d.y, 20, 16, 0, 0.5, 0.42, 0.26, 1);
+      R.rect(d.x, d.y, 20, 4, 0, r, g, b, 0.9);
+      R.ring(d.x, d.y, 12, r, g, b, 0.7);
+    }
+  }
+}
+
 function drawCaches(R: typeof Renderer): void {
   for (const c of state.caches) {
     if (c.looted) {
@@ -457,7 +486,7 @@ function drawCaches(R: typeof Renderer): void {
 let lastWeapon = "";
 export function updateHUD(): void {
   const p = localPlayer(state);
-  const wd = effWeapon(state, p.weapon);
+  const wd = effWeapon(p, p.weapon);
   const hpf = Math.max(0, p.hp) / p.maxHp;
   el("hpbar").style.width = `${100 * hpf}%`;
   el("hpbar").style.background = hpf < 0.3 ? "var(--blood)" : "var(--toxic)";
@@ -511,7 +540,7 @@ export function updateHUD(): void {
   promptEl.textContent = ip ?? "";
   promptEl.classList.toggle("show", ip !== null);
 
-  el("money").textContent = String(state.money);
+  el("money").textContent = String(p.money);
   el("remaining").textContent =
     state.phase === "night" ? String(state.zombies.length + state.wave.queue.length) : "—";
 
@@ -628,19 +657,20 @@ function openShop(): void {
  */
 export function applyBuy(s: State, itemId: string, buyer: Player | undefined): boolean {
   if (!s.inShop || !buyer) return false;
-  const it = storeItems(s).find((x) => x.id === itemId);
-  if (!it || !it.canBuy(s)) return false;
-  s.money -= it.price;
+  const it = storeItems(s, buyer).find((x) => x.id === itemId);
+  if (!it || !it.canBuy(s, buyer)) return false;
+  buyer.money -= it.price;
   it.buy(s, buyer);
   return true;
 }
 
 function renderShop(): void {
-  el("shop-credits").textContent = String(state.money);
+  const me = localPlayer(state);
+  el("shop-credits").textContent = String(me.money);
   const box = el("choices");
   box.innerHTML = "";
   shopEls = shopItems.map((it, i) => {
-    const able = it.canBuy(state);
+    const able = it.canBuy(state, me);
     const d = document.createElement("div");
     d.className = `srow${i === shopSel ? " sel" : ""}${able ? "" : " off"}`;
     d.innerHTML = `<div class='snum'>${i + 1}</div><div class='sinfo'><div class='cname'>${it.name}</div><div class='desc'>${it.desc}</div></div><div class='sprice'>${it.price}c</div>`;
@@ -682,7 +712,7 @@ export function buyItem(i: number): void {
   }
   if (applyBuy(state, it.id, localPlayer(state))) {
     Audio.ui(true);
-    shopItems = storeItems(state);
+    shopItems = storeItems(state, localPlayer(state));
     shopSig = shopSigOf(shopItems);
     if (shopSel >= shopItems.length) shopSel = Math.max(0, shopItems.length - 1);
     renderShop();
@@ -720,10 +750,11 @@ export function shopDeploy(): void {
  * credits text and per-row affordance so hover/selection survive.
  */
 export function syncShopUI(): void {
+  const me = localPlayer(state);
   const open = state.inShop;
   const shown = shopVisible();
   if (open && !shown) {
-    shopItems = storeItems(state);
+    shopItems = storeItems(state, me);
     shopSig = shopSigOf(shopItems);
     shopSel = 0;
     el("shop-wave").textContent = String(state.day);
@@ -736,7 +767,7 @@ export function syncShopUI(): void {
     return;
   }
   // open && shown: rebuild only if the item set changed, else a light refresh
-  const items = storeItems(state);
+  const items = storeItems(state, me);
   const sig = shopSigOf(items);
   if (sig !== shopSig) {
     shopItems = items;
@@ -744,10 +775,10 @@ export function syncShopUI(): void {
     if (shopSel >= shopItems.length) shopSel = Math.max(0, shopItems.length - 1);
     renderShop();
   } else {
-    el("shop-credits").textContent = String(state.money);
+    el("shop-credits").textContent = String(me.money);
     shopEls.forEach((d, i) => {
       const it = shopItems[i];
-      if (it) d.classList.toggle("off", !it.canBuy(state));
+      if (it) d.classList.toggle("off", !it.canBuy(state, me));
     });
   }
 }
@@ -772,8 +803,11 @@ function gameOver(): void {
   // each player banks their own share to their own localStorage via the gameover event.
   const total = salvageEarned(state.day, state.kills);
   const share = Math.floor(total / state.players.length);
-  Net.host?.broadcastGameOver(share, state.day, state.kills, state.money);
-  endRun(share, state.day, state.kills, state.money);
+  // money is per-player now; the debrief shows the squad's combined leftover credits
+  // (in single-player that's just the one wallet → identical to before).
+  const money = state.players.reduce((sum, p) => sum + p.money, 0);
+  Net.host?.broadcastGameOver(share, state.day, state.kills, money);
+  endRun(share, state.day, state.kills, money);
 }
 
 /** Apply the host's gameover event: bank our share + show the debrief on this client. */
@@ -844,7 +878,7 @@ function interactPrompt(): string | null {
     const mx = (b.x1 + b.x2) / 2;
     const my = (b.y1 + b.y2) / 2;
     if (Math.hypot(mx - p.x, my - p.y) < reach) {
-      return state.money >= CONFIG.siege.repairCost ? "[E] repair" : "[E] repair — no credits";
+      return p.money >= CONFIG.siege.repairCost ? "[E] repair" : "[E] repair — no credits";
     }
   }
   if (state.phase === "day") {
@@ -863,7 +897,7 @@ function resupply(): void {
     for (const id of WEAPON_ORDER) {
       const w = WEAPONS[id];
       if (!w || w.melee) continue;
-      const cap = Math.round(w.reserveMax * state.reserveMul);
+      const cap = Math.round(w.reserveMax * p.reserveMul);
       p.reserve[id] = Math.min(cap, (p.reserve[id] ?? 0) + Math.round(w.mag * refill));
     }
     p.battery = Math.min(CONFIG.flashlight.batteryMax, p.battery + CONFIG.flashlight.shopBattery);
@@ -898,14 +932,10 @@ export function startClientGame(): void {
   buildWeaponSlots();
 }
 
-/** Apply the host's Hello: adopt our player id and the host's weapon ownership/levels. */
-export function clientApplyHello(
-  localId: number,
-  owned: Record<string, boolean>,
-  wlevel: Record<string, number>,
-): void {
+/** Apply the host's Hello: adopt our player id and the shared weapon ownership. Per-player
+ *  weapon levels (wlevel) are no longer shared — they arrive per player in the snapshot. */
+export function clientApplyHello(localId: number, owned: Record<string, boolean>): void {
   state.localId = localId;
   state.owned = owned;
-  state.wlevel = wlevel;
   buildWeaponSlots();
 }

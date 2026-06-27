@@ -106,6 +106,22 @@ export const CONFIG = {
     tierDist: 500, // every this many world units from HOME raises the loot tier
     maxTier: 3,
   },
+  // co-op economy (individual wallets). Single-player is unaffected: with one player the
+  // bounty split short-circuits to that player and the wave multiplier is 1.
+  econ: {
+    // kill/loot bounty is split evenly among living players within this radius of the
+    // kill, integer remainder to the poorest first (a no-comms catch-up for a teammate
+    // who's fallen behind). Beyond it, nobody shares — stay near the fight to earn.
+    bountyRadius: 256,
+    // night horde scales with squad size: each extra player adds this fraction to every
+    // spawn count (HP/speed unchanged). 0 in single-player → identical waves.
+    waveCountPerPlayer: 0.5,
+    // support-labor reward: repairing the shared barricade refunds this many credits at full
+    // effect (scaled by hp actually restored). MUST stay < siege.repairCost so repair is
+    // near-free labor (a support role stays solvent) but never turns a profit — no money
+    // fountain from repair-spamming a wall you let the horde chew on.
+    repairReward: 12,
+  },
   arsenal: {
     maxLevel: 3, // weapon upgrade levels per run
     dmgPerLevel: 0.15, // +15% damage per level

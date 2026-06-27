@@ -102,7 +102,7 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
       p.reloadT = 0;
     }
   }
-  const wd = effWeapon(state, p.weapon);
+  const wd = effWeapon(p, p.weapon);
 
   // reload draws from this weapon's finite reserve (melee weapons never reload)
   if (!wd.melee) {
@@ -128,7 +128,7 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
     if (wd.melee || p.ammo > 0) {
       fireWeapon(state, p, wd);
       if (!wd.melee) p.ammo--;
-      p.fireCd = 1 / (wd.fireRate * state.fireRateMul);
+      p.fireCd = 1 / (wd.fireRate * p.fireRateMul);
       p.firedThisHold = true;
     } else {
       // empty magazine: the desperate dry-fire click
@@ -174,7 +174,7 @@ function fireWeapon(state: State, p: Player, wd: WeaponDef): void {
       vx: Math.cos(a) * wd.bulletSpeed,
       vy: Math.sin(a) * wd.bulletSpeed,
       r: 4,
-      dmg: wd.dmg * state.dmgMul,
+      dmg: wd.dmg * p.dmgMul,
       life: wd.range,
       pierce: wd.pierce,
       knockback: wd.knockback,
@@ -208,12 +208,12 @@ function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
     let da = Math.atan2(dy, dx) - p.aim;
     da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)));
     if (da > arc) return;
-    z.hp -= wd.dmg * state.dmgMul;
+    z.hp -= wd.dmg * p.dmgMul;
     z.flash = 0.12;
     z.vx += (dx / d) * wd.knockback;
     z.vy += (dy / d) * wd.knockback;
     fxImpact(state, z.x, z.y, p.aim, wd.color);
-    fxDamageText(state, z.x, z.y - z.r, wd.dmg * state.dmgMul, true);
+    fxDamageText(state, z.x, z.y - z.r, wd.dmg * p.dmgMul, true);
     if (z.hp <= 0) dead.push(zi);
   });
   // swap-and-pop removal is index-based, so kill from the highest index down
@@ -273,10 +273,17 @@ function interact(
 
   if (holding && !healing) {
     if (bar) {
-      // repair takes priority over searching
-      if (p.repairCd <= 0 && state.money >= CONFIG.siege.repairCost) {
-        state.money -= CONFIG.siege.repairCost;
+      // repair takes priority over searching. Self-funded from the repairer's own wallet —
+      // the wall shelters them tonight too, so there's a private benefit (no free-rider).
+      if (p.repairCd <= 0 && p.money >= CONFIG.siege.repairCost) {
+        const before = bar.hp;
+        p.money -= CONFIG.siege.repairCost;
         bar.hp = Math.min(bar.maxHp, bar.hp + CONFIG.siege.repairAmount);
+        // support-labor reward: refund proportional to hp ACTUALLY restored (0 on a full
+        // wall), capped strictly below the cost — repairing for the team is near-free but
+        // never profitable, so a support player stays solvent without a money fountain.
+        const restored = bar.hp - before;
+        p.money += Math.round(CONFIG.econ.repairReward * (restored / CONFIG.siege.repairAmount));
         p.repairCd = CONFIG.siege.repairCd;
         Audio.repair();
       }

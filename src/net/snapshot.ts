@@ -1,9 +1,10 @@
 import { CONFIG } from "../config";
+import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { ENEMY_TYPES } from "../data/enemies";
 import { PICKUP_TYPES } from "../data/pickups";
 import { WEAPON_ORDER } from "../data/weapons";
 import { makePlayer } from "../engine/players";
-import type { Bullet, Pickup, SiegePhase, State, Zombie } from "../types";
+import type { Bullet, Deployable, Pickup, SiegePhase, State, Zombie } from "../types";
 
 /**
  * Host-authoritative world snapshot: the host captures one each network tick and
@@ -21,6 +22,7 @@ import type { Bullet, Pickup, SiegePhase, State, Zombie } from "../types";
 // stable index lists (identical on host & client since they're the same code)
 const ENEMY_ORDER = Object.keys(ENEMY_TYPES);
 const PICKUP_ORDER = Object.keys(PICKUP_TYPES);
+const DEPLOYABLE_ORDER = Object.keys(DEPLOYABLE_TYPES);
 
 const ARENA = CONFIG.arena;
 const SPAWN_MAX = 0.35; // zombie emerge time (see spawnZombie)
@@ -40,6 +42,14 @@ interface SnapPlayer {
   maxHp: number;
   /** movement speed — synced so client prediction matches after speed perks (Adrenaline) */
   speed: number;
+  /** per-player credits (individual wallets) — drives this player's HUD/affordability */
+  money: number;
+  /** per-player weapon upgrade levels, in WEAPON_ORDER order (changes on purchase) */
+  wlevel: number[];
+  /** per-player perk multipliers — synced so the local HUD/fire-feel prediction matches */
+  dmgMul: number;
+  fireRateMul: number;
+  reserveMul: number;
   weapon: string;
   ammo: number;
   /** spare ammo per weapon, in WEAPON_ORDER order (for the client HUD reserve count) */
@@ -97,13 +107,8 @@ export interface Snapshot {
   phase: SiegePhase;
   day: number;
   phaseT: number;
-  money: number;
+  /** shared run stat (kills drive wave count + SALVAGE); money/wlevel/muls are per-player now */
   kills: number;
-  dmgMul: number;
-  fireRateMul: number;
-  reserveMul: number;
-  /** run-scoped weapon upgrade levels, in WEAPON_ORDER order (changes mid-run on purchase) */
-  wlevel: number[];
   waveN: number;
   waveQueue: number; // remaining queued spawns (count only — HUD uses it)
   players: SnapPlayer[];
@@ -112,6 +117,8 @@ export interface Snapshot {
   pickups: SnapPickup[];
   barricades: { hp: number; flash: number }[];
   caches: { looted: boolean; searchT: number }[];
+  /** placed fortifications (turret barrel aim included so clients render the tracking barrel) */
+  deployables: { id: number; defId: string; x: number; y: number; aim: number }[];
 }
 
 /** Read the current world into a logical snapshot. */
@@ -125,12 +132,7 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
     phase: state.phase,
     day: state.day,
     phaseT: state.phaseT,
-    money: state.money,
     kills: state.kills,
-    dmgMul: state.dmgMul,
-    fireRateMul: state.fireRateMul,
-    reserveMul: state.reserveMul,
-    wlevel: WEAPON_ORDER.map((id) => state.wlevel[id] ?? 0),
     waveN: state.wave.n,
     waveQueue: state.wave.queue.length,
     players: state.players.map((p) => ({
@@ -141,6 +143,11 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
       hp: p.hp,
       maxHp: p.maxHp,
       speed: p.speed,
+      money: p.money,
+      wlevel: WEAPON_ORDER.map((id) => p.wlevel[id] ?? 0),
+      dmgMul: p.dmgMul,
+      fireRateMul: p.fireRateMul,
+      reserveMul: p.reserveMul,
       weapon: p.weapon,
       ammo: p.ammo,
       reserve: WEAPON_ORDER.map((id) => p.reserve[id] ?? 0),
@@ -184,6 +191,13 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
     })),
     barricades: state.barricades.map((b) => ({ hp: b.hp, flash: b.flash })),
     caches: state.caches.map((c) => ({ looted: c.looted, searchT: c.searchT })),
+    deployables: state.deployables.map((d) => ({
+      id: d.id,
+      defId: d.defId,
+      x: d.x,
+      y: d.y,
+      aim: d.aim,
+    })),
   };
 }
 
@@ -244,14 +258,7 @@ export function applySnapshot(
   state.phase = snap.phase;
   state.day = snap.day;
   state.phaseT = snap.phaseT;
-  state.money = snap.money;
   state.kills = snap.kills;
-  state.dmgMul = snap.dmgMul;
-  state.fireRateMul = snap.fireRateMul;
-  state.reserveMul = snap.reserveMul;
-  WEAPON_ORDER.forEach((id, i) => {
-    state.wlevel[id] = snap.wlevel[i] ?? 0;
-  });
   state.wave.n = snap.waveN;
   state.wave.queue.length = snap.waveQueue; // length only (contents unused on client)
 
@@ -273,10 +280,15 @@ export function applySnapshot(
     p.hp = sp.hp;
     p.maxHp = sp.maxHp;
     p.speed = sp.speed;
+    p.money = sp.money;
+    p.dmgMul = sp.dmgMul;
+    p.fireRateMul = sp.fireRateMul;
+    p.reserveMul = sp.reserveMul;
     p.weapon = sp.weapon;
     p.ammo = sp.ammo;
     WEAPON_ORDER.forEach((id, i) => {
       p.reserve[id] = sp.reserve[i] ?? 0;
+      p.wlevel[id] = sp.wlevel[i] ?? 0;
     });
     p.reloadT = sp.reloadT;
     p.healT = sp.healT;
@@ -357,6 +369,19 @@ export function applySnapshot(
     c.looted = s.looted;
     c.searchT = s.searchT;
   }
+
+  // deployables: match by id to keep object identity (cd is host-only, irrelevant on clients)
+  const dById = new Map(state.deployables.map((d) => [d.id, d]));
+  state.deployables = snap.deployables.map((sd): Deployable => {
+    const ex = dById.get(sd.id);
+    if (ex) {
+      ex.x = sd.x;
+      ex.y = sd.y;
+      ex.aim = sd.aim;
+      return ex;
+    }
+    return { id: sd.id, defId: sd.defId, x: sd.x, y: sd.y, aim: sd.aim, cd: 0 };
+  });
 }
 
 /* -------------------------------- binary codec ------------------------------ */
@@ -448,18 +473,12 @@ export function encode(snap: Snapshot): ArrayBuffer {
   );
   w.u16(snap.day);
   w.f32(snap.phaseT);
-  w.u32(snap.money);
   w.u32(snap.kills);
-  w.f32(snap.dmgMul);
-  w.f32(snap.fireRateMul);
-  w.f32(snap.reserveMul);
-  // run-scoped weapon levels (fixed WEAPON_ORDER length, length-prefixed for safety)
-  w.u8(snap.wlevel.length);
-  for (const lvl of snap.wlevel) w.u8(lvl);
   w.u16(snap.waveN);
   w.u16(snap.waveQueue);
 
-  // players (few → keep float precision; pack lightOn into a flag byte)
+  // players (few → keep float precision; pack lightOn into a flag byte). Per-player
+  // economy (money/wlevel/muls) rides here too — individual wallets.
   w.u8(snap.players.length);
   for (const p of snap.players) {
     w.u8(p.id);
@@ -469,6 +488,12 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.f32(p.hp);
     w.f32(p.maxHp);
     w.f32(p.speed);
+    w.u32(p.money);
+    w.f32(p.dmgMul);
+    w.f32(p.fireRateMul);
+    w.f32(p.reserveMul);
+    w.u8(p.wlevel.length);
+    for (const lvl of p.wlevel) w.u8(lvl);
     const wi = WEAPON_ORDER.indexOf(p.weapon);
     w.u8(wi < 0 ? 255 : wi);
     w.i16(p.ammo);
@@ -537,6 +562,17 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.u8(q01(c.searchT, SEARCH_MAX));
   }
 
+  // deployables (few; id-matched). aim quantized to a byte over TAU for the turret barrel.
+  w.u8(snap.deployables.length);
+  for (const d of snap.deployables) {
+    w.u32(d.id);
+    const di = DEPLOYABLE_ORDER.indexOf(d.defId);
+    w.u8(di < 0 ? 0 : di);
+    w.i16(qpos(d.x));
+    w.i16(qpos(d.y));
+    w.u8(q01(((d.aim % TAU) + TAU) % TAU, TAU));
+  }
+
   return w.done();
 }
 
@@ -548,14 +584,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
   const flags = r.u8();
   const day = r.u16();
   const phaseT = r.f32();
-  const money = r.u32();
   const kills = r.u32();
-  const dmgMul = r.f32();
-  const fireRateMul = r.f32();
-  const reserveMul = r.f32();
-  const wlevel: number[] = [];
-  const wlc = r.u8();
-  for (let i = 0; i < wlc; i++) wlevel.push(r.u8());
   const waveN = r.u16();
   const waveQueue = r.u16();
 
@@ -569,6 +598,13 @@ export function decode(buf: ArrayBuffer): Snapshot {
     const hp = r.f32();
     const maxHp = r.f32();
     const speed = r.f32();
+    const money = r.u32();
+    const dmgMul = r.f32();
+    const fireRateMul = r.f32();
+    const reserveMul = r.f32();
+    const wlevel: number[] = [];
+    const wlc = r.u8();
+    for (let j = 0; j < wlc; j++) wlevel.push(r.u8());
     const wi = r.u8();
     const ammo = r.i16();
     const reserve: number[] = [];
@@ -595,6 +631,11 @@ export function decode(buf: ArrayBuffer): Snapshot {
       hp,
       maxHp,
       speed,
+      money,
+      wlevel,
+      dmgMul,
+      fireRateMul,
+      reserveMul,
       weapon: WEAPON_ORDER[wi] ?? "pistol",
       ammo,
       reserve,
@@ -664,6 +705,17 @@ export function decode(buf: ArrayBuffer): Snapshot {
     caches.push({ looted, searchT });
   }
 
+  const deployables: Snapshot["deployables"] = [];
+  const dc = r.u8();
+  for (let i = 0; i < dc; i++) {
+    const id = r.u32();
+    const defId = DEPLOYABLE_ORDER[r.u8()] ?? (DEPLOYABLE_ORDER[0] as string);
+    const x = dqpos(r.i16());
+    const y = dqpos(r.i16());
+    const aim = dq01(r.u8(), TAU);
+    deployables.push({ id, defId, x, y, aim });
+  }
+
   return {
     tick,
     time,
@@ -673,12 +725,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
     inShop: (flags & 8) !== 0,
     day,
     phaseT,
-    money,
     kills,
-    dmgMul,
-    fireRateMul,
-    reserveMul,
-    wlevel,
     waveN,
     waveQueue,
     players,
@@ -687,6 +734,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
     pickups,
     barricades,
     caches,
+    deployables,
   };
 }
 

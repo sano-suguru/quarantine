@@ -32,11 +32,11 @@ describe("UPGRADES apply()", () => {
     expect(p.medkits).toBe(CONFIG.heal.maxMedkits);
   });
 
-  it("Hollow Points: ×1.25 shared damage multiplier", () => {
+  it("Hollow Points: ×1.25 personal damage multiplier (buyer only)", () => {
     const { s, p } = setup();
-    s.dmgMul = 1;
+    p.dmgMul = 1;
     byName("Hollow Points").apply(s, p);
-    expect(s.dmgMul).toBeCloseTo(1.25);
+    expect(p.dmgMul).toBeCloseTo(1.25);
   });
 
   it("Adrenaline: ×1.12 personal speed", () => {
@@ -46,11 +46,11 @@ describe("UPGRADES apply()", () => {
     expect(p.speed).toBeCloseTo(224);
   });
 
-  it("Quick Hands: ×1.3 shared fire-rate multiplier", () => {
+  it("Quick Hands: ×1.3 personal fire-rate multiplier (buyer only)", () => {
     const { s, p } = setup();
-    s.fireRateMul = 1;
+    p.fireRateMul = 1;
     byName("Quick Hands").apply(s, p);
-    expect(s.fireRateMul).toBeCloseTo(1.3);
+    expect(p.fireRateMul).toBeCloseTo(1.3);
   });
 
   it("First Aid Cache: +2 medkits (clamped to max)", () => {
@@ -64,11 +64,11 @@ describe("UPGRADES apply()", () => {
     expect(p.medkits).toBe(CONFIG.heal.maxMedkits);
   });
 
-  it("Bandolier: ×1.5 reserveMul and refills every non-melee gun to the new cap", () => {
+  it("Bandolier: ×1.5 personal reserveMul and refills every non-melee gun to the new cap", () => {
     const { s, p } = setup();
-    s.reserveMul = 1;
+    p.reserveMul = 1;
     byName("Bandolier").apply(s, p);
-    expect(s.reserveMul).toBeCloseTo(1.5);
+    expect(p.reserveMul).toBeCloseTo(1.5);
     for (const id of WEAPON_ORDER) {
       const w = WEAPONS[id];
       if (!w) continue;
@@ -93,7 +93,7 @@ describe("UPGRADES apply()", () => {
     for (const id of WEAPON_ORDER) {
       const w = WEAPONS[id];
       if (!w || w.melee) continue;
-      expect(p.reserve[id]).toBe(Math.round(w.reserveMax * s.reserveMul));
+      expect(p.reserve[id]).toBe(Math.round(w.reserveMax * p.reserveMul));
       expect(p.mags[id]).toBe(w.mag);
     }
     // held weapon's loaded magazine is filled to its capacity
