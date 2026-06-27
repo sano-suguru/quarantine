@@ -1,6 +1,8 @@
+import { CONFIG } from "../config";
 import { localPlayer } from "../engine/players";
 import { Renderer } from "../engine/renderer";
 import { Input } from "../input";
+import { getSettings } from "../settings";
 import type { State } from "../types";
 import { type PlayerInput, emptyInput } from "./playerInput";
 
@@ -16,6 +18,38 @@ import { type PlayerInput, emptyInput } from "./playerInput";
 
 // previous-frame key snapshot for rising-edge detection
 let prevKeys = new Set<string>();
+// aim-assist: id of the zombie currently auto-targeted (for hysteresis, so the aim/light
+// don't flicker between two equidistant enemies). -1 = none.
+let aimTargetId = -1;
+
+/**
+ * Opt-in auto-aim: angle to the nearest zombie within the flashlight's reach (what you can
+ * see). The current target gets a stickiness discount so the cone doesn't jitter between
+ * two similar-distance enemies. Returns null when no zombie is in range (caller keeps the
+ * mouse aim). Client-local — only the resulting angle ever crosses the wire.
+ */
+function assistAim(state: State, px: number, py: number): number | null {
+  const r2 = CONFIG.flashlight.range * CONFIG.flashlight.range;
+  let best: { x: number; y: number; id: number } | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const z of state.zombies) {
+    const dx = z.x - px;
+    const dy = z.y - py;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > r2) continue;
+    const score = z.id === aimTargetId ? d2 / (1.4 * 1.4) : d2; // hysteresis: stick to current
+    if (score < bestScore) {
+      bestScore = score;
+      best = z;
+    }
+  }
+  if (!best) {
+    aimTargetId = -1;
+    return null;
+  }
+  aimTargetId = best.id;
+  return Math.atan2(best.y - py, best.x - px);
+}
 
 function held(code: string): boolean {
   return Input.keys.has(code);
@@ -48,7 +82,14 @@ export function sampleLocalInput(state: State): PlayerInput {
   const myN = (Input.mouseY / cv.clientHeight) * 2 - 1;
   const wx = state.cam.x + mxN * half.x;
   const wy = state.cam.y + myN * half.y;
-  const aim = Math.atan2(wy - p.y, wx - p.x);
+  let aim = Math.atan2(wy - p.y, wx - p.x);
+  // opt-in aim assist: override the mouse angle with auto-aim at the nearest visible zombie
+  // (falls back to the mouse angle when no enemy is in range). Light follows aim, so this also
+  // auto-points the flashlight — an accepted trade for accessibility (off by default).
+  if (getSettings().aimAssist) {
+    const a = assistAim(state, p.x, p.y);
+    if (a !== null) aim = a;
+  }
 
   // weapon switch: first newly-pressed number key → slot index
   let weaponSlot: number | null = null;

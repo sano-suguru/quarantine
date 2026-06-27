@@ -11,6 +11,7 @@ import { addSalvage, buyUnlock, loadMeta } from "./meta";
 import { Net } from "./net/net";
 import { newState } from "./state";
 import { sysAI } from "./systems/ai";
+import { sysAssist } from "./systems/assist";
 import { sysBullets } from "./systems/bullets";
 import { sysCamera } from "./systems/camera";
 import { sysDeployables } from "./systems/deployables";
@@ -47,6 +48,7 @@ export function update(dt: number): void {
 
   state.time += sdt;
   sysPlayer(state, sdt);
+  sysAssist(state, sdt); // co-op proximity revive of downed teammates (no-op in single-player)
   sysAI(state, sdt);
   if (!anyAlive(state)) {
     gameOver();
@@ -380,6 +382,14 @@ function drawDownedPlayer(R: typeof Renderer, pl: Player): void {
   const col = (PLAYER_COLORS[pl.id % PLAYER_COLORS.length] as [number, number, number]) ?? TOXIC;
   R.glow(pl.x, pl.y, pl.r * 2.6, col[0], col[1], col[2], 0.4);
   R.ring(pl.x, pl.y, pl.r * 0.9, col[0] * 0.6, col[1] * 0.6, col[2] * 0.6, 0.5);
+  // co-op revive progress: a green bar fills while a teammate tends this body
+  if (pl.assistT > 0) {
+    const f = Math.min(1, pl.assistT / CONFIG.assist.reviveTime);
+    const w = 34;
+    const yb = pl.y - pl.r - 10;
+    R.rect(pl.x, yb, w, 4, 0, 0.05, 0.05, 0.05, 0.8);
+    R.rect(pl.x - (w * (1 - f)) / 2, yb, w * f, 4, 0, 0.3, 1, 0.45, 1);
+  }
 }
 
 /** draw a segment as an oriented rect of the given thickness */
@@ -868,23 +878,36 @@ function shopVisible(): boolean {
   return !el("shop").classList.contains("hidden");
 }
 
-/** Context interact hint for the HUD: repair a barricade (priority) or search a cache. */
+/** Context hint for the HUD. E acts on the nearest costed target (heal a hurt teammate /
+ *  repair a wall); searching a cache is automatic (stand still), so it shows a passive hint. */
 function interactPrompt(): string | null {
   const p = localPlayer(state);
   if (p.hp <= 0) return null; // downed: spectating, no interaction
   const reach = CONFIG.siege.interactRadius;
+
+  let barD = reach;
   for (const b of state.barricades) {
     if (b.hp >= b.maxHp) continue;
-    const mx = (b.x1 + b.x2) / 2;
-    const my = (b.y1 + b.y2) / 2;
-    if (Math.hypot(mx - p.x, my - p.y) < reach) {
-      return p.money >= CONFIG.siege.repairCost ? "[E] repair" : "[E] repair — no credits";
+    const d = Math.hypot((b.x1 + b.x2) / 2 - p.x, (b.y1 + b.y2) / 2 - p.y);
+    if (d < barD) barD = d;
+  }
+  let mateD = reach;
+  if (p.medkits >= 1) {
+    for (const o of state.players) {
+      if (o.id === p.id || o.absent || o.hp <= 0 || o.hp >= o.maxHp) continue;
+      const d = Math.hypot(o.x - p.x, o.y - p.y);
+      if (d < mateD) mateD = d;
     }
   }
+  // E targets the nearest of the two (matches interact())
+  if (mateD < reach && mateD <= barD) return "[E] heal teammate";
+  if (barD < reach)
+    return p.money >= CONFIG.siege.repairCost ? "[E] repair" : "[E] repair — no credits";
+
   if (state.phase === "day") {
     for (const c of state.caches) {
       if (c.looted) continue;
-      if (Math.hypot(c.x - p.x, c.y - p.y) < reach) return "[E] hold to search";
+      if (Math.hypot(c.x - p.x, c.y - p.y) < reach) return "stand still to search";
     }
   }
   return null;

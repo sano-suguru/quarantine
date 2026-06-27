@@ -51,6 +51,7 @@ export function makePlayer(id: number, x: number, y: number, name = `P${id + 1}`
     dmgMul: 1,
     fireRateMul: 1,
     reserveMul: 1,
+    assistT: 0,
     absent: false,
   };
 }
@@ -74,20 +75,29 @@ export function cameraTarget(state: State): Player {
 }
 
 /**
- * Bring a downed player back at dawn: full integrity at a HOME spawn (spread by id so
- * teammates don't stack — there's no player-vs-player push). Carried gear (ammo, spare
- * rounds, magazines, medkits, weapon, battery) and perk-raised maxHp are all kept; the
- * input is cleared so an edge held at the moment of death can't fire on respawn.
+ * Bring a downed player back. Two callers:
+ *  - dawn auto-revive (default opts): full integrity, teleported to a HOME spawn (spread by id).
+ *  - co-op in-place revive (`{inPlace:true, hp}`): a teammate tended them mid-night, so they get
+ *    up where they fell at partial integrity (no teleport).
+ * Carried gear (ammo, spare rounds, magazines, medkits, weapon, battery) and perk-raised maxHp
+ * are kept; input + revive gauge are cleared so a held edge can't fire on respawn.
  */
-export function revivePlayer(_state: State, p: Player): void {
-  p.hp = p.maxHp;
-  p.x = HOME_SPAWN.x + ((p.id % 4) - 1.5) * 36;
-  p.y = HOME_SPAWN.y;
+export function revivePlayer(
+  _state: State,
+  p: Player,
+  opts: { inPlace?: boolean; hp?: number } = {},
+): void {
+  p.hp = opts.hp ?? p.maxHp;
+  if (!opts.inPlace) {
+    p.x = HOME_SPAWN.x + ((p.id % 4) - 1.5) * 36;
+    p.y = HOME_SPAWN.y;
+  }
   p.healT = 0;
   p.reloadT = 0;
   p.dryT = 0;
   p.recoilX = 0;
   p.recoilY = 0;
+  p.assistT = 0;
   p.input = emptyInput();
 }
 

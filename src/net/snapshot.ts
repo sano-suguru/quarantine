@@ -65,6 +65,8 @@ interface SnapPlayer {
   iframe: number;
   dryT: number;
   medkits: number;
+  /** co-op revive progress on this (downed) player — drives the revive bar on all clients */
+  assistT: number;
   /** disconnected, body held for reconnect (P4) — drawn as a faded ghost on other clients */
   absent: boolean;
 }
@@ -162,6 +164,7 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
       iframe: p.iframe,
       dryT: p.dryT,
       medkits: p.medkits,
+      assistT: p.assistT,
       absent: p.absent,
     })),
     zombies: state.zombies.map((z) => ({
@@ -301,6 +304,7 @@ export function applySnapshot(
     p.iframe = sp.iframe;
     p.dryT = sp.dryT;
     p.medkits = sp.medkits;
+    p.assistT = sp.assistT;
     p.absent = sp.absent;
     next.push(p);
   }
@@ -508,6 +512,7 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.f32(p.hitFlash);
     w.f32(p.iframe);
     w.f32(p.dryT);
+    w.f32(p.assistT);
     w.u8(p.medkits);
     w.u8((p.lightOn ? 1 : 0) | (p.absent ? 2 : 0)); // flag byte: bit0 lightOn, bit1 absent
   }
@@ -619,6 +624,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
     const hitFlash = r.f32();
     const iframe = r.f32();
     const dryT = r.f32();
+    const assistT = r.f32();
     const medkits = r.u8();
     const pflags = r.u8();
     const lightOn = (pflags & 1) === 1;
@@ -649,6 +655,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
       hitFlash,
       iframe,
       dryT,
+      assistT,
       medkits,
       absent,
     });
