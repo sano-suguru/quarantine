@@ -191,7 +191,7 @@ export interface Pickup {
 
 export type ParticleKind = "spark" | "shard" | "ring" | "smoke";
 
-export interface Particle {
+interface Particle {
   x: number;
   y: number;
   vx: number;
@@ -205,7 +205,7 @@ export interface Particle {
   drag: number;
 }
 
-export interface DamageText {
+interface DamageText {
   x: number;
   y: number;
   vy: number;
@@ -215,7 +215,7 @@ export interface DamageText {
   crit: boolean;
 }
 
-export interface Decal {
+interface Decal {
   x: number;
   y: number;
   r: number;
@@ -256,7 +256,7 @@ export interface Cache {
 /** Day = lit scavenge/repair window; night = the dark horde siege. */
 export type SiegePhase = "day" | "night";
 
-export type WavePhase = "prep" | "active" | "cleared";
+type WavePhase = "prep" | "active" | "cleared";
 
 export interface WaveDefinition {
   spawn: string[];
@@ -265,7 +265,7 @@ export interface WaveDefinition {
   interval: number;
 }
 
-export interface Wave {
+interface Wave {
   n: number;
   phase: WavePhase;
   t: number;
@@ -274,7 +274,7 @@ export interface Wave {
   spawnT: number;
 }
 
-export interface Cam {
+interface Cam {
   x: number;
   y: number;
   shake: number;
@@ -333,7 +333,7 @@ export interface State {
 }
 
 /** Structural type so state.ts need not import the engine class directly. */
-export interface SpatialHashLike {
+interface SpatialHashLike {
   clear(): void;
   insert(i: number, x: number, y: number): void;
   query(x: number, y: number, r: number, cb: (i: number) => void): void;

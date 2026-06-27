@@ -11,7 +11,3 @@ export const PLAYER_COLORS: RGB[] = [
   [1.0, 0.62, 0.3], // orange
   [0.85, 0.5, 1.0], // violet
 ];
-
-export function playerColor(id: number): RGB {
-  return PLAYER_COLORS[id % PLAYER_COLORS.length] as RGB;
-}
