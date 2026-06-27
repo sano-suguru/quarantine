@@ -15,6 +15,9 @@ export interface WeaponDef {
   recoil: number;
   pierce: number;
   color: [number, number, number];
+  /** move-speed multiplier while equipped (weapon "weight": light >1 kite, heavy <1 stand-ground).
+   *  Required so a new weapon can't silently default to full speed. */
+  moveMul: number;
   /** spare rounds (outside the magazine) carried at run start */
   reserveStart: number;
   /** hard cap on spare rounds this weapon can hold */
@@ -74,6 +77,9 @@ export interface Player {
   hp: number;
   maxHp: number;
   speed: number;
+  /** current ramped move multiplier (host-only sim; lerps toward the equipped weapon's moveMul,
+   *  not synced — clients re-derive it from the synced weapon during prediction) */
+  curMoveMul: number;
   aim: number;
   weapon: string;
   /** rounds in the active weapon's magazine */

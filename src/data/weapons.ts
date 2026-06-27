@@ -16,6 +16,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     recoil: 4,
     pierce: 0,
     color: [1.0, 0.85, 0.4],
+    moveMul: 1.12, // light sidearm — best kiting speed
     reserveStart: 36,
     reserveMax: 96,
   },
@@ -34,6 +35,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     recoil: 2.4,
     pierce: 0,
     color: [0.55, 0.95, 1.0],
+    moveMul: 1.05, // light, still mobile
     reserveStart: 64,
     reserveMax: 160,
   },
@@ -52,6 +54,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     recoil: 10,
     pierce: 0,
     color: [1.0, 0.7, 0.35],
+    moveMul: 0.9, // mid-weight
     reserveStart: 18,
     reserveMax: 42,
   },
@@ -72,6 +75,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     recoil: 3.2,
     pierce: 1,
     color: [0.7, 1.0, 0.6],
+    moveMul: 0.92, // mid-weight
     reserveStart: 90,
     reserveMax: 240,
   },
@@ -91,6 +95,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     recoil: 4,
     pierce: 1,
     color: [1.0, 0.85, 0.5],
+    moveMul: 0.68, // heavy — stand your ground (slower than a runner)
     reserveStart: 150,
     reserveMax: 450,
   },
@@ -110,6 +115,7 @@ export const WEAPONS: Record<string, WeaponDef> = {
     recoil: 13,
     pierce: 2,
     color: [1.0, 0.55, 0.5],
+    moveMul: 0.72, // heavy hand-cannon
     reserveStart: 24,
     reserveMax: 60,
   },
@@ -130,6 +136,8 @@ export const WEAPONS: Record<string, WeaponDef> = {
     recoil: 6,
     pierce: 0,
     color: [0.82, 0.88, 0.95],
+    // not the fastest: knife is desperation (no ammo), not a free kiting tool
+    moveMul: 1.0,
     reserveStart: 0,
     reserveMax: 0,
     melee: true,

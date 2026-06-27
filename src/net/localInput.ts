@@ -103,7 +103,6 @@ export function sampleLocalInput(state: State): PlayerInput {
   const input: PlayerInput = {
     moveX,
     moveY,
-    sprint: held("ShiftLeft") || held("ShiftRight"),
     aim,
     firing: Input.firing,
     interactHeld: held("KeyE"),

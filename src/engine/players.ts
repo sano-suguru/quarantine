@@ -28,6 +28,7 @@ export function makePlayer(id: number, x: number, y: number, name = `P${id + 1}`
     hp: CONFIG.player.maxHp,
     maxHp: CONFIG.player.maxHp,
     speed: CONFIG.player.speed,
+    curMoveMul: WEAPONS.pistol?.moveMul ?? 1, // starts at the equipped (starter) weapon's weight
     aim: 0,
     weapon: "pistol",
     ammo: mags.pistol ?? 0,
@@ -98,6 +99,7 @@ export function revivePlayer(
   p.recoilX = 0;
   p.recoilY = 0;
   p.assistT = 0;
+  p.curMoveMul = WEAPONS[p.weapon]?.moveMul ?? 1; // resync the ramp so host/client agree on revive
   p.input = emptyInput();
 }
 

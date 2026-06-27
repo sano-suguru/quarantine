@@ -19,7 +19,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
   },
   runner: {
     hp: 35,
-    speed: 140,
+    speed: 130, // sits just below heavy-weapon move speed: heavies crawl away but lunge still closes
     radius: 13,
     dmg: 6,
     bounty: 8,

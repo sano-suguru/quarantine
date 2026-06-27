@@ -43,7 +43,10 @@ export const CONFIG = {
     registryMetaMs: 10000, // public host → relay meta cadence (registry liveness; Worker-clock driven)
     quickMatchTimeoutMs: 6000, // per-candidate connect wait before falling back to hosting
   },
-  player: { radius: 16, speed: 230, sprint: 1.55, maxHp: 100 },
+  // speed is the only move speed now (sprint removed); the equipped weapon's moveMul scales it.
+  // moveRampRate = how fast curMoveMul approaches the weapon's weight (per sec); switchRaise =
+  // fire lockout after a weapon switch.
+  player: { radius: 16, speed: 200, maxHp: 100, moveRampRate: 1.5, switchRaise: 0.25 },
   cam: { lerp: 8, shakeDecay: 8 },
   feel: {
     hitstop: 0.05, // seconds of slow-mo on a kill
