@@ -451,23 +451,52 @@ function drawDeployables(R: typeof Renderer): void {
     const def = DEPLOYABLE_TYPES[d.defId];
     if (!def) continue;
     const [r, g, b] = def.color;
-    if (def.kind === "turret") {
-      // base + a barrel that tracks its target
-      R.glow(d.x, d.y, 26, r, g, b, 0.4);
-      R.circle(d.x, d.y, 11, 0.2, 0.22, 0.24, 1);
-      R.ring(d.x, d.y, 11, r, g, b, 0.8);
-      const bx = d.x + Math.cos(d.aim) * 14;
-      const by = d.y + Math.sin(d.aim) * 14;
-      R.rect(bx, by, 20, 5, d.aim, r, g, b, 1);
-    } else {
+    const visual = def.visual ?? (def.movement ? "drone" : def.emitter ? "crate" : "turret");
+    if (visual === "drone") {
+      // an airborne unit: a ground shadow stays put while the body bobs above it
+      const by = d.y + Math.sin(state.time * 4 + d.x * 0.05) * 3;
+      R.circle(d.x, d.y, 8, 0, 0, 0, 0.28); // shadow (no bob)
+      R.glow(d.x, by, 18, r, g, b, d.reloading ? 0.2 : 0.45); // scanner; dims while reloading
+      const rot = state.time * 9; // spinning rotor blades (ring() can't rotate)
+      R.tri(d.x, by, 7, rot, r, g, b, 0.5);
+      R.tri(d.x, by, 7, rot + 2.094, r, g, b, 0.5);
+      R.tri(d.x, by, 7, rot + 4.189, r, g, b, 0.5);
+      R.hex(d.x, by, 6, state.time * 2, r, g, b, 1);
+      R.ring(d.x, by, 9, r, g, b, 0.7);
+      R.rect(d.x + Math.cos(d.aim) * 10, by + Math.sin(d.aim) * 10, 12, 3, d.aim, r, g, b, 0.9);
+      drawDeployableHp(R, d, d.x, by);
+    } else if (visual === "crate") {
       // supply station: a glowing crate that pulses as it nears its next drop
       const pulse = 0.5 + 0.3 * Math.sin(state.time * 3 + d.x);
       R.glow(d.x, d.y, 24, r, g, b, 0.35 + pulse * 0.2);
       R.rect(d.x, d.y, 20, 16, 0, 0.5, 0.42, 0.26, 1);
       R.rect(d.x, d.y, 20, 4, 0, r, g, b, 0.9);
       R.ring(d.x, d.y, 12, r, g, b, 0.7);
+      drawDeployableHp(R, d, d.x, d.y);
+    } else {
+      // turret: base + a barrel that tracks its target; glow dims while reloading
+      R.glow(d.x, d.y, 26, r, g, b, d.reloading ? 0.2 : 0.4);
+      R.circle(d.x, d.y, 11, 0.2, 0.22, 0.24, 1);
+      R.ring(d.x, d.y, 11, r, g, b, 0.8);
+      const bx = d.x + Math.cos(d.aim) * 14;
+      const by = d.y + Math.sin(d.aim) * 14;
+      R.rect(bx, by, 20, 5, d.aim, r, g, b, 1);
+      drawDeployableHp(R, d, d.x, d.y);
     }
   }
+}
+
+/** A small HP bar above a damaged deployable (hidden at full / for indestructible units). */
+function drawDeployableHp(
+  R: typeof Renderer,
+  d: State["deployables"][number],
+  x: number,
+  y: number,
+): void {
+  if (d.hpFrac >= 1) return;
+  const f = Math.max(0, d.hpFrac);
+  R.rect(x, y - 16, 22, 3, 0, 0.05, 0.05, 0.05, 0.8);
+  R.rect(x - (22 * (1 - f)) / 2, y - 16, 22 * f, 3, 0, 1, 0.3, 0.2, 1);
 }
 
 function drawCaches(R: typeof Renderer): void {

@@ -119,8 +119,17 @@ export interface Snapshot {
   pickups: SnapPickup[];
   barricades: { hp: number; flash: number }[];
   caches: { looted: boolean; searchT: number }[];
-  /** placed fortifications (turret barrel aim included so clients render the tracking barrel) */
-  deployables: { id: number; defId: string; x: number; y: number; aim: number }[];
+  /** placed fortifications (barrel aim + a status byte: hp fraction + reload flag, so clients
+   *  render the tracking barrel, an HP bar, and the reload cue) */
+  deployables: {
+    id: number;
+    defId: string;
+    x: number;
+    y: number;
+    aim: number;
+    hpFrac: number;
+    reloading: boolean;
+  }[];
 }
 
 /** Read the current world into a logical snapshot. */
@@ -200,6 +209,8 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
       x: d.x,
       y: d.y,
       aim: d.aim,
+      hpFrac: d.hpFrac,
+      reloading: d.reloading,
     })),
   };
 }
@@ -374,7 +385,8 @@ export function applySnapshot(
     c.searchT = s.searchT;
   }
 
-  // deployables: match by id to keep object identity (cd is host-only, irrelevant on clients)
+  // deployables: match by id to keep object identity (sim fields are host-only; clients only
+  // render position/aim + the synced hpFrac/reloading display state)
   const dById = new Map(state.deployables.map((d) => [d.id, d]));
   state.deployables = snap.deployables.map((sd): Deployable => {
     const ex = dById.get(sd.id);
@@ -382,9 +394,19 @@ export function applySnapshot(
       ex.x = sd.x;
       ex.y = sd.y;
       ex.aim = sd.aim;
+      ex.hpFrac = sd.hpFrac;
+      ex.reloading = sd.reloading;
       return ex;
     }
-    return { id: sd.id, defId: sd.defId, x: sd.x, y: sd.y, aim: sd.aim, cd: 0 };
+    return {
+      id: sd.id,
+      defId: sd.defId,
+      x: sd.x,
+      y: sd.y,
+      aim: sd.aim,
+      hpFrac: sd.hpFrac,
+      reloading: sd.reloading,
+    };
   });
 }
 
@@ -567,7 +589,8 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.u8(q01(c.searchT, SEARCH_MAX));
   }
 
-  // deployables (few; id-matched). aim quantized to a byte over TAU for the turret barrel.
+  // deployables (few; id-matched). aim quantized to a byte over TAU for the barrel; a status
+  // byte packs the reload flag (bit0) + hp fraction (bits 1-7) for the client HP bar / cue.
   w.u8(snap.deployables.length);
   for (const d of snap.deployables) {
     w.u32(d.id);
@@ -576,6 +599,8 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.i16(qpos(d.x));
     w.i16(qpos(d.y));
     w.u8(q01(((d.aim % TAU) + TAU) % TAU, TAU));
+    const hp7 = Math.round(Math.max(0, Math.min(1, d.hpFrac)) * 127);
+    w.u8((d.reloading ? 1 : 0) | (hp7 << 1));
   }
 
   return w.done();
@@ -720,7 +745,16 @@ export function decode(buf: ArrayBuffer): Snapshot {
     const x = dqpos(r.i16());
     const y = dqpos(r.i16());
     const aim = dq01(r.u8(), TAU);
-    deployables.push({ id, defId, x, y, aim });
+    const status = r.u8();
+    deployables.push({
+      id,
+      defId,
+      x,
+      y,
+      aim,
+      reloading: (status & 1) === 1,
+      hpFrac: (status >> 1) / 127,
+    });
   }
 
   return {
@@ -803,5 +837,14 @@ export function lerpSnapshots(a: Snapshot, b: Snapshot, t: number): Snapshot {
     const pa = apk.get(pp.id);
     return pa ? { ...pp, x: lerp(pa.x, pp.x, t), y: lerp(pa.y, pp.y, t) } : pp;
   });
-  return { ...b, players, zombies, bullets, pickups };
+  // deployables: interpolate position + aim for moving units (drones); static fortifications
+  // have a==b so it's a no-op. hpFrac/reloading take the latest (b) value.
+  const ad = new Map(a.deployables.map((x) => [x.id, x]));
+  const deployables = b.deployables.map((db) => {
+    const da = ad.get(db.id);
+    return da
+      ? { ...db, x: lerp(da.x, db.x, t), y: lerp(da.y, db.y, t), aim: lerpAngle(da.aim, db.aim, t) }
+      : db;
+  });
+  return { ...b, players, zombies, bullets, pickups, deployables };
 }

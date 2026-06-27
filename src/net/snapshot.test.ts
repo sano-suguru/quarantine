@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { addPlayer } from "../engine/players";
 import { allocId } from "../state";
 import { newState } from "../state";
 import { spawnPickup } from "../systems/pickups";
 import { spawnZombie } from "../systems/wave";
 import type { Bullet, State } from "../types";
-import { applySnapshot, captureSnapshot, decode, encode } from "./snapshot";
+import { applySnapshot, captureSnapshot, decode, encode, lerpSnapshots } from "./snapshot";
 
 /** A populated world: 2 players, a few zombies, a bullet, a pickup, damage + search progress. */
 function populated(): State {
@@ -116,10 +117,26 @@ describe("snapshot binary round-trip", () => {
     );
   });
 
-  it("round-trips placed deployables (id, type, position, turret aim)", () => {
+  it("round-trips placed deployables (id, type, position, aim, hp/reload status byte)", () => {
     const s = newState();
-    s.deployables.push({ id: 77, defId: "sentry", x: 120, y: -64, cd: 0.3, aim: 1.2 });
-    s.deployables.push({ id: 78, defId: "ammostation", x: -40, y: 200, cd: 5, aim: 0 });
+    s.deployables.push({
+      id: 77,
+      defId: "sentry",
+      x: 120,
+      y: -64,
+      aim: 1.2,
+      hpFrac: 0.5,
+      reloading: true,
+    });
+    s.deployables.push({
+      id: 78,
+      defId: "ammostation",
+      x: -40,
+      y: 200,
+      aim: 0,
+      hpFrac: 1,
+      reloading: false,
+    });
     const back = decode(encode(captureSnapshot(s, 9)));
     expect(back.deployables).toHaveLength(2);
     const sentry = back.deployables.find((d) => d.id === 77);
@@ -127,7 +144,12 @@ describe("snapshot binary round-trip", () => {
     expect(Math.abs((sentry?.x ?? 0) - 120)).toBeLessThanOrEqual(POS_TOL);
     expect(Math.abs((sentry?.y ?? 0) - -64)).toBeLessThanOrEqual(POS_TOL);
     expect(sentry?.aim ?? 0).toBeCloseTo(1.2, 1); // byte-quantized over TAU
-    expect(back.deployables.find((d) => d.id === 78)?.defId).toBe("ammostation");
+    expect(sentry?.hpFrac ?? 0).toBeCloseTo(0.5, 2); // 7-bit quantized
+    expect(sentry?.reloading).toBe(true);
+    const station = back.deployables.find((d) => d.id === 78);
+    expect(station?.defId).toBe("ammostation");
+    expect(station?.hpFrac).toBeCloseTo(1, 2);
+    expect(station?.reloading).toBe(false);
   });
 
   it("stays under the 16KB SCTP message limit for a heavy night", () => {
@@ -185,5 +207,54 @@ describe("applySnapshot (id-matched apply to a client state)", () => {
     (host.players[0] as State["players"][number]).x = -500;
     applySnapshot(client, decode(encode(captureSnapshot(host, 2))), { skipLocalId: 0 });
     expect(client.players.find((p) => p.id === 0)?.x).toBe(9999);
+  });
+});
+
+describe("deployable wire contract & interpolation", () => {
+  it("DEPLOYABLE_ORDER (Object.keys) index is append-only stable", () => {
+    // The key declaration order IS the snapshot defId wire index. Reordering desyncs silently
+    // (the golden uses zero deployables, so it can't catch this) — pin it here.
+    const order = Object.keys(DEPLOYABLE_TYPES);
+    expect(order[0]).toBe("ammostation");
+    expect(order[1]).toBe("sentry");
+    expect(order[2]).toBe("drone");
+  });
+
+  it("lerpSnapshots interpolates a moving deployable's position + aim", () => {
+    const s = newState();
+    s.deployables.push({ id: 9, defId: "drone", x: 0, y: 0, aim: 0, hpFrac: 0.5, reloading: true });
+    const a = captureSnapshot(s, 1);
+    const d = s.deployables[0] as State["deployables"][number];
+    d.x = 100;
+    d.y = 40;
+    d.aim = 1;
+    d.hpFrac = 0.5;
+    d.reloading = false;
+    const b = captureSnapshot(s, 2);
+    const mid = lerpSnapshots(a, b, 0.5);
+    const md = mid.deployables.find((x) => x.id === 9);
+    expect(md?.x).toBeCloseTo(50, 5);
+    expect(md?.y).toBeCloseTo(20, 5);
+    expect(md?.aim).toBeCloseTo(0.5, 5);
+    expect(md?.reloading).toBe(false); // display state takes the latest (b)
+  });
+
+  it("lerpSnapshots is a no-op for a static deployable (a==b)", () => {
+    const s = newState();
+    s.deployables.push({
+      id: 3,
+      defId: "sentry",
+      x: 12,
+      y: -8,
+      aim: 0.7,
+      hpFrac: 1,
+      reloading: false,
+    });
+    const snap = captureSnapshot(s, 1);
+    const mid = lerpSnapshots(snap, snap, 0.5);
+    const md = mid.deployables.find((x) => x.id === 3);
+    expect(md?.x).toBeCloseTo(12, 5);
+    expect(md?.y).toBeCloseTo(-8, 5);
+    expect(md?.aim).toBeCloseTo(0.7, 5);
   });
 });

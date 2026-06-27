@@ -268,8 +268,11 @@ export interface Cache {
   tier: number;
 }
 
-/** Data-driven deployable type: a fortification bought in the shop and auto-placed at the
- *  base. Behaviour (emit pickups / auto-fire) lives in DEPLOYABLE_TYPES, referenced by defId. */
+/** Data-driven deployable type, composed from capability blocks: a def enables a behaviour
+ *  by *having* the matching block, and sysDeployables runs whichever blocks are present. This
+ *  is the extension seam — a new mix (e.g. a moving emitter, a non-combat support unit) is
+ *  pure data; only a genuinely new capability class needs a new handler. Sentry = weapon +
+ *  destructible, drone = weapon + movement + destructible, Station = emitter. */
 export interface DeployableDef {
   id: string;
   name: string;
@@ -278,32 +281,57 @@ export interface DeployableDef {
   cost: number;
   /** how many of this type may exist at once this run */
   cap: number;
-  /** "emitter" periodically drops a pickup; "turret" auto-fires at the nearest zombie */
-  kind: "emitter" | "turret";
-  /** emitter: pickup defId to drop. turret: unused. */
-  emit?: string;
-  /** seconds between emits / shots */
-  interval: number;
-  /** turret: targeting + bullet range (world units) */
-  range?: number;
-  /** turret: bullet damage */
-  dmg?: number;
-  /** turret: bullet speed */
-  bulletSpeed?: number;
   color: [number, number, number];
+  /** auto-fire at the nearest zombie. `interval` = seconds between shots; `magSize`/`reloadTime`
+   *  add a self-recharging magazine (caps sustained DPS via a reload gap; no ammo purchase). */
+  weapon?: {
+    range: number;
+    dmg: number;
+    bulletSpeed: number;
+    interval: number;
+    magSize?: number;
+    reloadTime?: number;
+  };
+  /** periodically drop a pickup (`emit` = pickup defId) every `interval` seconds */
+  emitter?: { emit: string; interval: number };
+  /** leash-follow the nearest alive player and approach zombies to engage */
+  movement?: { speed: number; leashMax: number; hoverDist: number; switchMargin: number };
+  /** takes contact damage from adjacent zombies; removed at hp<=0 */
+  destructible?: { maxHp: number; contactRadius: number; contactDps: number };
+  /** draw hint; inferred from capabilities when omitted */
+  visual?: "turret" | "drone" | "crate";
 }
 
-/** A placed fortification instance. Type/behaviour lives in DEPLOYABLE_TYPES via defId. */
+/** A placed fortification instance. Type/behaviour lives in DEPLOYABLE_TYPES via defId.
+ *  The host advances the host-only sim fields and summarises them into the synced display
+ *  fields (`hpFrac`/`reloading`) at capture; clients only interpolate + render. */
 export interface Deployable {
   /** stable id for network snapshot matching (host-authoritative; positive) */
   id: number;
   defId: string;
   x: number;
   y: number;
-  /** countdown to the next emit/shot (host-only; clients don't simulate it) */
-  cd: number;
-  /** turret: current barrel aim (radians), for rendering */
+  /** current barrel aim (radians), for rendering the tracking barrel */
   aim: number;
+  /** synced display state (status byte): current HP fraction 0..1 (1 if not destructible) */
+  hpFrac: number;
+  /** synced display state: weapon is mid-reload (drives the reload cue) */
+  reloading: boolean;
+  // ---- host-only sim state (not in snapshot; clients don't simulate it) ----
+  /** countdown to the next shot */
+  weaponCd?: number;
+  /** countdown to the next emit */
+  emitCd?: number;
+  /** rounds left in the magazine */
+  ammoLeft?: number;
+  /** reload countdown (>0 = reloading) */
+  reloadT?: number;
+  /** absolute hp (destructible only) */
+  hp?: number;
+  /** movement: the player this unit is leashed to */
+  anchorId?: number;
+  /** weapon: current target zombie (for target hysteresis) */
+  targetId?: number;
 }
 
 /** Day = lit scavenge/repair window; night = the dark horde siege. */
