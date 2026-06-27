@@ -229,9 +229,12 @@ function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
 }
 
 /**
- * Hold E to interact with the single nearest thing: a damaged barricade (repair,
- * costs credits, rate-limited) takes priority; otherwise an unsearched cache
- * (search while standing still, day only). Anything not actively searched resets.
+ * Context interactions, split by cost (simplification: free = automatic, costed = E):
+ *  - SEARCH (free): standing still near an unsearched cache (day) auto-searches, no button.
+ *  - HEAL teammate (costs a medkit) / REPAIR wall (costs money): held E acts on the single
+ *    NEAREST eligible target — picking by distance (not a fixed type priority) so a hurt
+ *    teammate next to a damaged wall can't silently drain a medkit you meant for the wall.
+ * Reviving a downed teammate is free and handled automatically in sysAssist (no E).
  */
 function interact(
   state: State,
@@ -243,8 +246,8 @@ function interact(
 ): void {
   if (p.repairCd > 0) p.repairCd -= dt;
   const reach = CONFIG.siege.interactRadius;
-  const holding = p.input.interactHeld;
 
+  // nearest damaged barricade (repair target, E)
   let bar: (typeof state.barricades)[number] | null = null;
   let barD = reach;
   for (const b of state.barricades) {
@@ -258,6 +261,21 @@ function interact(
     }
   }
 
+  // nearest hurt teammate (heal target, E) — only if we carry a medkit to give
+  let mate: Player | null = null;
+  let mateD = reach;
+  if (p.medkits >= 1) {
+    for (const o of state.players) {
+      if (o.id === p.id || o.absent || o.hp <= 0 || o.hp >= o.maxHp) continue;
+      const d = len(o.x - p.x, o.y - p.y);
+      if (d < mateD) {
+        mateD = d;
+        mate = o;
+      }
+    }
+  }
+
+  // nearest unsearched cache (search target, auto, day only)
   let cache: (typeof state.caches)[number] | null = null;
   let cacheD = reach;
   if (state.phase === "day") {
@@ -271,31 +289,36 @@ function interact(
     }
   }
 
-  if (holding && !healing) {
-    if (bar) {
-      // repair takes priority over searching. Self-funded from the repairer's own wallet —
-      // the wall shelters them tonight too, so there's a private benefit (no free-rider).
-      if (p.repairCd <= 0 && p.money >= CONFIG.siege.repairCost) {
-        const before = bar.hp;
-        p.money -= CONFIG.siege.repairCost;
-        bar.hp = Math.min(bar.maxHp, bar.hp + CONFIG.siege.repairAmount);
-        // support-labor reward: refund proportional to hp ACTUALLY restored (0 on a full
-        // wall), capped strictly below the cost — repairing for the team is near-free but
-        // never profitable, so a support player stays solvent without a money fountain.
-        const restored = bar.hp - before;
-        p.money += Math.round(CONFIG.econ.repairReward * (restored / CONFIG.siege.repairAmount));
-        p.repairCd = CONFIG.siege.repairCd;
-        Audio.repair();
-      }
-    } else if (cache && !moving) {
-      cache.searchT += dt;
-      searched.add(cache); // mark; sysPlayer resets only caches nobody searched
-      if (cache.searchT >= CONFIG.cache.searchTime) {
-        lootCache(state, cache.x, cache.y, cache.tier);
-        cache.looted = true;
-        cache.searchT = 0;
-        Audio.pickup();
-      }
+  // SEARCH: free, automatic — stand still near a cache (no E needed)
+  if (cache && !moving && !healing) {
+    cache.searchT += dt;
+    searched.add(cache); // mark; sysPlayer resets only caches nobody searched
+    if (cache.searchT >= CONFIG.cache.searchTime) {
+      lootCache(state, cache.x, cache.y, cache.tier);
+      cache.looted = true;
+      cache.searchT = 0;
+      Audio.pickup();
+    }
+  }
+
+  // HEAL / REPAIR: costed, held E acts on the nearest eligible target (rate-limited)
+  if (p.input.interactHeld && !healing && p.repairCd <= 0) {
+    if (mate && (!bar || mateD <= barD)) {
+      // give a teammate one of your medkits (instant; they keep fighting, not rooted)
+      p.medkits -= 1;
+      mate.hp = Math.min(mate.maxHp, mate.hp + CONFIG.heal.amount);
+      p.repairCd = CONFIG.siege.repairCd;
+      Audio.heal();
+    } else if (bar && p.money >= CONFIG.siege.repairCost) {
+      // self-funded repair — the wall shelters the repairer too (private benefit, no
+      // free-rider). Labor reward refunds < cost (solvent support, never a money fountain).
+      const before = bar.hp;
+      p.money -= CONFIG.siege.repairCost;
+      bar.hp = Math.min(bar.maxHp, bar.hp + CONFIG.siege.repairAmount);
+      const restored = bar.hp - before;
+      p.money += Math.round(CONFIG.econ.repairReward * (restored / CONFIG.siege.repairAmount));
+      p.repairCd = CONFIG.siege.repairCd;
+      Audio.repair();
     }
   }
 }

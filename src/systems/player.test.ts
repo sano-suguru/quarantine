@@ -69,3 +69,38 @@ describe("repair labor reward", () => {
     expect(p.money).toBe(100 - CONFIG.siege.repairCost + reward);
   });
 });
+
+/** Phase B: E heals the nearest hurt teammate by spending one of YOUR medkits (instant). */
+describe("co-op heal teammate (E)", () => {
+  it("spends a medkit to heal a nearby hurt teammate", () => {
+    const s = newState();
+    s.barricades.length = 0; // no wall so the teammate is the only E target
+    const healer = s.players[0] as State["players"][number];
+    healer.x = 0;
+    healer.y = 0;
+    healer.medkits = 2;
+    healer.input = { ...healer.input, interactHeld: true, moveX: 0, moveY: 0 };
+    const mate = addPlayer(s, 1, 30, 0);
+    mate.hp = 40;
+
+    sysPlayer(s, 0.05);
+
+    expect(healer.medkits).toBe(1); // spent one
+    expect(mate.hp).toBe(Math.min(mate.maxHp, 40 + CONFIG.heal.amount));
+  });
+
+  it("does nothing when the healer has no medkit (no heal target)", () => {
+    const s = newState();
+    s.barricades.length = 0;
+    const healer = s.players[0] as State["players"][number];
+    healer.medkits = 0;
+    healer.input = { ...healer.input, interactHeld: true };
+    const mate = addPlayer(s, 1, 30, 0);
+    mate.hp = 40;
+
+    sysPlayer(s, 0.05);
+
+    expect(mate.hp).toBe(40); // untouched
+    expect(healer.medkits).toBe(0);
+  });
+});

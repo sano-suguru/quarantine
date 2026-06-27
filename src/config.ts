@@ -122,6 +122,12 @@ export const CONFIG = {
     // fountain from repair-spamming a wall you let the horde chew on.
     repairReward: 12,
   },
+  // co-op peer support (reviving downed teammates). Uses siege.interactRadius for reach so
+  // all context interactions share one distance. Single-player never triggers it (no allies).
+  assist: {
+    reviveTime: 2.5, // seconds a teammate must tend a downed ally to bring them back
+    reviveHpFrac: 0.5, // revived in place at this fraction of max integrity
+  },
   arsenal: {
     maxLevel: 3, // weapon upgrade levels per run
     dmgPerLevel: 0.15, // +15% damage per level

@@ -25,10 +25,12 @@ import { Client } from "./net/client";
 import { Host } from "./net/host";
 import { sampleLocalInput } from "./net/localInput";
 import { Net } from "./net/net";
+import { emptyInput } from "./net/playerInput";
 import { type RoomInfo, listRooms, selectQuickMatch, versionMatches } from "./net/registry";
 import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
 import { NETLOG, createClientLink, createHostLink, getTurnStatus } from "./net/transport";
+import { getSettings, setAimAssist } from "./settings";
 import { sysCamera } from "./systems/camera";
 import { sysFx } from "./systems/fx";
 import { el, hide, show } from "./ui";
@@ -46,6 +48,11 @@ let reconnecting = false;
 // Read by the Worker-clock tick to push registry meta (so a backgrounded public host isn't pruned).
 let coopHostHandle: HostRoom | null = null;
 let coopPublic = false;
+
+// personal options overlay (#settings): client-local, separate from the host-authoritative
+// pause. While open, local input is zeroed (so you don't act blind behind the overlay) and
+// single-player freezes the sim; co-op can't pause the shared sim, so you're idle/vulnerable.
+let settingsOpen = false;
 
 /** Stored reconnect identity for a room (written from each Hello; replayed on rejoin). */
 function loadRejoinToken(code: string): { pid: number; nonce: string } | null {
@@ -121,16 +128,47 @@ function main(): void {
   const muteTag = el("mute");
   const netstat = el("netstat"); // ?netlog co-op net-stat readout
   let netAcc = 0;
+
+  // --- options / settings panel (#settings): personal, client-local. Reused from the title
+  // (Options button) and in-game (O key). All wiring lives here so the mute toggle, the M
+  // hotkey, and the #mute tag share one refresh closure (no display drift). ---
   const refreshMute = (): void => {
     muteTag.textContent = Audio.isMuted() ? "♪ muted [M]" : "";
   };
+  const refreshSettings = (): void => {
+    el("settingAimAssist").textContent = getSettings().aimAssist ? "ON" : "OFF";
+    el("settingMute").textContent = Audio.isMuted() ? "ON" : "OFF";
+  };
+  const openSettings = (): void => {
+    settingsOpen = true;
+    refreshSettings();
+    show("settings");
+  };
+  const closeSettings = (): void => {
+    settingsOpen = false;
+    hide("settings");
+  };
   refreshMute();
+  el("optionsBtn").onclick = openSettings;
+  el("settingsClose").onclick = closeSettings;
+  el("settingAimAssist").onclick = () => {
+    setAimAssist(!getSettings().aimAssist);
+    refreshSettings();
+    Audio.ui(true);
+  };
+  el("settingMute").onclick = () => {
+    Audio.toggleMute();
+    refreshMute();
+    refreshSettings();
+    Audio.ui(true);
+  };
 
   addEventListener("keydown", (e) => {
     const state = getState();
     if (e.code === "KeyM") {
       Audio.toggleMute();
       refreshMute();
+      refreshSettings(); // keep the options-panel mute label in sync if it's open
       return;
     }
     // ?netlog test hooks for the reconnect path: J drops the client link (→ full reconnect),
@@ -153,9 +191,24 @@ function main(): void {
       else if (e.code === "Enter") shopDeploy();
       return;
     }
-    if ((e.code === "Escape" || e.code === "KeyP") && state.running) {
-      e.preventDefault();
-      togglePause();
+    // O: open/close personal options in-game (title uses the Options button). Disabled in
+    // the shop (handled above by the early return) and on the title/lobby (running === false).
+    if (e.code === "KeyO" && state.running) {
+      if (settingsOpen) closeSettings();
+      else openSettings();
+      return;
+    }
+    if (e.code === "Escape" || e.code === "KeyP") {
+      // Esc closes the options panel first (without touching the host-authoritative pause)
+      if (settingsOpen) {
+        e.preventDefault();
+        closeSettings();
+        return;
+      }
+      if (state.running) {
+        e.preventDefault();
+        togglePause();
+      }
     }
     if (e.code === "Enter" && state.running) startNightNow();
   });
@@ -198,7 +251,10 @@ function main(): void {
       return; // only the running host sims here; single/client/lobby do not
     }
     const st = getState();
-    if (st.running && !st.paused) localPlayer(st).input = sampleLocalInput(st);
+    // host sim can't pause for one player; while our options panel is open we still send
+    // zeroed input so our character stands idle (not acting blind behind the overlay)
+    if (st.running && !st.paused)
+      localPlayer(st).input = settingsOpen ? emptyInput() : sampleLocalInput(st);
     hAcc += dt;
     while (hAcc >= step) {
       update(step);
@@ -224,15 +280,21 @@ function main(): void {
     const live = st.running && !st.paused;
 
     if (Net.mode === "single") {
-      rAcc += Math.min(dt, 0.1);
-      if (live) localPlayer(st).input = sampleLocalInput(st);
-      while (rAcc >= step) {
-        update(step);
-        rAcc -= step;
+      // options panel open → freeze the SP sim entirely (don't accumulate dt, so there's no
+      // fast-forward catch-up on resume). state.paused is left untouched (avoids clashing
+      // with shop/gameover and the Esc-pause handler).
+      if (!settingsOpen) {
+        rAcc += Math.min(dt, 0.1);
+        if (live) localPlayer(st).input = sampleLocalInput(st);
+        while (rAcc >= step) {
+          update(step);
+          rAcc -= step;
+        }
       }
     } else if (Net.mode === "client") {
-      // no authoritative sim — predict our player, interpolate the world, ship input
-      const inp = live ? sampleLocalInput(st) : null;
+      // no authoritative sim — predict our player, interpolate the world, ship input.
+      // While options is open, send zeroed input so the host holds us idle (not acting blind).
+      const inp = live ? (settingsOpen ? emptyInput() : sampleLocalInput(st)) : null;
       if (inp) Net.client?.send(inp);
       Net.client?.render(performance.now(), inp, dt);
       if (st.running) {
@@ -262,6 +324,14 @@ function main(): void {
     draw();
     if (st.running) updateHUD();
 
+    // options panel: force-close on state transitions (gameover/shop/reconnect) so it's never
+    // left stranded, and suppress the pause overlay underneath it so the two never stack.
+    // force-close only when a competing game overlay takes over: shop, reconnect, or gameover
+    // (#over shown). NOT on the title — there running is also false but options must stay open.
+    if (settingsOpen && (st.inShop || reconnecting || !el("over").classList.contains("hidden")))
+      closeSettings();
+    if (settingsOpen) hide("pause");
+
     // ?netlog: live co-op net-stat readout (client only) to drive feel-tuning
     if (NETLOG) {
       const showNet = Net.mode === "client" && st.running;
@@ -279,7 +349,7 @@ function main(): void {
     }
 
     // custom crosshair (hidden while downed — you're spectating, not aiming — or reconnecting)
-    if (st.running && !st.paused && !reconnecting && localPlayer(st).hp > 0) {
+    if (st.running && !st.paused && !reconnecting && !settingsOpen && localPlayer(st).hp > 0) {
       const me = localPlayer(st);
       cross.style.opacity = "1";
       cross.style.transform = `translate(${Input.mouseX}px,${Input.mouseY}px)`;
