@@ -2,7 +2,7 @@ import { CONFIG } from "../config";
 import { effWeapon } from "../data/arsenal";
 import { ENEMY_TYPES } from "../data/enemies";
 import { Audio } from "../engine/audio";
-import { rand } from "../engine/math";
+import { approach, rand } from "../engine/math";
 import { localPlayer } from "../engine/players";
 import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
 import { fxHurt, fxImpact, fxKill, fxMuzzle } from "../systems/fx";
@@ -365,9 +365,17 @@ export class Client {
     // only predict while alive; a downed local player is a spectator (camera follows a
     // teammate via cameraTarget), so leave its snapshot position/aim untouched.
     if (this.predInit && lp.hp > 0) {
+      // mirror the host's move-weight ramp from the synced weapon (raw render dt is clamped, since
+      // a backgrounded tab can deliver a huge dt that would overshoot the ramp / teleport us).
+      const cdt = Math.min(dt, 0.1);
+      lp.curMoveMul = approach(
+        lp.curMoveMul,
+        effWeapon(lp, lp.weapon).moveMul,
+        CONFIG.player.moveRampRate * cdt,
+      );
       if (inp && lp.healT <= 0) {
         const tmp = { x: this.predX, y: this.predY, r: lp.r, speed: lp.speed };
-        integrateMovement(tmp, inp, st.walls, dt);
+        integrateMovement(tmp, inp, st.walls, cdt, lp.curMoveMul);
         this.predX = tmp.x;
         this.predY = tmp.y;
       }

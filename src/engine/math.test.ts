@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clamp, len, rand } from "./math";
+import { approach, clamp, len, rand } from "./math";
 
 describe("clamp", () => {
   it("returns the value when within range", () => {
@@ -38,5 +38,19 @@ describe("rand", () => {
   it("approaches the upper bound as Math.random() approaches 1", () => {
     vi.spyOn(Math, "random").mockReturnValue(0.999999);
     expect(rand(2, 8)).toBeCloseTo(8, 4);
+  });
+});
+
+describe("approach", () => {
+  it("steps toward the target by maxStep", () => {
+    expect(approach(0, 1, 0.25)).toBeCloseTo(0.25, 6);
+    expect(approach(1, 0, 0.25)).toBeCloseTo(0.75, 6);
+  });
+  it("never overshoots — snaps to target when the step exceeds the gap (huge dt safe)", () => {
+    expect(approach(0.9, 1, 100)).toBe(1);
+    expect(approach(1.1, 0.5, 100)).toBe(0.5);
+  });
+  it("is a no-op when already at target", () => {
+    expect(approach(0.7, 0.7, 0.25)).toBe(0.7);
   });
 });

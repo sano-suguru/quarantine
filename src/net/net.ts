@@ -16,7 +16,7 @@ export type NetMode = "single" | "host" | "client";
  * unions, or the Hello fields. The golden byte test in `snapshot.test.ts` fails on any encode change
  * to force a conscious bump (don't just silence it — bump here too).
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /** Messages on the reliable channel (JSON). Snapshots go on the binary channel. */
 export type NetMsg =

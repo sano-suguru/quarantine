@@ -3,32 +3,33 @@ import { effWeapon } from "../data/arsenal";
 import { WEAPON_ORDER } from "../data/weapons";
 import { Audio } from "../engine/audio";
 import { circlePushFromSegment } from "../engine/geometry";
-import { clamp, len, rand } from "../engine/math";
+import { approach, clamp, len, rand } from "../engine/math";
 import type { PlayerInput } from "../net/playerInput";
 import { allocId } from "../state";
 import type { Cache, Player, Segment, State, WeaponDef } from "../types";
 
 /**
- * Integrate one entity's WASD/sprint movement for `dt` and resolve solid walls.
- * Shared by the host sim (sysPlayer) and the client's local-player prediction
- * so both move identically. Operates on anything with x/y/r/speed.
+ * Integrate one entity's WASD movement for `dt` and resolve solid walls. `moveMul` is the
+ * equipped weapon's (ramped) move multiplier — light weapons kite, heavy weapons stand ground.
+ * Shared by the host sim (sysPlayer) and the client's local-player prediction so both move
+ * identically. Operates on anything with x/y/r/speed.
  */
 export function integrateMovement(
   p: { x: number; y: number; r: number; speed: number },
   inp: PlayerInput,
   walls: Segment[],
   dt: number,
+  moveMul = 1,
 ): void {
   let dx = inp.moveX;
   let dy = inp.moveY;
   const l = len(dx, dy);
-  const sprint = inp.sprint ? CONFIG.player.sprint : 1;
   if (l > 0) {
     dx /= l;
     dy /= l;
   }
-  p.x = clamp(p.x + dx * p.speed * sprint * dt, -CONFIG.arena, CONFIG.arena);
-  p.y = clamp(p.y + dy * p.speed * sprint * dt, -CONFIG.arena, CONFIG.arena);
+  p.x = clamp(p.x + dx * p.speed * moveMul * dt, -CONFIG.arena, CONFIG.arena);
+  p.y = clamp(p.y + dy * p.speed * moveMul * dt, -CONFIG.arena, CONFIG.arena);
   // solid walls block movement (openings/barricades do not — you slip through)
   for (const w of walls) {
     const push = circlePushFromSegment(p.x, p.y, p.r, w);
@@ -83,8 +84,16 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   }
 
   const moving = inp.moveX !== 0 || inp.moveY !== 0;
+  // ramp the move multiplier toward the equipped weapon's weight (advance even while healing so
+  // host & client stay in lockstep; only the integration below is gated on healing). The ramp
+  // is what stops quick-swap speed cheese — a fresh weapon's speed takes time to take effect.
+  p.curMoveMul = approach(
+    p.curMoveMul,
+    effWeapon(p, p.weapon).moveMul,
+    CONFIG.player.moveRampRate * dt,
+  );
   // healing roots you in place; otherwise integrate movement + wall collision
-  if (!healing) integrateMovement(p, inp, state.walls, dt);
+  if (!healing) integrateMovement(p, inp, state.walls, dt, p.curMoveMul);
 
   // E = context interact: repair a barricade you're next to, else search a cache
   interact(state, p, dt, healing, moving, searched);
@@ -100,6 +109,9 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
       p.weapon = id;
       p.ammo = p.mags[id] ?? 0; // restore the new weapon's mag
       p.reloadT = 0;
+      // raise time: can't fire for a beat after switching (also blocks switch→instant-fire and
+      // pairs with the move ramp so quick-swapping buys neither speed nor an instant shot)
+      p.fireCd = Math.max(p.fireCd, CONFIG.player.switchRaise);
     }
   }
   const wd = effWeapon(p, p.weapon);

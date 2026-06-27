@@ -10,8 +10,6 @@ export interface PlayerInput {
   /** movement axes, -1..1 (raw; normalized in sysPlayer) */
   moveX: number;
   moveY: number;
-  /** sprint held */
-  sprint: boolean;
   /** aim angle in radians — computed client-locally (cam/mouse never crosses the wire) */
   aim: number;
   /** fire held (auto weapons fire continuously; semi-auto gated by firedThisHold) */
@@ -33,7 +31,6 @@ export function emptyInput(): PlayerInput {
   return {
     moveX: 0,
     moveY: 0,
-    sprint: false,
     aim: 0,
     firing: false,
     interactHeld: false,
