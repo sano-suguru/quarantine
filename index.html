@@ -155,7 +155,7 @@
   /* co-op hub (D): CO-OP cta is deliberately secondary so solo DEPLOY stays the hero */
   .btn.coop-cta{background:transparent;color:var(--toxic);box-shadow:0 0 0 1px var(--toxic);
     font-size:clamp(15px,2vw,20px);letter-spacing:.2em;padding:9px 30px;margin-top:10px;}
-  /* secondary hover: a translucent tint + glow, NOT the solid fill of the primary (Deploy),
+  /* secondary hover: a translucent tint + glow, NOT the solid fill of the primary button,
      so a hovered Co-op/Options never impersonates the always-solid primary button. */
   .btn.coop-cta:hover{background:rgba(125,255,79,.16);color:var(--toxic);
     box-shadow:0 0 0 1px var(--toxic),0 0 24px rgba(125,255,79,.4);}
@@ -372,7 +372,7 @@
       <div id="prompt">[E] repair barricade</div>
     </div>
     <div class="hud-block r">
-      <div id="deploybar" class="hidden"><div class="stat-label">Deploy [Q]</div>
+      <div id="deploybar" class="hidden"><div class="stat-label">Fortify [Q]</div>
       <div class="stat-val" id="deploy-q"></div></div>
       <div id="medkit"><div class="stat-label">Medkits [H]</div>
       <div class="stat-val">&times;<span id="medkit-val">1</span></div></div>
@@ -411,7 +411,7 @@
       <span><b>Click</b> fire (hold)</span><span><b>R</b> reload</span>
       <span><b>1 2 3</b> guns &middot; <b>4</b> knife</span><span><b>F</b> flashlight</span>
       <span><b>H</b> use medkit</span><span><b>E</b> repair / heal ally (hold)</span>
-      <span><b>Q</b> deploy (buy in shop)</span><span><b>Enter</b> start night early</span>
+      <span><b>Q</b> fortify (buy in shop)</span><span><b>Enter</b> start night early</span>
       <span>weapon sets move speed (light=fast)</span>
       <span><b>Esc/P</b> pause</span><span><b>M</b> mute</span>
       <span>auto: revive downed ally &middot; search</span><span><b>O</b> options &middot; aim assist</span>
@@ -422,7 +422,7 @@
     </div>
 
     <div class="btn-row">
-      <button type="button" class="btn" id="startBtn">Deploy</button>
+      <button type="button" class="btn" id="startBtn">Enter the Quarantine</button>
       <button type="button" class="btn coop-cta" id="mpCoopBtn">Co-op</button>
       <button type="button" class="btn coop-cta" id="optionsBtn">Options</button>
     </div>
@@ -434,10 +434,10 @@
 <div id="shop" class="overlay hidden">
   <div class="eyebrow"><span class="dot"></span>Night <span id="shop-wave">1</span> survived</div>
   <h1 style="font-size:clamp(26px,5vw,44px)">Arsenal</h1>
-  <p>Credits <b id="shop-credits" style="color:var(--amber)">0</b> &middot; upgrade your kit, then deploy</p>
+  <p>Credits <b id="shop-credits" style="color:var(--amber)">0</b> &middot; upgrade your kit, then face the day</p>
   <div class="store" id="choices"></div>
-  <button type="button" class="btn" id="deployBtn">Deploy</button>
-  <div class="hint">[1&ndash;9] / click buy &middot; &uarr;&darr; select &middot; SPACE buy &middot; ENTER deploy</div>
+  <button type="button" class="btn" id="deployBtn">Face the Day</button>
+  <div class="hint">[1&ndash;9] / click buy &middot; &uarr;&darr; select &middot; SPACE buy &middot; ENTER face the day</div>
 </div>
 
 <div id="pause" class="overlay hidden">
@@ -498,7 +498,7 @@
   <div id="lobby-status" class="hint" style="min-height:16px;margin-top:2px;"></div>
 
   <div style="display:flex;gap:12px;align-items:center;margin-top:8px;">
-    <button type="button" class="btn" id="lobby-deploy" style="display:none;">Deploy raid</button>
+    <button type="button" class="btn" id="lobby-deploy" style="display:none;">Start Raid</button>
     <button type="button" class="btn lobby-back-btn" id="lobby-back">Back</button>
   </div>
 
