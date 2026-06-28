@@ -185,6 +185,36 @@ function audioAmbience(dt: number): void {
 }
 
 /**
+ * Drive the looping ambience + rummage samples. Called once per rAF frame from main.ts (NOT from
+ * update, which is skipped while paused) so loops correctly stop during pause/shop/title/gameover
+ * and stay consistent across single/host/client (all share the render frame). Reads state only —
+ * no mutation — so single-player stays byte-for-byte and clients drive it from the synced world.
+ */
+export function audioLoops(): void {
+  const live = state.running && !state.paused;
+  // day/night ambience (crossfades because both are toggled from the same phase)
+  Audio.loop("amb_day", live && state.phase === "day", CONFIG.audio.ambVolume);
+  Audio.loop("amb_night", live && state.phase === "night", CONFIG.audio.ambVolume);
+  // rummage loop while the LOCAL player searches a nearby cache (day-only, read-only scan)
+  let searching = false;
+  if (live && state.phase === "day") {
+    const lp = localPlayer(state);
+    const reach = CONFIG.siege.interactRadius;
+    const reach2 = reach * reach;
+    for (const c of state.caches) {
+      if (c.looted || c.searchT <= 0 || c.searchT >= CONFIG.cache.searchTime) continue;
+      const dx = c.x - lp.x;
+      const dy = c.y - lp.y;
+      if (dx * dx + dy * dy <= reach2) {
+        searching = true;
+        break;
+      }
+    }
+  }
+  Audio.loop("search", searching, CONFIG.audio.searchVolume);
+}
+
+/**
  * Per-zombie horror voices, re-derived LOCALLY (no snapshot fields, no sim state). For each
  * nearby zombie relative to the local player we fire:
  *  - a screech the instant it crosses from the dark into the flashlight cone ("it was right there"),

@@ -6,7 +6,7 @@
  * begin decoding at the same moment.
  */
 import { CONFIG } from "../config";
-import { loadSamples, playSample } from "./audioAssets";
+import { loadSamples, playSample, setLoop, stopAllLoops } from "./audioAssets";
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -167,6 +167,16 @@ function lightDie(): void {
   playSample("light_die");
 }
 
+/** start/stop a looping sample (search / amb_day / amb_night), driven from the render loop. */
+function loop(key: string, on: boolean, vol?: number): void {
+  setLoop(key, on, vol);
+}
+
+/** stop all looping samples (game over / title). */
+function stopLoops(): void {
+  stopAllLoops();
+}
+
 // --- procedural beds (kept: continuous real-time modulation, no sample equivalent) ---
 
 function heartbeat(strength: number): void {
@@ -250,6 +260,8 @@ export const Audio = {
   groan,
   screech,
   lightDie,
+  loop,
+  stopLoops,
   heartbeat,
   setDread,
   setTension,
