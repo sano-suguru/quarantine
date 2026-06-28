@@ -18,7 +18,7 @@ import { sysDeployables } from "./systems/deployables";
 import { flashlightIntensity } from "./systems/flashlight";
 import { sysFx } from "./systems/fx";
 import { sysPickups } from "./systems/pickups";
-import { sysPlayer } from "./systems/player";
+import { effectiveSearchTime, sysPlayer } from "./systems/player";
 import { startDay, startNight, sysSiege } from "./systems/siege";
 import type { Player, State } from "./types";
 import { el, hide, show } from "./ui";
@@ -195,14 +195,16 @@ export function audioLoops(): void {
   // day/night ambience (crossfades because both are toggled from the same phase)
   Audio.loop("amb_day", live && state.phase === "day", CONFIG.audio.ambVolume);
   Audio.loop("amb_night", live && state.phase === "night", CONFIG.audio.ambVolume);
-  // rummage loop while the LOCAL player searches a nearby cache (day-only, read-only scan)
+  // rummage loop while the LOCAL player searches a nearby cache (day or night, read-only scan).
+  // At night this SFX is the audible "rummaging" that thematically explains the zombie lure.
   let searching = false;
-  if (live && state.phase === "day") {
+  if (live) {
     const lp = localPlayer(state);
     const reach = CONFIG.siege.interactRadius;
     const reach2 = reach * reach;
+    const full = effectiveSearchTime(state.phase);
     for (const c of state.caches) {
-      if (c.looted || c.searchT <= 0 || c.searchT >= CONFIG.cache.searchTime) continue;
+      if (c.looted || c.searchT <= 0 || c.searchT >= full) continue;
       const dx = c.x - lp.x;
       const dy = c.y - lp.y;
       if (dx * dx + dy * dy <= reach2) {
@@ -751,7 +753,7 @@ function drawCaches(R: typeof Renderer): void {
     R.ring(c.x, c.y + bob, 13, 0.9, 0.8, 0.4, 0.7);
     // search progress bar
     if (c.searchT > 0) {
-      const f = Math.min(1, c.searchT / CONFIG.cache.searchTime);
+      const f = Math.min(1, c.searchT / effectiveSearchTime(state.phase));
       R.rect(c.x, c.y - 20, 30, 4, 0, 0.05, 0.05, 0.05, 0.8);
       R.rect(c.x - (30 * (1 - f)) / 2, c.y - 20, 30 * f, 4, 0, 0.3, 1, 0.45, 1);
     }
@@ -1225,11 +1227,12 @@ function interactPrompt(): string | null {
   if (barD < reach)
     return p.money >= CONFIG.siege.repairCost ? "[E] repair" : "[E] repair — no credits";
 
-  if (state.phase === "day") {
-    for (const c of state.caches) {
-      if (c.looted) continue;
-      if (Math.hypot(c.x - p.x, c.y - p.y) < reach) return "stand still to search";
-    }
+  for (const c of state.caches) {
+    if (c.looted) continue;
+    if (Math.hypot(c.x - p.x, c.y - p.y) < reach)
+      return state.phase === "night"
+        ? "stand still to search — risky! (draws the horde)"
+        : "stand still to search";
   }
   return null;
 }

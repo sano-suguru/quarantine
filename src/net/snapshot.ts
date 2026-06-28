@@ -28,7 +28,7 @@ const ARENA = CONFIG.arena;
 const SPAWN_MAX = 0.35; // zombie emerge time (see spawnZombie)
 const FLASH_MAX = 0.12; // zombie/barricade hit-flash duration
 const PICKUP_LIFE = CONFIG.ammo.pickupLife;
-const SEARCH_MAX = CONFIG.cache.searchTime;
+const SEARCH_MAX = CONFIG.cache.searchTime * CONFIG.cache.nightSearchMul; // covers the longer night search
 const TAU = Math.PI * 2;
 
 /* ----------------------------- logical snapshot ----------------------------- */

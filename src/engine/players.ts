@@ -55,6 +55,7 @@ export function makePlayer(id: number, x: number, y: number, name = `P${id + 1}`
     reserveMul: 1,
     assistT: 0,
     absent: false,
+    searching: false,
   };
 }
 

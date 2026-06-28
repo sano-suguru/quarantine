@@ -130,6 +130,10 @@ export interface Player {
    *  body for a possible reconnect. An absent player is inert — not a zombie target, not
    *  counted by anyAlive, no input sim — and rendered as a faded ghost. Always false in SP. */
   absent: boolean;
+  /** transient: true the ticks this player is actively searching a cache AT NIGHT (the rummaging
+   *  "noise"). sysPlayer sets it each tick, sysAI reads it to surge nearby zombies (the lure).
+   *  Host-derived, NOT synced — clients never run sysPlayer/sysAI so it stays false there. */
+  searching: boolean;
 }
 
 export interface Zombie {

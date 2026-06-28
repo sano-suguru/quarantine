@@ -5,7 +5,7 @@ import { addPlayer } from "../engine/players";
 import { emptyInput } from "../net/playerInput";
 import { newState } from "../state";
 import type { State } from "../types";
-import { integrateMovement, sysPlayer } from "./player";
+import { effectiveSearchTime, integrateMovement, sysPlayer } from "./player";
 
 /**
  * Regression: in co-op, a non-searching teammate's interact() used to reset every other
@@ -182,5 +182,64 @@ describe("sysPlayer — move-weight ramp & weapon switch", () => {
     sysPlayer(s, 0.1);
     expect(p.x).toBe(0); // rooted: no movement
     expect(p.curMoveMul).toBeCloseTo(0.65, 6); // ramp still progressed
+  });
+});
+
+/**
+ * Night cache looting: the day-only gate is gone (searching used to silently no-op at night).
+ * Night searches take CONFIG.cache.nightSearchMul× longer, and a night-searcher is flagged
+ * (p.searching) so sysAI can lure nearby zombies toward the rummaging noise.
+ */
+describe("night cache search (slow + lure flag)", () => {
+  it("effectiveSearchTime is longer at night by nightSearchMul", () => {
+    expect(effectiveSearchTime("day")).toBe(CONFIG.cache.searchTime);
+    expect(effectiveSearchTime("night")).toBe(
+      CONFIG.cache.searchTime * CONFIG.cache.nightSearchMul,
+    );
+  });
+
+  function searcherOnCache(phase: State["phase"]): {
+    s: State;
+    p: State["players"][number];
+    cache: State["caches"][number];
+  } {
+    const s = newState();
+    s.phase = phase;
+    s.barricades.length = 0; // no barricade so search is the chosen interaction
+    const cache = s.caches[0] as State["caches"][number];
+    cache.looted = false;
+    cache.searchT = 0;
+    const p = s.players[0] as State["players"][number];
+    p.x = cache.x;
+    p.y = cache.y;
+    p.input = { ...emptyInput(), moveX: 0, moveY: 0 };
+    return { s, p, cache };
+  }
+
+  it("takes nightSearchMul× longer to loot at night than the day threshold", () => {
+    const { s, cache } = searcherOnCache("night");
+    // step past the DAY threshold (1.5s) — at night this must NOT have looted yet
+    for (let i = 0; i < 31; i++) sysPlayer(s, 0.05); // 1.55s
+    expect(cache.looted).toBe(false);
+    // step past the NIGHT threshold (3.0s) — now it loots
+    for (let i = 0; i < 31; i++) sysPlayer(s, 0.05); // total 3.1s
+    expect(cache.looted).toBe(true);
+  });
+
+  it("flags the player as searching at night, not during the day", () => {
+    const night = searcherOnCache("night");
+    sysPlayer(night.s, 0.05);
+    expect(night.p.searching).toBe(true);
+
+    const day = searcherOnCache("day");
+    sysPlayer(day.s, 0.05);
+    expect(day.p.searching).toBe(false);
+  });
+
+  it("does not flag a moving player at night (search requires standing still)", () => {
+    const { s, p } = searcherOnCache("night");
+    p.input = { ...emptyInput(), moveX: 1 }; // walking
+    sysPlayer(s, 0.05);
+    expect(p.searching).toBe(false);
   });
 });

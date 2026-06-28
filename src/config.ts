@@ -144,7 +144,10 @@ export const CONFIG = {
     spawnRing: 680, // base radius (world units) of the off-screen night-spawn ring
   },
   cache: {
-    searchTime: 1.5, // seconds of holding interact (and standing still) to loot
+    searchTime: 1.5, // seconds of holding interact (and standing still) to loot (day)
+    nightSearchMul: 2.0, // night searches take this much longer (=3.0s) — exposure is the risk
+    lureRadius: 220, // zombies within this of a night-searcher surge toward the rummaging noise
+    lureSpeedSurge: 0.35, // +35% speed while lured — a "they heard you and close in", not a teleport
     tierDist: 500, // every this many world units from HOME raises the loot tier
     maxTier: 3,
   },
