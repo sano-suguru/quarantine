@@ -250,7 +250,7 @@ function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
   if (p.id === state.localId) state.cam.shake = Math.min(state.cam.shake + wd.recoil, 18);
   p.recoilX -= Math.cos(p.aim) * wd.recoil * 0.6;
   p.recoilY -= Math.sin(p.aim) * wd.recoil * 0.6;
-  p.muzzle = 0.04;
+  p.muzzle = 0.1; // longer than a gun (0.05) so the slash arc is readable at the swing cadence
   Audio.melee();
 }
 

@@ -407,8 +407,10 @@ export class Client {
       ) {
         const tipX = lp.x + Math.cos(lp.aim) * lp.r;
         const tipY = lp.y + Math.sin(lp.aim) * lp.r;
-        fxMuzzle(st, tipX, tipY, lp.aim, wd.color);
-        lp.muzzle = wd.melee ? 0.04 : 0.05;
+        // melee's swing visual is the cold-steel arc drawn in drawPlayer (off the synced
+        // muzzle/aim/weapon); only guns get the warm muzzle-flash sparks here
+        if (!wd.melee) fxMuzzle(st, tipX, tipY, lp.aim, wd.color);
+        lp.muzzle = wd.melee ? 0.1 : 0.05;
         const rk = wd.recoil * (wd.melee ? 0.6 : 0.9);
         lp.recoilX -= Math.cos(lp.aim) * rk;
         lp.recoilY -= Math.sin(lp.aim) * rk;

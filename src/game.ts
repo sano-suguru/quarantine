@@ -589,9 +589,22 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
   const by = py + Math.sin(pl.aim) * pl.r * 0.9;
   R.rect(bx, by, pl.r * 1.4, 6, pl.aim, 0.85, 0.95, 0.8, 1);
   if (pl.muzzle > 0) {
-    const tx = px + Math.cos(pl.aim) * pl.r * 1.7;
-    const ty = py + Math.sin(pl.aim) * pl.r * 1.7;
-    R.glow(tx, ty, pl.r * 1.6, 1, 0.9, 0.6, Math.min(1, pl.muzzle * 18));
+    const wd = WEAPONS[pl.weapon];
+    if (wd?.melee) {
+      // a cold-steel slash that sweeps the swing cone — driven by the synced
+      // muzzle/aim/weapon, so it reads identically for local, host, and remote players
+      const k = Math.min(1, pl.muzzle / 0.1); // 1 → 0 across the swing window
+      const reach = (wd.meleeRange ?? 30) + pl.r;
+      const [cr, cg, cb] = wd.color;
+      const cx = px + Math.cos(pl.aim) * reach * 0.75;
+      const cy = py + Math.sin(pl.aim) * reach * 0.75;
+      R.tri(cx, cy, reach * (0.45 + 0.35 * k), pl.aim, cr, cg, cb, 0.8 * k);
+      R.glow(cx, cy, reach * 0.9, cr, cg, cb, 0.45 * k);
+    } else {
+      const tx = px + Math.cos(pl.aim) * pl.r * 1.7;
+      const ty = py + Math.sin(pl.aim) * pl.r * 1.7;
+      R.glow(tx, ty, pl.r * 1.6, 1, 0.9, 0.6, Math.min(1, pl.muzzle * 18));
+    }
   }
   if (pl.reloadT > 0) {
     const wd = effWeapon(pl, pl.weapon);
