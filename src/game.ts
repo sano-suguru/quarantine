@@ -782,9 +782,9 @@ function drawDeployables(R: typeof Renderer): void {
       const px = Math.cos(d.aim + Math.PI / 2);
       const py = Math.sin(d.aim + Math.PI / 2);
       const bx = d.x + Math.cos(d.aim) * 14;
-      const byy = d.y + Math.sin(d.aim) * 14;
-      R.rect(bx + px * 3, byy + py * 3, 20, 3.5, d.aim, r, g, b, 1);
-      R.rect(bx - px * 3, byy - py * 3, 20, 3.5, d.aim, r, g, b, 1);
+      const barrelY = d.y + Math.sin(d.aim) * 14;
+      R.rect(bx + px * 3, barrelY + py * 3, 20, 3.5, d.aim, r, g, b, 1);
+      R.rect(bx - px * 3, barrelY - py * 3, 20, 3.5, d.aim, r, g, b, 1);
       // muzzle glow at the barrel tips; dims while reloading
       const mx = d.x + Math.cos(d.aim) * 24;
       const my = d.y + Math.sin(d.aim) * 24;
