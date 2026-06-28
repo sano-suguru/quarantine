@@ -743,11 +743,25 @@ function drawDeployables(R: typeof Renderer): void {
       R.glow(ex, ey, 6, r, g, b, d.reloading ? 0.3 : 0.8);
       drawDeployableHp(R, d, d.x, by);
     } else if (visual === "crate") {
-      // supply station: a glowing crate that pulses as it nears its next drop
-      const pulse = 0.5 + 0.3 * Math.sin(state.time * 3 + d.x);
-      R.glow(d.x, d.y, 24, r, g, b, 0.35 + pulse * 0.2);
-      R.rect(d.x, d.y, 20, 16, 0, 0.5, 0.42, 0.26, 1);
-      R.rect(d.x, d.y, 20, 4, 0, r, g, b, 0.9);
+      // supply station: a glowing crate with a beacon that ramps toward each drop.
+      // phase from state.time (synced on host & client) — emitCd is host-only, not in snapshots.
+      const interval = def.emitter?.interval ?? 8;
+      const frac = (state.time % interval) / interval; // 0..1 toward the next drop
+      const beacon = 0.3 + 0.6 * frac * frac; // ramps brighter as the drop nears
+      R.glow(d.x, d.y, 24, r, g, b, 0.3 + beacon * 0.3);
+      R.rect(d.x, d.y, 20, 16, 0, 0.5, 0.42, 0.26, 1); // crate body
+      R.rect(d.x, d.y, 20, 4, 0, r, g, b, 0.9); // colour band
+      // corner bolts
+      for (const sx of [-1, 1]) {
+        for (const sy of [-1, 1]) {
+          R.rect(d.x + sx * 8, d.y + sy * 6, 2.5, 2.5, 0, r, g, b, 0.8);
+        }
+      }
+      // supply mark: a small cross on the top face
+      R.rect(d.x, d.y, 7, 2, 0, 0.9, 0.9, 0.85, 0.9);
+      R.rect(d.x, d.y, 2, 7, 0, 0.9, 0.9, 0.85, 0.9);
+      // beacon light on top, flashes as the drop nears
+      R.glow(d.x, d.y - 12, 5, r, g, b, beacon);
       R.ring(d.x, d.y, 12, r, g, b, 0.7);
       drawDeployableHp(R, d, d.x, d.y);
     } else {
