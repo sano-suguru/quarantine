@@ -58,6 +58,23 @@ export const CONFIG = {
     searchVolume: 0.7,
     loopFadeSec: 0.6,
   },
+  // blood decals: a pool is a cluster of layered blobs, not one flat disc. Center blobs are
+  // darker; satellites bias along the hit direction so it reads as a splatter, not a stamp.
+  fx: {
+    blood: {
+      maxDecals: 480, // a pool now costs several decals; raised so pools don't churn the FIFO
+      satellites: 4, // small blobs flung around each base blob
+      baseRadiusBig: [16, 26] as [number, number],
+      baseRadiusSmall: [8, 14] as [number, number],
+      satRadius: [3, 9] as [number, number],
+      satSpread: 22, // world-units satellites scatter from the base
+      splatterBias: 28, // extra world-units satellites travel along the hit dir (the tail)
+      centerColor: [0.16, 0.02, 0.03] as [number, number, number], // dark, near-clotted
+      edgeColor: [0.34, 0.04, 0.05] as [number, number, number], // brighter fresh red
+      life: [26, 40] as [number, number], // seconds before the decal fades out
+      maxAlpha: 0.6, // fresh-pool peak alpha (drawn fade is life/maxLife * maxAlpha)
+    },
+  },
   player: { radius: 16, speed: 200, maxHp: 100, moveRampRate: 1.5, switchRaise: 0.25 },
   cam: { lerp: 8, shakeDecay: 8 },
   feel: {

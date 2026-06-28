@@ -406,7 +406,8 @@ export function draw(): void {
 
   // --- ground: blood decals ---
   for (const d of state.decals) {
-    const a = Math.min(0.5, (d.life / d.maxLife) * 0.5);
+    const cap = CONFIG.fx.blood.maxAlpha;
+    const a = Math.min(cap, (d.life / d.maxLife) * cap);
     R.circle(d.x, d.y, d.r, d.color[0], d.color[1], d.color[2], a);
   }
 

@@ -1,9 +1,9 @@
+import { CONFIG } from "../config";
 import { rand } from "../engine/math";
 import type { ParticleKind, State } from "../types";
 
 const MAX_PARTICLES = 2400;
 const MAX_TEXTS = 160;
-const MAX_DECALS = 360;
 
 type RGB = [number, number, number];
 
@@ -76,6 +76,7 @@ export function fxImpact(state: State, x: number, y: number, dir: number, color:
     );
   }
   bloodSpeck(state, x, y, color, 3);
+  bloodPool(state, x, y, false, dir);
 }
 
 /** death burst — shockwave ring, viscera shards, glowing embers */
@@ -188,15 +189,40 @@ function bloodSpeck(state: State, x: number, y: number, _color: RGB, n: number):
   }
 }
 
-function bloodPool(state: State, x: number, y: number, big: boolean): void {
-  if (state.decals.length >= MAX_DECALS) state.decals.shift();
-  const life = rand(26, 40);
+/**
+ * A blood pool: a layered cluster, not one flat disc. A dark base blob plus satellites that
+ * blend toward the brighter edge color and (when `dir` is given) bias along the hit direction
+ * to read as a splatter tail rather than a stamp.
+ */
+function bloodPool(state: State, x: number, y: number, big: boolean, dir?: number): void {
+  const cfg = CONFIG.fx.blood;
+  const dx = dir === undefined ? 0 : Math.cos(dir);
+  const dy = dir === undefined ? 0 : Math.sin(dir);
+  const baseR = big ? cfg.baseRadiusBig : cfg.baseRadiusSmall;
+  pushDecal(state, x, y, rand(baseR[0], baseR[1]), cfg.centerColor);
+  for (let i = 0; i < cfg.satellites; i++) {
+    const sx = x + rand(-cfg.satSpread, cfg.satSpread) + dx * rand(0, cfg.splatterBias);
+    const sy = y + rand(-cfg.satSpread, cfg.satSpread) + dy * rand(0, cfg.splatterBias);
+    const t = rand(0, 1); // outer droplets blend toward the brighter edge color
+    const color: RGB = [
+      cfg.centerColor[0] + (cfg.edgeColor[0] - cfg.centerColor[0]) * t,
+      cfg.centerColor[1] + (cfg.edgeColor[1] - cfg.centerColor[1]) * t,
+      cfg.centerColor[2] + (cfg.edgeColor[2] - cfg.centerColor[2]) * t,
+    ];
+    pushDecal(state, sx, sy, rand(cfg.satRadius[0], cfg.satRadius[1]), color);
+  }
+}
+
+function pushDecal(state: State, x: number, y: number, r: number, color: RGB): void {
+  const cfg = CONFIG.fx.blood;
+  if (state.decals.length >= cfg.maxDecals) state.decals.shift();
+  const life = rand(cfg.life[0], cfg.life[1]);
   state.decals.push({
-    x: x + rand(-3, 3),
-    y: y + rand(-3, 3),
-    r: big ? rand(18, 28) : rand(9, 16),
+    x,
+    y,
+    r,
     rot: rand(0, 6.28),
-    color: [rand(0.22, 0.34), 0.03, 0.04],
+    color: [color[0], color[1], color[2]],
     life,
     maxLife: life,
   });
