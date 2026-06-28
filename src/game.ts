@@ -21,7 +21,7 @@ import { sysPickups } from "./systems/pickups";
 import { effectiveSearchTime, sysPlayer } from "./systems/player";
 import { startDay, startNight, sysSiege } from "./systems/siege";
 import type { Player, State } from "./types";
-import { el, hide, show } from "./ui";
+import { el, hide, renderList, show } from "./ui";
 
 let state: State = newState();
 
@@ -932,8 +932,15 @@ let shopSel = 0;
 let shopEls: HTMLElement[] = [];
 let shopSig = ""; // store-list signature; a change means the DOM must be rebuilt
 
-/** id+price per item — changes when the set OR a level/price changes (Mk2 → Mk3). */
-const shopSigOf = (items: StoreItem[]): string => items.map((x) => `${x.id}:${x.price}`).join("|");
+/**
+ * Full per-row signature: index + id + price + desc — every mutable thing `create` renders into a
+ * row (but NOT `.sel`/`.off`, which are view-state re-applied each frame by highlightShop /
+ * syncShopUI). It drives BOTH the rebuild gate (shopSig) and the renderList key, so the two can't
+ * disagree: a deploy row's live built/queued count lives in `desc`, so a buy flips both the sig
+ * and the key, rebuilding just that row with fresh text on host and client alike.
+ */
+const shopRowSig = (it: StoreItem, i: number): string => `${i}:${it.id}:${it.price}:${it.desc}`;
+const shopSigOf = (items: StoreItem[]): string => items.map(shopRowSig).join("|");
 
 /** Authoritative: open the arsenal between nights (host/single sim). The overlay itself
  *  is shown by syncShopUI from `state.inShop`, so clients open it from the snapshot. */
@@ -984,20 +991,26 @@ function renderShop(): void {
   const me = localPlayer(state);
   el("shop-credits").textContent = String(me.money);
   const box = el("choices");
-  box.innerHTML = "";
-  shopEls = shopItems.map((it, i) => {
+  // Key (shopRowSig) carries index + id + price + desc — the full rendered content — so a reused
+  // row always has correct text AND a correct captured `i`. `.sel`/`.off` are NOT in the key:
+  // they're view-state re-applied each frame (highlightShop / syncShopUI), so only a genuine
+  // content change rebuilds a row while the rest keep their hover.
+  renderList(box, shopItems, shopRowSig, (it, i) => {
     const able = it.canBuy(state, me);
     const d = document.createElement("div");
-    d.className = `srow${i === shopSel ? " sel" : ""}${able ? "" : " off"}`;
+    d.className = `srow${able ? "" : " off"}`;
     d.innerHTML = `<div class='snum'>${i + 1}</div><div class='sinfo'><div class='cname'>${it.name}</div><div class='desc'>${it.desc}</div></div><div class='sprice'>${it.price}c</div>`;
     d.onclick = () => buyItem(i);
     d.onmouseenter = () => {
       shopSel = i;
       highlightShop();
     };
-    box.appendChild(d);
     return d;
   });
+  // Re-grab node refs, then let highlightShop own `.sel`: a reused row keeps its old node, so the
+  // selection class must be (re)applied after every reconcile rather than baked into create.
+  shopEls = Array.from(box.children) as HTMLElement[];
+  highlightShop();
 }
 
 /** Update only the selection highlight — no DOM teardown, so clicks survive. */
@@ -1163,21 +1176,26 @@ export function toTitle(): void {
 export function renderArsenal(): void {
   const meta = loadMeta();
   el("salvage-bal").textContent = String(meta.salvage);
-  const box = el("arsenal-list");
-  box.innerHTML = "";
-  for (const u of UNLOCKABLE) {
+  const rows = UNLOCKABLE.flatMap((u) => {
     const w = WEAPONS[u.id];
-    if (!w) continue;
+    if (!w) return [];
     const owned = !!meta.unlocked[u.id];
-    const able = !owned && meta.salvage >= u.price;
-    const d = document.createElement("div");
-    d.className = `arow${owned ? " owned" : able ? "" : " off"}`;
-    d.innerHTML = owned
-      ? `<div class='cname'>${w.name}</div><div class='atag'>UNLOCKED</div>`
-      : `<div class='cname'>${w.name}</div><div class='aprice'>${u.price} ◆</div>`;
-    if (!owned && able) d.onclick = () => unlockWeapon(u.id, u.price);
-    box.appendChild(d);
-  }
+    return [{ u, w, owned, able: !owned && meta.salvage >= u.price }];
+  });
+  renderList(
+    el("arsenal-list"),
+    rows,
+    ({ u, owned, able }) => `${u.id}:${owned}:${able}`,
+    ({ u, w, owned, able }) => {
+      const d = document.createElement("div");
+      d.className = `arow${owned ? " owned" : able ? "" : " off"}`;
+      d.innerHTML = owned
+        ? `<div class='cname'>${w.name}</div><div class='atag'>UNLOCKED</div>`
+        : `<div class='cname'>${w.name}</div><div class='aprice'>${u.price} ◆</div>`;
+      if (!owned && able) d.onclick = () => unlockWeapon(u.id, u.price);
+      return d;
+    },
+  );
 }
 
 function unlockWeapon(id: string, price: number): void {

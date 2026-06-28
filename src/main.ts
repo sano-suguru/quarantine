@@ -35,7 +35,7 @@ import { createClientLink, createHostLink, getTurnStatus, NETLOG } from "./net/t
 import { getSettings, setAimAssist } from "./settings";
 import { sysCamera } from "./systems/camera";
 import { sysFx } from "./systems/fx";
-import { el, hide, isEditableTarget, show } from "./ui";
+import { el, hide, isEditableTarget, renderList, show } from "./ui";
 
 // host lobby gate: host builds the world on "Host co-op" but the sim stays frozen
 // (no day countdown / no spawns) until the host presses Start — see wireCoop()/frame().
@@ -408,6 +408,7 @@ function wireCoop(): void {
   const roomInput = el<HTMLInputElement>("lobby-room-input");
   const roomGo = el("lobby-room-go");
   const squad = el("lobby-squad");
+  squad.classList.add("squad-row"); // flex layout for the chips renderList drops in directly
   const status = el("lobby-status");
   const deploy = el("lobby-deploy");
   const manual = el<HTMLDetailsElement>("lobby-manual");
@@ -438,21 +439,20 @@ function wireCoop(): void {
     const [r, g, b] = PLAYER_COLORS[pid % PLAYER_COLORS.length] ?? [0.49, 1, 0.31];
     return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
   };
+  const makeChip = ({ pid, label }: { pid: number; label: string }): HTMLElement => {
+    const chip = document.createElement("span");
+    chip.className = "squad-chip";
+    const dot = document.createElement("span");
+    dot.className = "squad-dot";
+    dot.style.background = chipColor(pid);
+    const name = document.createElement("span");
+    name.textContent = label;
+    chip.append(dot, name);
+    return chip;
+  };
+  // #lobby-squad carries .squad-row (added above), so chips render directly into it.
   const setSquad = (members: { pid: number; label: string }[]): void => {
-    const row = document.createElement("div");
-    row.className = "squad-row";
-    for (const { pid, label } of members) {
-      const chip = document.createElement("span");
-      chip.className = "squad-chip";
-      const dot = document.createElement("span");
-      dot.className = "squad-dot";
-      dot.style.background = chipColor(pid);
-      const name = document.createElement("span");
-      name.textContent = label;
-      chip.append(dot, name);
-      row.append(chip);
-    }
-    squad.replaceChildren(row);
+    renderList(squad, members, (m) => `${m.pid}:${m.label}`, makeChip);
   };
 
   const openLobby = (kind: "host" | "join"): void => {
@@ -741,6 +741,10 @@ function wireCoop(): void {
     }
     return row;
   };
+  // Key drives reuse: include every field makeRoomRow renders, but NOT lastSeen
+  // (it ticks every poll and would force a full rebuild — losing Join-button hover).
+  const roomKey = (r: RoomInfo): string =>
+    `${r.code}:${r.v}:${r.players}:${r.max}:${r.phase}:${r.day}`;
   const renderRooms = (rooms: RoomInfo[] | null): void => {
     const box = el("coop-rooms");
     if (rooms === null) {
@@ -748,7 +752,7 @@ function wireCoop(): void {
     } else if (rooms.length === 0) {
       box.innerHTML = `<div class="empty">No signals detected — start your own raid.</div>`;
     } else {
-      box.replaceChildren(...rooms.map(makeRoomRow));
+      renderList(box, rooms, roomKey, makeRoomRow);
     }
   };
   const pollRooms = (): void => {
