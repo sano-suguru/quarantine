@@ -112,14 +112,29 @@ Extend the `visual === "crate"` block (keep the brown `rect` + colour band + `ri
 - **Corner bolts:** four small `rect`s at the crate corners.
 - **Supply mark:** a small cross (two thin `rect`s) or ammo-band line on the top face.
 - **Beacon:** a `glow` that pulses on a cadence, brightest near each drop. **Drive it from
-  `state.time`, NOT `d.emitCd`.** `emitCd` is host-only sim state — it is not in the snapshot
+  `state.time`, NOT a host-only countdown.** Host-only sim state is not in the snapshot
   (`id/defId/x/y/aim/hpFrac/reloading` only) and clients build deployables via `applySnapshot`,
-  so a client never has `emitCd` and the beacon would be dead/wrong on every non-host screen.
+  so a client never has it and the beacon would be dead/wrong on every non-host screen.
   Instead phase the pulse off `state.time` with the period taken from `def.emitter.interval`
   (e.g. `frac = (state.time % interval) / interval`, ramp brightness toward `frac→1`). This is
   exactly how the existing crate pulse (`Math.sin(state.time*… )`) already runs on both host and
-  client. The phase won't be frame-aligned to the actual host drop, but the "a drop is coming"
-  read is what matters and it animates identically everywhere. No new wire field, no new state.
+  client. **The emitter drops on the same `state.time` grid** (`tickEmitter` schedules `emitAt`
+  on `k*interval` boundaries — see §“emitter alignment” below), so the beacon ramp peaks exactly
+  as a drop lands instead of being offset by an arbitrary `placementTime mod interval`. No new
+  wire field, no new state.
+
+### Emitter alignment (the beacon's counterpart)
+
+The original emitter was a placement-relative countdown (`emitCd` from `interval`, first drop
+immediate), so drops landed at `placementTime + k*interval` while the beacon ramps on absolute
+`state.time % interval` — the two share a period but their phase is offset by `placementTime mod
+interval`, which can be anti-phase (beacon brightest right *after* a drop). To make the beacon
+honest, the emitter is moved onto the same absolute grid: `placeDeployable` schedules
+`emitAt = (floor(state.time / interval) + 1) * interval` (the next boundary), and `tickEmitter`
+drops when `state.time >= emitAt` then advances `emitAt += interval` (stays exactly on the grid,
+no float drift). Trade-off: the first drop now lands at the next interval boundary (0–`interval`s
+after placement) instead of immediately — accepted, since both host and client read the same
+synced `state.time` so the cadence stays deterministic with no new wire field.
 
 ## Affected files
 

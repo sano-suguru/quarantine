@@ -140,7 +140,10 @@ export function placeDeployable(state: State, defId: string, x: number, y: numbe
     d.reloadT = 0;
     if (def.weapon.magSize !== undefined) d.ammoLeft = def.weapon.magSize;
   }
-  if (def.emitter) d.emitCd = 0;
+  // schedule the first drop at the next interval grid boundary (where the beacon resets), so the
+  // drop cadence is in phase with the state.time-driven beacon rather than offset by placement time.
+  if (def.emitter)
+    d.emitAt = (Math.floor(state.time / def.emitter.interval) + 1) * def.emitter.interval;
   if (def.destructible) d.hp = def.destructible.maxHp;
   state.deployables.push(d);
 }

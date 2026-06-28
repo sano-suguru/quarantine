@@ -743,8 +743,9 @@ function drawDeployables(R: typeof Renderer): void {
       R.glow(ex, ey, 6, r, g, b, d.reloading ? 0.3 : 0.8);
       drawDeployableHp(R, d, d.x, by);
     } else if (visual === "crate") {
-      // supply station: a glowing crate with a beacon that ramps toward each drop.
-      // phase from state.time (synced on host & client) — emitCd is host-only, not in snapshots.
+      // supply station: a glowing crate with a beacon that ramps toward each drop. Phase from
+      // state.time (synced on host & client); the emitter drops on the same state.time grid
+      // (see tickEmitter), so the beacon ramp peaks exactly as a drop lands — no host-only state.
       const interval = def.emitter?.interval ?? 8;
       const frac = (state.time % interval) / interval; // 0..1 toward the next drop
       const beacon = 0.3 + 0.6 * frac * frac; // ramps brighter as the drop nears

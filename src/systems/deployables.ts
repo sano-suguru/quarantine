@@ -20,7 +20,7 @@ export function sysDeployables(state: State, dt: number): void {
     if (!def) continue;
     if (def.movement) tickMovement(state, d, def, dt);
     if (def.weapon) tickWeapon(state, d, def, dt);
-    if (def.emitter) tickEmitter(state, d, def, dt);
+    if (def.emitter) tickEmitter(state, d, def);
     if (def.destructible) {
       tickDamage(state, d, def, dt);
       if ((d.hp ?? 0) <= 0) dead.push(i);
@@ -164,13 +164,16 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
   if (def.destructible) d.hpFrac = clamp((d.hp ?? 0) / def.destructible.maxHp, 0, 1);
 }
 
-/** Drop a pickup every `interval` seconds (first drop is immediate, matching the legacy emitter). */
-function tickEmitter(state: State, d: Deployable, def: DeployableDef, dt: number): void {
+/** Drop a pickup on the absolute `interval` grid (`state.time` crossing k*interval), so the drop
+ *  lands exactly where the beacon resets. Advancing `emitAt` by `interval` (not re-arming relative
+ *  to now) keeps it on the grid with no drift, and clients see the same cadence as the host since
+ *  both are driven by the synced `state.time`. */
+function tickEmitter(state: State, d: Deployable, def: DeployableDef): void {
   const e = def.emitter as NonNullable<DeployableDef["emitter"]>;
-  if ((d.emitCd ?? 0) > 0) d.emitCd = (d.emitCd ?? 0) - dt;
-  if ((d.emitCd ?? 0) <= 0) {
+  if (d.emitAt === undefined) d.emitAt = (Math.floor(state.time / e.interval) + 1) * e.interval;
+  if (state.time >= d.emitAt) {
     spawnPickup(state, d.x, d.y, e.emit);
-    d.emitCd = e.interval;
+    d.emitAt += e.interval;
   }
 }
 

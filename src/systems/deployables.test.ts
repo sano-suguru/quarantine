@@ -48,7 +48,8 @@ describe("placeDeployable / deployableCount", () => {
     expect(sentry.reloading).toBe(false);
     const station = place(s, "ammostation");
     expect(station.hp).toBeUndefined(); // emitter is indestructible
-    expect(station.emitCd).toBe(0);
+    // first drop is scheduled at the next interval grid boundary (placed at t=0 → t=interval)
+    expect(station.emitAt).toBe(DEPLOYABLE_TYPES.ammostation?.emitter?.interval);
   });
 
   it("ignores an unknown defId", () => {
@@ -163,17 +164,28 @@ describe("sysDeployables — weapon (refactor equivalence + magazine)", () => {
   });
 });
 
-describe("sysDeployables — emitter (refactor equivalence)", () => {
-  it("drops a pickup on its interval", () => {
+describe("sysDeployables — emitter (drops on the absolute state.time grid, in sync with the beacon)", () => {
+  it("schedules the first drop at the next grid boundary, then every interval — not on placement", () => {
     const s = newState();
-    place(s, "ammostation");
+    const interval = DEPLOYABLE_TYPES.ammostation?.emitter?.interval ?? 8;
+    s.time = 2.5; // placed mid-cycle
+    const st = place(s, "ammostation");
     s.pickups = [];
-    sysDeployables(s, 0.016); // emitCd 0 → emits immediately
+    // the beacon resets on absolute grid boundaries (state.time % interval); the first drop
+    // is scheduled at the next one (t=interval), NOT immediately on placement.
+    expect(st.emitAt).toBe(interval);
+
+    sysDeployables(s, 0.016); // t still 2.5 → before the boundary → no drop
+    expect(s.pickups.length).toBe(0);
+
+    s.time = interval; // cross the boundary the beacon resets on
+    sysDeployables(s, 0.016);
     expect(s.pickups.length).toBe(1);
     expect(s.pickups[0]?.defId).toBe("ammo");
-    sysDeployables(s, 0.016); // not yet
-    expect(s.pickups.length).toBe(1);
-    sysDeployables(s, (DEPLOYABLE_TYPES.ammostation?.emitter?.interval ?? 8) + 0.1);
+    expect(st.emitAt).toBe(interval * 2); // advanced one grid step, still aligned
+
+    s.time = interval * 2; // next boundary
+    sysDeployables(s, 0.016);
     expect(s.pickups.length).toBe(2);
   });
 });

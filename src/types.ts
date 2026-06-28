@@ -344,8 +344,9 @@ export interface Deployable {
   // ---- host-only sim state (not in snapshot; clients don't simulate it) ----
   /** countdown to the next shot */
   weaponCd?: number;
-  /** countdown to the next emit */
-  emitCd?: number;
+  /** absolute sim time of the next scheduled emit, snapped to the interval grid — so drops land
+   *  exactly where the `state.time`-driven beacon resets (host & client read the same phase) */
+  emitAt?: number;
   /** rounds left in the magazine */
   ammoLeft?: number;
   /** reload countdown (>0 = reloading) */
