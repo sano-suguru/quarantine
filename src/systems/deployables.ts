@@ -67,10 +67,13 @@ function tickMovement(state: State, d: Deployable, def: DeployableDef, dt: numbe
     gx = anchor.x + Math.cos(a) * reach;
     gy = anchor.y + Math.sin(a) * reach;
   } else {
-    // hover behind the anchor, with a per-id angular offset so multiple drones don't stack
-    const a = anchor.aim + Math.PI + ((d.id * 1.618) % (Math.PI * 2));
+    // idle: orbit the anchor on watch. the per-id golden-angle phase spreads multiple drones
+    // around the ring; state.time drives the sweep so it's deterministic (host & client agree).
+    const a = ((d.id * 1.618) % (Math.PI * 2)) + state.time * m.orbitSpeed;
     gx = anchor.x + Math.cos(a) * m.hoverDist;
     gy = anchor.y + Math.sin(a) * m.hoverDist;
+    // face the direction of travel (orbit tangent) + a slow scan wobble
+    d.aim = a + Math.PI / 2 + Math.sin(state.time * 1.3) * 0.25;
   }
 
   const dx = gx - d.x;
@@ -111,6 +114,7 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
     d.targetId = nearest.id;
   } else {
     target = null;
+    d.targetId = undefined; // no zombie in range → release so tickMovement returns to orbit
   }
 
   // magazine: while reloading, hold fire; when it completes, refill and reset the shot cd so
