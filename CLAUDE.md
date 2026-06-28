@@ -31,8 +31,8 @@ bun run signal         # just the signaling relay (cd signaling && wrangler dev 
 bun run build          # tsc --noEmit && vite build  → dist/
 bun run preview        # serve the production build
 bun run typecheck      # tsc --noEmit
-bun run lint           # biome check src
-bun run lint:fix       # biome check --write src   (add --unsafe for template-literal/etc. fixes)
+bun run lint           # biome check src index.html
+bun run lint:fix       # biome check --write src index.html   (add --unsafe for template-literal/etc. fixes)
 bun run format         # biome format --write src index.html
 ```
 
