@@ -1,11 +1,18 @@
 /**
- * Procedural Web Audio — no asset files. Every sound is synthesised from
- * oscillators + noise + envelopes. Lazily created on the first user gesture
- * (the Deploy button) to satisfy autoplay policies.
+ * Web Audio. Sounds prefer generated samples (see audioAssets.ts); each one-shot below
+ * tries `playSample(key)` first and only synthesises if no sample is loaded — graceful
+ * during async load and for any key not (yet) generated. The dread/tension drone beds and
+ * heartbeat stay procedural (continuous real-time modulation). Lazily created on the first
+ * user gesture (the Deploy button) to satisfy autoplay policies.
  */
+import { CONFIG } from "../config";
+import { loadSamples, playSample } from "./audioAssets";
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
+// samples-only bus: master → (synth stays direct) ; samples → sampleBus → compressor → master.
+// Kept separate so the synth signal path is byte-for-byte unchanged when no samples exist.
+let sampleBus: GainNode | null = null;
 let noiseBuf: AudioBuffer | null = null;
 
 // ambient drone (continuous bed of dread)
@@ -42,6 +49,15 @@ function resume(): void {
     master.gain.value = muted ? 0 : 0.9;
     master.connect(ctx.destination);
     noiseBuf = makeNoise();
+
+    // samples-only sub-bus: volume-balanced + compressed (tames horde clipping), then into
+    // master so mute still gates everything. The synth keeps connecting to master directly.
+    sampleBus = ctx.createGain();
+    sampleBus.gain.value = CONFIG.audio.sfxVolume;
+    const comp = ctx.createDynamicsCompressor();
+    sampleBus.connect(comp).connect(master);
+    // begin decoding samples ASAP (idempotent) so the soundscape switches to samples early.
+    loadSamples(ctx, sampleBus);
 
     // ambient: detuned low drone through a slow lowpass
     droneGain = ctx.createGain();
@@ -127,6 +143,7 @@ function noise(dur: number, gain: number, filterType: BiquadFilterType, freq: nu
 }
 
 function shot(weapon: string): void {
+  if (playSample(`shot_${weapon}`)) return;
   if (!ctx) return;
   if (weapon === "shotgun") {
     noise(0.22, 0.7, "lowpass", 1600, 0.7);
@@ -141,11 +158,13 @@ function shot(weapon: string): void {
 }
 
 function hit(): void {
+  if (playSample("hit")) return;
   tone(880, 0.04, "square", 0.12, 500);
   noise(0.04, 0.15, "highpass", 2600);
 }
 
 function kill(big: boolean): void {
+  if (playSample(big ? "kill_big" : "kill_small")) return;
   if (big) {
     tone(180, 0.5, "sawtooth", 0.4, 40);
     noise(0.5, 0.5, "lowpass", 700, 0.8);
@@ -156,24 +175,28 @@ function kill(big: boolean): void {
 }
 
 function reload(): void {
+  if (playSample("reload")) return;
   if (!ctx) return;
   noise(0.06, 0.22, "highpass", 1800);
   tone(180, 0.05, "square", 0.12, 120);
 }
 
 function reloadDone(): void {
+  if (playSample("reload_done")) return;
   if (!ctx) return;
   tone(320, 0.05, "square", 0.16, 200);
   noise(0.05, 0.25, "bandpass", 2200, 1.2);
 }
 
 function hurt(): void {
+  if (playSample("hurt")) return;
   noise(0.3, 0.55, "lowpass", 900, 0.9);
   tone(140, 0.25, "sawtooth", 0.3, 60);
 }
 
 /** dry, hollow click when the trigger is pulled on an empty magazine */
 function dryFire(): void {
+  if (playSample("dry_fire")) return;
   if (!ctx) return;
   noise(0.03, 0.3, "highpass", 4000);
   tone(2200, 0.02, "square", 0.05, 1200);
@@ -181,6 +204,7 @@ function dryFire(): void {
 
 /** short, reassuring chime when an item is scavenged */
 function pickup(): void {
+  if (playSample("pickup")) return;
   if (!ctx) return;
   tone(660, 0.06, "sine", 0.16, 880);
   tone(990, 0.1, "sine", 0.14, 1320);
@@ -188,6 +212,7 @@ function pickup(): void {
 
 /** whoosh of a knife swing */
 function melee(): void {
+  if (playSample("melee")) return;
   if (!ctx) return;
   noise(0.14, 0.4, "bandpass", 1800, 0.8);
   tone(240, 0.1, "sawtooth", 0.12, 90);
@@ -195,6 +220,7 @@ function melee(): void {
 
 /** soft rising shimmer when a medkit is applied */
 function heal(): void {
+  if (playSample("heal")) return;
   if (!ctx) return;
   tone(330, 0.4, "sine", 0.16, 560);
   tone(495, 0.5, "sine", 0.12, 740);
@@ -202,6 +228,7 @@ function heal(): void {
 
 /** dry tactile click for toggles (flashlight) */
 function click(): void {
+  if (playSample("click")) return;
   if (!ctx) return;
   noise(0.02, 0.25, "highpass", 3200);
   tone(1400, 0.02, "square", 0.06, 800);
@@ -209,6 +236,7 @@ function click(): void {
 
 /** relief swell at dawn — the night is survived */
 function dawn(): void {
+  if (playSample("dawn")) return;
   if (!ctx) return;
   tone(180, 1.0, "sine", 0.3, 360);
   tone(270, 1.2, "sine", 0.22, 420);
@@ -216,6 +244,7 @@ function dawn(): void {
 
 /** hammer thud of boarding up a barricade */
 function repair(): void {
+  if (playSample("repair")) return;
   if (!ctx) return;
   tone(150, 0.08, "square", 0.22, 70);
   noise(0.05, 0.3, "lowpass", 1200, 0.8);
@@ -223,6 +252,7 @@ function repair(): void {
 
 function ui(select: boolean): void {
   resume();
+  if (playSample(select ? "ui_select" : "ui_reject")) return;
   if (select) {
     tone(520, 0.08, "sine", 0.2);
     tone(780, 0.12, "sine", 0.18);
@@ -232,11 +262,13 @@ function ui(select: boolean): void {
 }
 
 function waveStart(): void {
+  if (playSample("wave_start")) return;
   tone(60, 1.1, "sawtooth", 0.5, 150);
   noise(0.7, 0.25, "lowpass", 400, 0.7);
 }
 
 function gameOver(): void {
+  if (playSample("game_over")) return;
   tone(220, 1.4, "sawtooth", 0.5, 50);
   tone(110, 1.6, "sine", 0.4, 30);
   noise(1.4, 0.3, "lowpass", 600);
@@ -245,6 +277,7 @@ function gameOver(): void {
 /** zombie vocalisation. `type` shapes the timbre (brute deep, runner raspy-high, walker mid);
  *  `vol` (0..1) is a distance attenuation so far threats murmur and near ones loom. */
 function groan(pan: number, type = "walker", vol = 1): void {
+  if (playSample(`groan_${type}`, { pan, vol })) return;
   if (!ctx) return;
   const o = ctx.createOscillator();
   o.type = "sawtooth";
@@ -274,6 +307,7 @@ function groan(pan: number, type = "walker", vol = 1): void {
 
 /** a sharp rising shriek — fired when a lurking zombie is suddenly caught in the flashlight cone. */
 function screech(pan: number, vol = 1): void {
+  if (playSample("screech", { pan, vol })) return;
   if (!ctx) return;
   const t = ctx.currentTime;
   const o = ctx.createOscillator();
@@ -303,6 +337,7 @@ function screech(pan: number, vol = 1): void {
 
 /** the flashlight bulb cutting out: a short electrical "jjt" as you drop into the dark. */
 function lightDie(): void {
+  if (playSample("light_die")) return;
   if (!ctx) return;
   noise(0.09, 0.3, "highpass", 2600, 0.6);
   tone(900, 0.06, "square", 0.08, 120);

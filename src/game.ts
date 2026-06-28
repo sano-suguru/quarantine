@@ -170,10 +170,17 @@ function audioAmbience(dt: number): void {
   // per-zombie groans / cone-entry screeches, re-derived locally from the world
   zombieVoices();
 
+  // day = explore/respite, so voices are sparser + quieter than the night siege (night unchanged).
+  const night = state.phase === "night";
+  const voiceMul = night ? 1 : CONFIG.horror.dayVoiceMul;
+  const voiceVol = night ? 1 : CONFIG.horror.dayVoiceVol;
+
+  // ambient horde murmur — proximity-gated so it only sounds when a zombie is ACTUALLY near the
+  // local player (no groans-from-nowhere when the map's roamers are far). Sparser/quieter by day.
   groanT -= dt;
-  if (groanT <= 0 && state.zombies.length > 0) {
-    Audio.groan((Math.random() * 2 - 1) * 0.8);
-    groanT = Math.max(0.6, 3.5 - state.zombies.length * 0.06);
+  if (groanT <= 0 && state.surrounded > 0) {
+    Audio.groan((Math.random() * 2 - 1) * 0.8, "walker", voiceVol);
+    groanT = Math.max(0.6, 3.5 - state.zombies.length * 0.06) * voiceMul;
   }
 }
 
@@ -188,6 +195,10 @@ function audioAmbience(dt: number): void {
 function zombieVoices(): void {
   const lp = localPlayer(state);
   const now = state.time;
+  // day damp (matches audioAmbience): quieter + sparser groans during the explore phase.
+  const night = state.phase === "night";
+  const voiceMul = night ? 1 : CONFIG.horror.dayVoiceMul;
+  const voiceVol = night ? 1 : CONFIG.horror.dayVoiceVol;
   const coneCos = Math.cos(CONFIG.flashlight.halfAngle);
   const aimX = Math.cos(lp.aim);
   const aimY = Math.sin(lp.aim);
@@ -228,10 +239,11 @@ function zombieVoices(): void {
     // screech the moment it enters the light from the dark
     if (lit && !m.wasLit && canVoice()) Audio.screech(pan, vol);
     m.wasLit = lit;
-    // groan while lurking unseen and close, on an irregular per-zombie cadence
+    // groan while lurking unseen and close, on an irregular per-zombie cadence (damped by day)
     if (!lit && now >= m.nextGroan) {
-      m.nextGroan = now + CONFIG.horror.groanCooldown * (0.6 + Math.random() * 0.8);
-      if (Math.random() < CONFIG.horror.groanChance && canVoice()) Audio.groan(pan, z.type, vol);
+      m.nextGroan = now + CONFIG.horror.groanCooldown * (0.6 + Math.random() * 0.8) * voiceMul;
+      if (Math.random() < CONFIG.horror.groanChance && canVoice())
+        Audio.groan(pan, z.type, vol * voiceVol);
     }
   }
 }
