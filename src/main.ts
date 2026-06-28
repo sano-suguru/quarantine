@@ -35,7 +35,7 @@ import { createClientLink, createHostLink, getTurnStatus, NETLOG } from "./net/t
 import { getSettings, setAimAssist } from "./settings";
 import { sysCamera } from "./systems/camera";
 import { sysFx } from "./systems/fx";
-import { el, hide, isEditableTarget, renderList, show } from "./ui";
+import { assertNever, el, hide, isEditableTarget, renderList, show } from "./ui";
 
 // host lobby gate: host builds the world on "Host co-op" but the sim stays frozen
 // (no day countdown / no spawns) until the host presses Start — see wireCoop()/frame().
@@ -45,6 +45,18 @@ let hostStarted = false;
 // none of which can auto-reconnect), and a re-entrancy guard so the watchdog fires one loop.
 let coopRoomCode: string | null = null;
 let reconnecting = false;
+
+// Client-side lobby connection lifecycle (room-code + manual-SDP join). Makes the
+// previously-implicit joining/linking/connected/failure states explicit so setClientLobby owns
+// the lobby status text, squad, and the failure-only manual.open side-effect in one place.
+// Scope is the lobby only: once the host deploys, startClientGame hides the lobby and Net.mode +
+// state.running become the source of truth.
+type ClientLobby =
+  | { k: "joining" } // relay handshake (pre-link)
+  | { k: "linking" } // P2P open wait (the p2pOpenTimeout window)
+  | { k: "connected" } // link open; waiting for the host to deploy
+  | { k: "failed"; msg: string } // connect failure → reveal the manual <details> fallback
+  | { k: "lost"; msg: string }; // opened then dropped in-lobby / version mismatch → no manual
 // Q-to-place: a small local cooldown so a held/mashed key doesn't fire several reliable place
 // requests before the host's snapshot reflects the first (each would consume another queued item).
 let lastPlaceAt = -1e9;
@@ -455,6 +467,34 @@ function wireCoop(): void {
     renderList(squad, members, (m) => `${m.pid}:${m.label}`, makeChip);
   };
 
+  // Single owner of the client lobby's status/squad/manual derivation. Every client connection
+  // event calls setClientLobby({...}) rather than poking setStatus/manual.open directly, so the
+  // failure-only "open the manual fallback" side-effect lives in exactly one place (the `failed`
+  // case). `lost` (opened-then-dropped / version mismatch) deliberately does NOT open manual.
+  const setClientLobby = (s: ClientLobby): void => {
+    switch (s.k) {
+      case "joining":
+        setStatus("connecting via relay…", true); // squad already cleared by openLobby
+        break;
+      case "linking":
+        setSquad([{ pid: 1, label: "You" }]);
+        setStatus("establishing P2P link…", true);
+        break;
+      case "connected":
+        setStatus("connected — waiting for host to deploy");
+        break;
+      case "failed":
+        setStatus(s.msg);
+        manual.open = true;
+        break;
+      case "lost":
+        setStatus(s.msg);
+        break;
+      default:
+        assertNever(s);
+    }
+  };
+
   const openLobby = (kind: "host" | "join"): void => {
     hide("start");
     hide("coop");
@@ -597,10 +637,15 @@ function wireCoop(): void {
     roomInput.value = prefill ?? "";
     roomInput.focus();
 
+    // The room-code attempt's P2P-open timeout. Lifted to the lobby scope (not local to join) so
+    // switching to the manual fallback can cancel it — otherwise a pending timer fires
+    // setClientLobby({failed}) over the manual flow, clobbering its status and re-opening <details>.
+    let failTimer: ReturnType<typeof setTimeout> | undefined;
+
     const join = async (): Promise<void> => {
       const code = roomInput.value.trim().toUpperCase(); // idFromName is case-sensitive
       if (!code) return;
-      setStatus("connecting via relay…", true);
+      setClientLobby({ k: "joining" });
       try {
         const link = await joinRoom(code);
         Net.mode = "client";
@@ -615,39 +660,42 @@ function wireCoop(): void {
             }
           },
         });
-        setSquad([{ pid: 1, label: "You" }]);
-        setStatus("establishing P2P link…", true);
+        setClientLobby({ k: "linking" });
         // joinRoom resolves when our ANSWER is sent, NOT when the P2P link actually opens. A
         // blocked NAT/firewall (e.g. a corporate network) then fails silently. Confirm a real
         // open via link.onOpen, surface link.onClose, and time out otherwise — so the player
         // sees "couldn't connect" instead of sitting forever on a misleading "connected".
         let opened = false;
-        const failTimer = setTimeout(() => {
+        failTimer = setTimeout(() => {
           if (opened) return;
-          setStatus(
-            failMsg(
+          setClientLobby({
+            k: "failed",
+            msg: failMsg(
               "couldn't connect (network/NAT). Try a personal network, or manual connect below.",
             ),
-          );
-          manual.open = true;
+          });
         }, CONFIG.net.p2pOpenTimeoutMs);
         link.onOpen(() => {
           opened = true;
           clearTimeout(failTimer);
-          setStatus("connected — waiting for host to deploy");
+          setClientLobby({ k: "connected" });
         });
         link.onClose(() => {
           clearTimeout(failTimer);
-          setStatus(
+          setClientLobby(
             opened
-              ? "disconnected from host."
-              : failMsg("connection failed (network/NAT) — try manual connect below."),
+              ? { k: "lost", msg: "disconnected from host." }
+              : {
+                  k: "failed",
+                  msg: failMsg("connection failed (network/NAT) — try manual connect below."),
+                },
           );
-          if (!opened) manual.open = true;
         });
       } catch (err) {
-        setStatus(`${err instanceof Error ? err.message : err} — try manual connect below`);
-        manual.open = true;
+        setClientLobby({
+          k: "failed",
+          msg: `${err instanceof Error ? err.message : err} — try manual connect below`,
+        });
       }
     };
     roomGo.onclick = () => void join();
@@ -664,6 +712,9 @@ function wireCoop(): void {
       guide.textContent = manual.open
         ? "Manual connect — paste the host's code to get a reply."
         : "Enter the host's room code to connect.";
+      // Switching to manual abandons the room-code attempt — cancel its timeout so it can't fire
+      // setClientLobby({failed}) over the manual flow (clearTimeout(undefined) is a safe no-op).
+      if (manual.open) clearTimeout(failTimer);
       if (!manual.open || manualReady) return;
       manualReady = true;
       sendBlock.style.order = ""; // host's code (recv) first, your reply (send) below
@@ -680,11 +731,14 @@ function wireCoop(): void {
           Net.client = new Client(link, undefined, {
             // manual SDP bypasses the signaling version gate → re-check on Hello
             onVersionMismatch: () => {
-              setStatus("host is on a different version — update to play together");
+              setClientLobby({
+                k: "lost",
+                msg: "host is on a different version — update to play together",
+              });
               link.close();
             },
           });
-          link.onOpen(() => setStatus("connected — waiting for host to deploy"));
+          link.onOpen(() => setClientLobby({ k: "connected" }));
           out.value = answer;
           sendBlock.style.display = "flex";
           setStatus("reply ready — send it to the host, then wait");
