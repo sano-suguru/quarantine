@@ -1,3 +1,5 @@
+import { isEditableTarget } from "./ui";
+
 export const Input = {
   keys: new Set<string>(),
   mouseX: 0,
@@ -5,6 +7,10 @@ export const Input = {
   firing: false,
   init(canvas: HTMLCanvasElement): void {
     addEventListener("keydown", (e) => {
+      // While a text field (room-code input, manual-SDP textareas) is focused, let the
+      // keystroke through untouched — otherwise the preventDefault below eats characters
+      // that are valid in a room code (R, 2, 3, …).
+      if (isEditableTarget(e.target)) return;
       this.keys.add(e.code);
       if (["KeyR", "Digit1", "Digit2", "Digit3"].includes(e.code)) e.preventDefault();
     });
