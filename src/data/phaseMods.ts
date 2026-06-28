@@ -19,8 +19,8 @@ export interface PhaseMod {
 
 export function phaseMods(phase: SiegePhase, day: number): PhaseMod {
   if (phase === "day") {
-    // slow, near-blind, extra-wandery, never auto-aggro — easy to read and avoid
-    return { speedMul: 0.6, senseMul: 0.45, lunge: false, wanderMul: 1.6, autoAggro: false };
+    // slow, near-blind, extra-wandery, never auto-aggro — easy to read and avoid (but not stuck-in-mud)
+    return { speedMul: 0.72, senseMul: 0.45, lunge: false, wanderMul: 1.6, autoAggro: false };
   }
   // night: at/above base speed, wide sense, lunging, latched aggro — ramps with the day
   return {

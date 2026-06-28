@@ -3,7 +3,7 @@ import type { EnemyType } from "../types";
 
 export const ENEMY_TYPES: Record<string, EnemyType> = {
   walker: {
-    hp: 60,
+    hp: 85,
     speed: 60,
     radius: 15,
     dmg: 8,
@@ -18,7 +18,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     separation: 1.0,
   },
   runner: {
-    hp: 35,
+    hp: 50,
     speed: 130, // sits just below heavy-weapon move speed: heavies crawl away but lunge still closes
     radius: 13,
     dmg: 6,

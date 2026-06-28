@@ -15,7 +15,7 @@ export function waveDef(n: number, players = 1): WaveDefinition {
   if (n >= 4) weights.push({ type: "brute", w: Math.floor(n / 3) });
   const batch = Math.max(1, Math.round((1 + Math.floor(n / 3)) * mul));
   const interval = Math.max(0.45, 1.3 - n * 0.04);
-  const hpScale = 1 + n * 0.06;
+  const hpScale = 1 + n * 0.1;
   const spdScale = 1 + n * 0.015;
   return { weights, batch, interval, hpScale, spdScale };
 }

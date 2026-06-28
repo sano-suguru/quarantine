@@ -31,7 +31,7 @@ describe("waveDef", () => {
 
   it("scales hp and speed with the day number", () => {
     const d = waveDef(10);
-    expect(d.hpScale).toBeCloseTo(1.6, 5); // 1 + 10*0.06
+    expect(d.hpScale).toBeCloseTo(2.0, 5); // 1 + 10*0.10
     expect(d.spdScale).toBeCloseTo(1.15, 5); // 1 + 10*0.015
   });
 });
