@@ -1,19 +1,18 @@
 /**
- * Web Audio. Sounds prefer generated samples (see audioAssets.ts); each one-shot below
- * tries `playSample(key)` first and only synthesises if no sample is loaded — graceful
- * during async load and for any key not (yet) generated. The dread/tension drone beds and
- * heartbeat stay procedural (continuous real-time modulation). Lazily created on the first
- * user gesture (the Deploy button) to satisfy autoplay policies.
+ * Web Audio. One-shot SFX and zombie voices are sample-based (see audioAssets.ts); only the
+ * continuous dread/tension drone beds and the heartbeat stay procedural (they need real-time
+ * gain/frequency modulation that samples can't do). The context + beds are lazily created on
+ * the first user gesture (the Deploy button) to satisfy autoplay policies, and the samples
+ * begin decoding at the same moment.
  */
 import { CONFIG } from "../config";
 import { loadSamples, playSample } from "./audioAssets";
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
-// samples-only bus: master → (synth stays direct) ; samples → sampleBus → compressor → master.
-// Kept separate so the synth signal path is byte-for-byte unchanged when no samples exist.
+// samples bus: each sample source → sampleBus → compressor → master. The procedural beds
+// connect to master directly, so the sample chain is fully separate from the synth signal.
 let sampleBus: GainNode | null = null;
-let noiseBuf: AudioBuffer | null = null;
 
 // ambient drone (continuous bed of dread)
 let droneGain: GainNode | null = null;
@@ -28,16 +27,7 @@ try {
   /* localStorage may be unavailable */
 }
 
-function makeNoise(): AudioBuffer {
-  const c = ctx as AudioContext;
-  const len = Math.floor(c.sampleRate * 1.2);
-  const buf = c.createBuffer(1, len, c.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-  return buf;
-}
-
-/** Create the context on first gesture and start the ambient bed. */
+/** Create the context on first gesture, start the ambient bed, and begin loading samples. */
 function resume(): void {
   if (!ctx) {
     const Ctor =
@@ -48,15 +38,13 @@ function resume(): void {
     master = ctx.createGain();
     master.gain.value = muted ? 0 : 0.9;
     master.connect(ctx.destination);
-    noiseBuf = makeNoise();
 
-    // samples-only sub-bus: volume-balanced + compressed (tames horde clipping), then into
-    // master so mute still gates everything. The synth keeps connecting to master directly.
+    // samples sub-bus: volume-balanced + compressed (tames horde clipping), then into master
+    // so mute still gates everything.
     sampleBus = ctx.createGain();
     sampleBus.gain.value = CONFIG.audio.sfxVolume;
     const comp = ctx.createDynamicsCompressor();
     sampleBus.connect(comp).connect(master);
-    // begin decoding samples ASAP (idempotent) so the soundscape switches to samples early.
     loadSamples(ctx, sampleBus);
 
     // ambient: detuned low drone through a slow lowpass
@@ -98,250 +86,88 @@ function resume(): void {
   if (ctx.state === "suspended") void ctx.resume();
 }
 
-function env(node: AudioNode, gain: number, attack: number, decay: number): GainNode {
-  const c = ctx as AudioContext;
-  const g = c.createGain();
-  const t = c.currentTime;
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(gain, t + attack);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
-  node.connect(g).connect(master as GainNode);
-  return g;
-}
-
-function tone(
-  freq: number,
-  dur: number,
-  type: OscillatorType,
-  gain: number,
-  slideTo?: number,
-): void {
-  if (!ctx) return;
-  const o = ctx.createOscillator();
-  o.type = type;
-  const t = ctx.currentTime;
-  o.frequency.setValueAtTime(freq, t);
-  if (slideTo !== undefined)
-    o.frequency.exponentialRampToValueAtTime(Math.max(1, slideTo), t + dur);
-  env(o, gain, 0.004, dur);
-  o.start(t);
-  o.stop(t + dur + 0.05);
-}
-
-function noise(dur: number, gain: number, filterType: BiquadFilterType, freq: number, q = 1): void {
-  if (!ctx || !noiseBuf) return;
-  const src = ctx.createBufferSource();
-  src.buffer = noiseBuf;
-  const f = ctx.createBiquadFilter();
-  f.type = filterType;
-  f.frequency.value = freq;
-  f.Q.value = q;
-  src.connect(f);
-  env(f, gain, 0.003, dur);
-  src.start(ctx.currentTime);
-  src.stop(ctx.currentTime + dur + 0.05);
-}
+// --- one-shot SFX: thin wrappers over the sample player (keys live in src/audio/sfx/) ---
 
 function shot(weapon: string): void {
-  if (playSample(`shot_${weapon}`)) return;
-  if (!ctx) return;
-  if (weapon === "shotgun") {
-    noise(0.22, 0.7, "lowpass", 1600, 0.7);
-    tone(120, 0.18, "sawtooth", 0.4, 40);
-  } else if (weapon === "smg") {
-    noise(0.07, 0.32, "highpass", 900);
-    tone(420, 0.05, "square", 0.18, 180);
-  } else {
-    noise(0.1, 0.4, "bandpass", 1400, 1.2);
-    tone(300, 0.08, "square", 0.22, 110);
-  }
+  playSample(`shot_${weapon}`);
 }
 
 function hit(): void {
-  if (playSample("hit")) return;
-  tone(880, 0.04, "square", 0.12, 500);
-  noise(0.04, 0.15, "highpass", 2600);
+  playSample("hit");
 }
 
 function kill(big: boolean): void {
-  if (playSample(big ? "kill_big" : "kill_small")) return;
-  if (big) {
-    tone(180, 0.5, "sawtooth", 0.4, 40);
-    noise(0.5, 0.5, "lowpass", 700, 0.8);
-  } else {
-    tone(260, 0.28, "sawtooth", 0.28, 70);
-    noise(0.25, 0.3, "bandpass", 900, 0.9);
-  }
+  playSample(big ? "kill_big" : "kill_small");
 }
 
 function reload(): void {
-  if (playSample("reload")) return;
-  if (!ctx) return;
-  noise(0.06, 0.22, "highpass", 1800);
-  tone(180, 0.05, "square", 0.12, 120);
+  playSample("reload");
 }
 
 function reloadDone(): void {
-  if (playSample("reload_done")) return;
-  if (!ctx) return;
-  tone(320, 0.05, "square", 0.16, 200);
-  noise(0.05, 0.25, "bandpass", 2200, 1.2);
+  playSample("reload_done");
 }
 
 function hurt(): void {
-  if (playSample("hurt")) return;
-  noise(0.3, 0.55, "lowpass", 900, 0.9);
-  tone(140, 0.25, "sawtooth", 0.3, 60);
+  playSample("hurt");
 }
 
-/** dry, hollow click when the trigger is pulled on an empty magazine */
 function dryFire(): void {
-  if (playSample("dry_fire")) return;
-  if (!ctx) return;
-  noise(0.03, 0.3, "highpass", 4000);
-  tone(2200, 0.02, "square", 0.05, 1200);
+  playSample("dry_fire");
 }
 
-/** short, reassuring chime when an item is scavenged */
 function pickup(): void {
-  if (playSample("pickup")) return;
-  if (!ctx) return;
-  tone(660, 0.06, "sine", 0.16, 880);
-  tone(990, 0.1, "sine", 0.14, 1320);
+  playSample("pickup");
 }
 
-/** whoosh of a knife swing */
 function melee(): void {
-  if (playSample("melee")) return;
-  if (!ctx) return;
-  noise(0.14, 0.4, "bandpass", 1800, 0.8);
-  tone(240, 0.1, "sawtooth", 0.12, 90);
+  playSample("melee");
 }
 
-/** soft rising shimmer when a medkit is applied */
 function heal(): void {
-  if (playSample("heal")) return;
-  if (!ctx) return;
-  tone(330, 0.4, "sine", 0.16, 560);
-  tone(495, 0.5, "sine", 0.12, 740);
+  playSample("heal");
 }
 
-/** dry tactile click for toggles (flashlight) */
 function click(): void {
-  if (playSample("click")) return;
-  if (!ctx) return;
-  noise(0.02, 0.25, "highpass", 3200);
-  tone(1400, 0.02, "square", 0.06, 800);
+  playSample("click");
 }
 
-/** relief swell at dawn — the night is survived */
 function dawn(): void {
-  if (playSample("dawn")) return;
-  if (!ctx) return;
-  tone(180, 1.0, "sine", 0.3, 360);
-  tone(270, 1.2, "sine", 0.22, 420);
+  playSample("dawn");
 }
 
-/** hammer thud of boarding up a barricade */
 function repair(): void {
-  if (playSample("repair")) return;
-  if (!ctx) return;
-  tone(150, 0.08, "square", 0.22, 70);
-  noise(0.05, 0.3, "lowpass", 1200, 0.8);
+  playSample("repair");
 }
 
 function ui(select: boolean): void {
-  resume();
-  if (playSample(select ? "ui_select" : "ui_reject")) return;
-  if (select) {
-    tone(520, 0.08, "sine", 0.2);
-    tone(780, 0.12, "sine", 0.18);
-  } else {
-    tone(440, 0.05, "sine", 0.12);
-  }
+  resume(); // a UI click is often the first gesture — wake the context + kick off sample load
+  playSample(select ? "ui_select" : "ui_reject");
 }
 
 function waveStart(): void {
-  if (playSample("wave_start")) return;
-  tone(60, 1.1, "sawtooth", 0.5, 150);
-  noise(0.7, 0.25, "lowpass", 400, 0.7);
+  playSample("wave_start");
 }
 
 function gameOver(): void {
-  if (playSample("game_over")) return;
-  tone(220, 1.4, "sawtooth", 0.5, 50);
-  tone(110, 1.6, "sine", 0.4, 30);
-  noise(1.4, 0.3, "lowpass", 600);
+  playSample("game_over");
 }
 
-/** zombie vocalisation. `type` shapes the timbre (brute deep, runner raspy-high, walker mid);
- *  `vol` (0..1) is a distance attenuation so far threats murmur and near ones loom. */
+/** zombie vocalisation. `type` (walker/runner/brute) selects the timbre; `pan`/`vol` place it. */
 function groan(pan: number, type = "walker", vol = 1): void {
-  if (playSample(`groan_${type}`, { pan, vol })) return;
-  if (!ctx) return;
-  const o = ctx.createOscillator();
-  o.type = "sawtooth";
-  const t = ctx.currentTime;
-  // per-type pitch + filter: brute = low rumble, runner = higher rasp, walker = mid
-  const base = type === "brute" ? 55 : type === "runner" ? 130 : 90;
-  const cutoff = type === "brute" ? 320 : type === "runner" ? 760 : 500;
-  const f0 = base + Math.random() * base * 0.5;
-  o.frequency.setValueAtTime(f0, t);
-  o.frequency.linearRampToValueAtTime(f0 * 0.7, t + 0.5);
-  const lp = ctx.createBiquadFilter();
-  lp.type = "lowpass";
-  lp.frequency.value = cutoff;
-  const p = ctx.createStereoPanner();
-  p.pan.value = Math.max(-1, Math.min(1, pan));
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(0.18 * vol, t + 0.1);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
-  o.connect(lp)
-    .connect(p)
-    .connect(g)
-    .connect(master as GainNode);
-  o.start(t);
-  o.stop(t + 0.7);
+  playSample(`groan_${type}`, { pan, vol });
 }
 
-/** a sharp rising shriek — fired when a lurking zombie is suddenly caught in the flashlight cone. */
+/** sharp rising shriek when a lurking zombie is suddenly caught in the flashlight cone. */
 function screech(pan: number, vol = 1): void {
-  if (playSample("screech", { pan, vol })) return;
-  if (!ctx) return;
-  const t = ctx.currentTime;
-  const o = ctx.createOscillator();
-  o.type = "sawtooth";
-  const f0 = 820 + Math.random() * 320;
-  o.frequency.setValueAtTime(f0, t);
-  o.frequency.exponentialRampToValueAtTime(f0 * 1.7, t + 0.1);
-  o.frequency.exponentialRampToValueAtTime(f0 * 0.6, t + 0.22);
-  const hp = ctx.createBiquadFilter();
-  hp.type = "highpass";
-  hp.frequency.value = 700;
-  const p = ctx.createStereoPanner();
-  p.pan.value = Math.max(-1, Math.min(1, pan));
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(0.13 * vol, t + 0.008);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
-  o.connect(hp)
-    .connect(p)
-    .connect(g)
-    .connect(master as GainNode);
-  o.start(t);
-  o.stop(t + 0.28);
-  // a breath of grit on top
-  noise(0.12, 0.12 * vol, "bandpass", 2600, 1.4);
+  playSample("screech", { pan, vol });
 }
 
-/** the flashlight bulb cutting out: a short electrical "jjt" as you drop into the dark. */
 function lightDie(): void {
-  if (playSample("light_die")) return;
-  if (!ctx) return;
-  noise(0.09, 0.3, "highpass", 2600, 0.6);
-  tone(900, 0.06, "square", 0.08, 120);
+  playSample("light_die");
 }
+
+// --- procedural beds (kept: continuous real-time modulation, no sample equivalent) ---
 
 function heartbeat(strength: number): void {
   if (!ctx) return;
