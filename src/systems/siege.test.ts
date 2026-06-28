@@ -40,13 +40,14 @@ describe("startDay", () => {
 });
 
 describe("startNight", () => {
-  it("enters the night phase and arms a wave for the current day", () => {
+  it("enters the night phase, arms a wave, and starts the night clock", () => {
     const s = newState();
     s.day = 3;
     startNight(s);
     expect(s.phase).toBe("night");
     expect(s.wave.n).toBe(3);
-    expect(s.wave.phase).toBe("active");
+    expect(s.wave.def).not.toBeNull();
+    expect(s.phaseT).toBe(nightDuration(3));
   });
 });
 
@@ -66,22 +67,19 @@ describe("sysSiege", () => {
     expect(s.phase).toBe("night");
   });
 
-  it("returns 'dawn' on the frame the night horde is cleared", () => {
+  it("returns 'dawn' on the frame the night clock expires, even with zombies alive", () => {
     const s = newState();
     startNight(s);
-    // force the cleared condition deterministically: empty queue + no zombies left
-    s.wave.queue = [];
-    s.zombies = [];
+    s.phaseT = 0.5;
+    s.zombies = [{ id: 1 } as (typeof s.zombies)[number]]; // survivors remain — dawn still comes
     expect(sysSiege(s, 1)).toBe("dawn");
-    expect(s.wave.phase).toBe("cleared");
   });
 
-  it("returns null at night while the horde is not yet cleared", () => {
+  it("returns null at night while the clock is still running", () => {
     const s = newState();
-    startNight(s);
-    s.wave.queue = [];
-    s.zombies = [{ id: 1 } as (typeof s.zombies)[number]]; // one straggler still alive
+    startNight(s); // phaseT = nightDuration(day) >> dt
     expect(sysSiege(s, 1)).toBeNull();
+    expect(s.phase).toBe("night");
   });
 });
 

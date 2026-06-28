@@ -98,28 +98,37 @@ export function spawnZombie(
 }
 
 export function startWave(state: State, n: number): void {
-  // squad size scales the horde count; absent (held) bodies don't inflate it. Min 1 = SP.
+  // squad size scales the per-pulse batch; absent (held) bodies don't inflate it. Min 1 = SP.
   const players = state.players.filter((p) => !p.absent).length || 1;
-  const def = waveDef(n, players);
-  state.wave = { n, phase: "active", t: 0, queue: def.spawn.slice(), def, spawnT: 0 };
+  state.wave = { n, def: waveDef(n, players), spawnT: 0 };
 }
 
-/** Returns true on the frame the wave transitions to "cleared". */
-export function sysWave(state: State, dt: number): boolean {
-  const w = state.wave;
-  if (w.phase !== "active") return false;
-  if (w.queue.length) {
-    w.spawnT -= dt;
-    if (w.spawnT <= 0) {
-      const def = w.def as NonNullable<typeof w.def>;
-      const batch = Math.min(w.queue.length, 1 + Math.floor(w.n / 3));
-      for (let i = 0; i < batch; i++)
-        spawnZombie(state, w.queue.pop() as string, def.hpScale, def.spdScale);
-      w.spawnT = def.interval;
-    }
-  } else if (state.zombies.length === 0) {
-    w.phase = "cleared";
-    return true;
+/**
+ * Spawn pulses on cadence up to `cap` living zombies. The night ends on the siege clock
+ * (sysSiege), NOT when the horde is cleared — so this keeps pressure coming until dawn. `cap`
+ * is passed in (from nightMaxZombies) to keep this module free of a siege import cycle.
+ */
+export function sysWave(state: State, dt: number, cap: number): void {
+  const def = state.wave.def;
+  if (!def) return;
+  if (state.zombies.length >= cap) return;
+  state.wave.spawnT -= dt;
+  if (state.wave.spawnT <= 0) {
+    const batch = Math.min(def.batch, cap - state.zombies.length);
+    for (let i = 0; i < batch; i++)
+      spawnZombie(state, pickWeighted(def.weights), def.hpScale, def.spdScale);
+    state.wave.spawnT = def.interval;
   }
-  return false;
+}
+
+/** Sample one enemy type from the composition weights. */
+function pickWeighted(weights: { type: string; w: number }[]): string {
+  let total = 0;
+  for (const e of weights) total += e.w;
+  let r = rand(0, total);
+  for (const e of weights) {
+    r -= e.w;
+    if (r <= 0) return e.type;
+  }
+  return weights[0]?.type ?? "walker";
 }

@@ -71,7 +71,7 @@ export function newState(): State {
     day: 1,
     phaseT: CONFIG.siege.dayDuration,
     cam: { x: 0, y: 0, shake: 0 },
-    wave: { n: 0, phase: "prep", t: 0, queue: [], def: null, spawnT: 0 },
+    wave: { n: 0, def: null, spawnT: 0 },
     kills: 0,
     owned,
     hash: new SpatialHash(64),

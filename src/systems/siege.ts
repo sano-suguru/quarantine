@@ -60,15 +60,16 @@ export function startDay(state: State): void {
   }
 }
 
-/** Begin the horde night: spawn intensity scales with the day number. */
+/** Begin the horde night: arm the continuous spawner and start the night clock. */
 export function startNight(state: State): void {
   state.phase = "night";
+  state.phaseT = nightDuration(state.day);
   startWave(state, state.day);
 }
 
 /**
- * Advance the siege. Returns "night" the frame day flips to night, "dawn" the
- * frame the night horde is cleared, otherwise null.
+ * Advance the siege. Returns "night" the frame day flips to night, "dawn" the frame the night
+ * clock elapses (regardless of how many zombies remain — survivors carry into the day), else null.
  */
 export function sysSiege(state: State, dt: number): "night" | "dawn" | null {
   if (state.phase === "day") {
@@ -79,6 +80,8 @@ export function sysSiege(state: State, dt: number): "night" | "dawn" | null {
     }
     return null;
   }
-  // night
-  return sysWave(state, dt) ? "dawn" : null;
+  // night: spawns keep coming (capped); dawn arrives on the clock, not on a wipe-out
+  sysWave(state, dt, nightMaxZombies(state.day));
+  state.phaseT -= dt;
+  return state.phaseT <= 0 ? "dawn" : null;
 }

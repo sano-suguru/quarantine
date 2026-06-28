@@ -116,7 +116,7 @@ describe("snapshot binary round-trip", () => {
       h = Math.imul(h, 0x01000193);
     }
     expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
-      `"len=283 fnv=b1987312"`,
+      `"len=281 fnv=1f81b5f2"`,
     );
   });
 
