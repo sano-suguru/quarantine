@@ -4,6 +4,7 @@ import { Audio } from "./engine/audio";
 import { localPlayer } from "./engine/players";
 import { Renderer } from "./engine/renderer";
 import {
+  audioLoops,
   buyItem,
   clientAmbience,
   deployPlace,
@@ -337,6 +338,7 @@ function main(): void {
     if (st.running) syncShopUI();
 
     draw();
+    audioLoops(); // looping ambience/rummage — driven here (runs even while paused) in all modes
     if (st.running) updateHUD();
 
     // options panel: force-close on state transitions (gameover/shop/reconnect) so it's never

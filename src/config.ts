@@ -49,7 +49,15 @@ export const CONFIG = {
   // sample-based SFX (engine/audioAssets.ts). sfxVolume balances generated samples against
   // the procedural synth beds; maxSampleVoices caps simultaneous one-shots so a full horde
   // (uncapped hit/kill fire) can't pile up BufferSources and clip.
-  audio: { sfxVolume: 0.8, maxSampleVoices: 12 },
+  // looping samples (search rummage, day/night ambience) layered over the procedural drone bed.
+  // ambVolume/searchVolume scale each loop; loopFadeSec is the in/out (and day⇄night crossfade) ramp.
+  audio: {
+    sfxVolume: 0.8,
+    maxSampleVoices: 12,
+    ambVolume: 0.8,
+    searchVolume: 0.7,
+    loopFadeSec: 0.6,
+  },
   player: { radius: 16, speed: 200, maxHp: 100, moveRampRate: 1.5, switchRaise: 0.25 },
   cam: { lerp: 8, shakeDecay: 8 },
   feel: {

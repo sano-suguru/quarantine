@@ -49,8 +49,11 @@ let dest: AudioNode | null = null;
 let loadStarted = false;
 const buffers = new Map<string, AudioBuffer[]>();
 const lastIdx = new Map<string, number>();
-// oldest-first list of currently-sounding sample sources (polyphony cap).
+// oldest-first list of currently-sounding ONE-SHOT sources (polyphony cap). Loops are NOT
+// tracked here — mixing them in would let a gunfire spike stop an ambience loop as "oldest".
 const active: AudioBufferSourceNode[] = [];
+// active looping sources, keyed (one per key: search / amb_day / amb_night).
+const loops = new Map<string, { src: AudioBufferSourceNode; gain: GainNode }>();
 
 /**
  * Begin decoding every registered sample into AudioBuffers. Idempotent (resume() is called
@@ -136,4 +139,47 @@ export function playSample(key: string, opts?: { pan?: number; vol?: number }): 
     }
   }
   return true;
+}
+
+/**
+ * Start/stop a seamless looping sample for `key` (search / amb_day / amb_night), driven every
+ * frame from the render loop. Idempotent: calling with the same `on` state is a no-op, so it's
+ * cheap to call at frame rate. Fades in/out over CONFIG.audio.loopFadeSec. Routes through the
+ * sample bus (mute + sfxVolume + compressor apply), kept OUT of the one-shot polyphony cap.
+ */
+export function setLoop(key: string, on: boolean, vol = 1): void {
+  if (!actx || !dest) return;
+  const fade = CONFIG.audio.loopFadeSec;
+  const existing = loops.get(key);
+  if (on) {
+    if (existing) return; // already playing
+    const bufs = buffers.get(key);
+    const buf = bufs?.[0];
+    if (!buf) return; // not loaded yet — a later frame retries
+    const src = actx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const g = actx.createGain();
+    g.gain.setValueAtTime(0, actx.currentTime);
+    g.gain.setTargetAtTime(Math.max(0, vol), actx.currentTime, fade);
+    src.connect(g).connect(dest);
+    src.start();
+    loops.set(key, { src, gain: g });
+  } else {
+    if (!existing) return;
+    loops.delete(key);
+    existing.gain.gain.setTargetAtTime(0, actx.currentTime, fade);
+    // stop well after the fade settles; a re-`on` makes a fresh source so there's no mix-up.
+    try {
+      existing.src.stop(actx.currentTime + fade * 6);
+    } catch {
+      /* already stopped */
+    }
+    existing.src.onended = () => existing.src.disconnect();
+  }
+}
+
+/** Stop every looping sample immediately-ish (fade out). Used at game over / title. */
+export function stopAllLoops(): void {
+  for (const key of [...loops.keys()]) setLoop(key, false);
 }
