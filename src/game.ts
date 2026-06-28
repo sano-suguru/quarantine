@@ -19,7 +19,7 @@ import { flashlightIntensity } from "./systems/flashlight";
 import { sysFx } from "./systems/fx";
 import { sysPickups } from "./systems/pickups";
 import { effectiveSearchTime, sysPlayer } from "./systems/player";
-import { startDay, startNight, sysSiege } from "./systems/siege";
+import { ambientForClock, startDay, startNight, sysSiege } from "./systems/siege";
 import type { Player, State } from "./types";
 import { el, hide, renderList, show } from "./ui";
 
@@ -304,7 +304,7 @@ function spawnDart(lp: Player): void {
  *  from state.time (which advances on host & client) since draw() has no dt of its own. */
 function drawAtmosphere(R: typeof Renderer, lp: Player, ddt: number): void {
   const flc = CONFIG.flashlight;
-  const ambient = state.phase === "day" ? CONFIG.siege.dayAmbient : CONFIG.siege.nightAmbient;
+  const ambient = ambientForClock(state.phase, state.phaseT, state.day);
   const lit = lp.lightOn && lp.battery > 0 && ambient < 0.2; // only meaningful in the dark
   if (lit) {
     // dust motes: faint additive specks drifting in the beam
@@ -379,7 +379,7 @@ export function draw(): void {
   const camY = c.y + (Math.random() * 2 - 1) * sh;
   // daylight floods the arena; night sinks to near-black (flashlight essential)
   const flc = CONFIG.flashlight;
-  const ambient = state.phase === "day" ? CONFIG.siege.dayAmbient : CONFIG.siege.nightAmbient;
+  const ambient = ambientForClock(state.phase, state.phaseT, state.day);
   R.setLightParams(
     Math.cos(flc.halfAngle),
     flc.range,
