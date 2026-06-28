@@ -720,17 +720,27 @@ function drawDeployables(R: typeof Renderer): void {
     const [r, g, b] = def.color;
     const visual = def.visual ?? (def.movement ? "drone" : def.emitter ? "crate" : "turret");
     if (visual === "drone") {
-      // an airborne unit: a ground shadow stays put while the body bobs above it
+      // an airborne quad: a ground shadow stays put while the body bobs above it
       const by = d.y + Math.sin(state.time * 4 + d.x * 0.05) * 3;
       R.circle(d.x, d.y, 8, 0, 0, 0, 0.28); // shadow (no bob)
-      R.glow(d.x, by, 18, r, g, b, d.reloading ? 0.2 : 0.45); // scanner; dims while reloading
-      const rot = state.time * 9; // spinning rotor blades (ring() can't rotate)
-      R.tri(d.x, by, 7, rot, r, g, b, 0.5);
-      R.tri(d.x, by, 7, rot + 2.094, r, g, b, 0.5);
-      R.tri(d.x, by, 7, rot + 4.189, r, g, b, 0.5);
-      R.hex(d.x, by, 6, state.time * 2, r, g, b, 1);
-      R.ring(d.x, by, 9, r, g, b, 0.7);
-      R.rect(d.x + Math.cos(d.aim) * 10, by + Math.sin(d.aim) * 10, 12, 3, d.aim, r, g, b, 0.9);
+      R.glow(d.x, by, 18, r, g, b, d.reloading ? 0.2 : 0.45); // under-body scanner; dims on reload
+      // chassis: two arms crossing in an X (oriented to aim) + a small core
+      const arm = 11;
+      R.rect(d.x, by, arm * 2, 2.5, d.aim + Math.PI / 4, r, g, b, 0.85);
+      R.rect(d.x, by, arm * 2, 2.5, d.aim - Math.PI / 4, r, g, b, 0.85);
+      R.hex(d.x, by, 5, state.time * 1.5, r, g, b, 1); // core body
+      // four rotors at the arm tips; a fast-spinning tri reads as blade blur
+      const rot = state.time * 14;
+      for (const off of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4]) {
+        const rx = d.x + Math.cos(d.aim + off) * arm;
+        const ry = by + Math.sin(d.aim + off) * arm;
+        R.ring(rx, ry, 4, r, g, b, 0.7); // rotor housing
+        R.tri(rx, ry, 3.5, rot, r, g, b, 0.5); // blade blur
+      }
+      // forward camera eye; dims while reloading (reloading is snapshot-synced, targetId is not)
+      const ex = d.x + Math.cos(d.aim) * 9;
+      const ey = by + Math.sin(d.aim) * 9;
+      R.glow(ex, ey, 6, r, g, b, d.reloading ? 0.3 : 0.8);
       drawDeployableHp(R, d, d.x, by);
     } else if (visual === "crate") {
       // supply station: a glowing crate that pulses as it nears its next drop
