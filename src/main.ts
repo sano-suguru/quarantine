@@ -35,7 +35,7 @@ import { createClientLink, createHostLink, getTurnStatus, NETLOG } from "./net/t
 import { getSettings, setAimAssist } from "./settings";
 import { sysCamera } from "./systems/camera";
 import { sysFx } from "./systems/fx";
-import { el, hide, show } from "./ui";
+import { el, hide, isEditableTarget, show } from "./ui";
 
 // host lobby gate: host builds the world on "Host co-op" but the sim stays frozen
 // (no day countdown / no spawns) until the host presses Start — see wireCoop()/frame().
@@ -169,6 +169,9 @@ function main(): void {
   };
 
   addEventListener("keydown", (e) => {
+    // Typing into a text field (lobby room-code input, manual-SDP textareas) must not
+    // trigger game hotkeys — e.g. M would otherwise toggle mute mid-type.
+    if (isEditableTarget(e.target)) return;
     const state = getState();
     if (e.code === "KeyM") {
       Audio.toggleMute();
