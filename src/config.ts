@@ -46,6 +46,10 @@ export const CONFIG = {
   // speed is the only move speed now (sprint removed); the equipped weapon's moveMul scales it.
   // moveRampRate = how fast curMoveMul approaches the weapon's weight (per sec); switchRaise =
   // fire lockout after a weapon switch.
+  // sample-based SFX (engine/audioAssets.ts). sfxVolume balances generated samples against
+  // the procedural synth beds; maxSampleVoices caps simultaneous one-shots so a full horde
+  // (uncapped hit/kill fire) can't pile up BufferSources and clip.
+  audio: { sfxVolume: 0.8, maxSampleVoices: 12 },
   player: { radius: 16, speed: 200, maxHp: 100, moveRampRate: 1.5, switchRaise: 0.25 },
   cam: { lerp: 8, shakeDecay: 8 },
   feel: {
@@ -72,6 +76,10 @@ export const CONFIG = {
     groanCooldown: 4.0, // per-zombie min seconds between groans
     groanChance: 0.55, // probability a due lurker actually groans (keeps the cadence irregular)
     lurkThinAt: 6, // lurking count above which individual voices thin out (lean on tension)
+    // day is the explore/respite phase, so zombie voices are damped vs the night siege: groans
+    // sound less often (interval × dayVoiceMul) and quieter (× dayVoiceVol). Night is unchanged.
+    dayVoiceMul: 2.2, // groan-cadence interval multiplier during the day
+    dayVoiceVol: 0.55, // groan volume scale during the day
     // "something darts across the light": a fast shadow streak across the cone when unseen
     // threats crowd the dark. Visual only, drawn in draw() (no sim state → single-player safe).
     dartChancePerLurk: 0.05, // per-second dart probability contributed by each lurking zombie
