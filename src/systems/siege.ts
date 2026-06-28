@@ -1,12 +1,52 @@
 import { CONFIG } from "../config";
-import type { State } from "../types";
+import { clamp } from "../engine/math";
+import type { SiegePhase, State } from "../types";
 import { restockCaches } from "./caches";
 import { spawnZombie, startWave, sysWave } from "./wave";
 
 /**
- * Day/night siege loop. Day = a lit, timed scavenge/repair window with no spawns;
- * night = the dark horde (reuses the wave system) that must be cleared to reach dawn.
+ * Day/night siege loop. Day = a lit, timed scavenge/repair window with sparse roamers;
+ * night = the dark horde (continuous capped spawn) that ends on the dawn clock, not a wipe-out.
  */
+
+/** Seconds of night for a given day. Night is a timed hold; dawn comes by the clock. */
+export function nightDuration(day: number): number {
+  const s = CONFIG.siege;
+  return Math.min(s.nightDurationMax, s.nightDurationBase + (day - 1) * s.nightDurationPerDay);
+}
+
+/** Living-zombie cap during the night for a given day (day-scaled under a hard ceiling). */
+export function nightMaxZombies(day: number): number {
+  const s = CONFIG.siege;
+  return Math.min(s.nightCapMax, s.nightCapBase + (day - 1) * s.nightCapPerDay);
+}
+
+/** Ambient light as a function of the clock: flat by day/night, crossfading over dusk/dawn. */
+export function ambientForClock(phase: SiegePhase, phaseT: number, day: number): number {
+  const s = CONFIG.siege;
+  const lerp = (k: number): number => s.nightAmbient + (s.dayAmbient - s.nightAmbient) * k;
+  if (phase === "day") {
+    const window = s.dayDuration * s.duskFrac;
+    return phaseT < window ? lerp(phaseT / window) : s.dayAmbient; // sunset over the last duskFrac
+  }
+  const window = nightDuration(day) * s.dawnFrac;
+  return phaseT < window ? lerp(1 - phaseT / window) : s.nightAmbient; // predawn lift
+}
+
+/** 0 at the start of the current phase → 1 at its end. */
+export function clockFrac(phase: SiegePhase, phaseT: number, day: number): number {
+  const dur = phase === "day" ? CONFIG.siege.dayDuration : nightDuration(day);
+  return clamp(1 - phaseT / dur, 0, 1);
+}
+
+/** In-game time of day: day spans 06:00→18:00, night spans 18:00→06:00. */
+export function clockLabel(phase: SiegePhase, phaseT: number, day: number): string {
+  const startH = phase === "day" ? 6 : 18;
+  const t = startH + clockFrac(phase, phaseT, day) * 12; // hours into the 12h span
+  const hh = Math.floor(t) % 24;
+  const mm = Math.floor((t - Math.floor(t)) * 60);
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
 
 /** Begin the lit scavenge phase: restock caches and seed a few roaming zombies. */
 export function startDay(state: State): void {

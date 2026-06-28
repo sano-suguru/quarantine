@@ -159,6 +159,17 @@ export const CONFIG = {
     interactRadius: 70, // how close you must be to interact (repair / search)
     roamersPerDay: 5, // wandering zombies seeded across the map each day
     spawnRing: 680, // base radius (world units) of the off-screen night-spawn ring
+    // night is a timed hold, not a wipe-out: dawn arrives by the clock. Length ramps with the day.
+    nightDurationBase: 55, // seconds of night on day 1
+    nightDurationPerDay: 8, // each later day adds this many seconds of night
+    nightDurationMax: 150, // clamp so very late nights stay finite
+    // living-zombie cap during night: bounds perf/snapshot AND is the "cornered" wall. Day-scaled
+    // for a gentler intro, under a hard ceiling so the snapshot stays within ~16KB.
+    nightCapBase: 45, // cap on day 1
+    nightCapPerDay: 5, // each later day raises the cap by this much
+    nightCapMax: 90, // hard ceiling (perf / snapshot bound)
+    duskFrac: 0.25, // fraction of the day over which light crossfades down to night (sunset)
+    dawnFrac: 0.2, // fraction of the night over which light crossfades up to day (predawn)
   },
   cache: {
     searchTime: 1.5, // seconds of holding interact (and standing still) to loot (day)
