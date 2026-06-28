@@ -11,7 +11,7 @@ uniform vec2 u_personal; // shared: x: radius, y: max brightness of the dim pool
 uniform float u_emissive;  // darkness floor for this pass (0 normal, >0 additive)
 out vec4 frag;
 
-/* shape flags: 0 rect, 1 circle, 2 soft glow, 3 ring, 4 triangle, 5 hexagon */
+/* shape flags: 0 rect, 1 circle, 2 soft glow, 3 ring, 4 triangle, 5 hexagon, 6 slash */
 
 // how lit a world point is: ambient + the brightest of every player's pool/cone
 float lightAt(vec2 w){
@@ -90,6 +90,18 @@ void main(){
     frag = solid(sdTri(v_local));
   } else if(s == 5){
     frag = solid(sdHex(v_local, 0.46));
+  } else if(s == 6){
+    // slash: a crescent blade-arc = an outer disc with an offset disc carved out. The tips
+    // run along local y (tangent to the swing arc) and the convex leading edge bulges to +x;
+    // it glints brightest along that leading edge for a honed-steel read.
+    float outer = length(v_local) - 0.5;
+    float inner = length(v_local - vec2(-0.18, 0.0)) - 0.52;
+    float sd = max(outer, -inner);
+    float aa = fwidth(sd) + 1e-4;
+    float fill = smoothstep(aa, -aa, sd);
+    if(fill <= 0.0) discard;
+    float t = clamp((length(v_local) - 0.34) / 0.16, 0.0, 1.0); // 0 inner edge → 1 leading edge
+    frag = vec4(v_color.rgb * (0.85 + 0.6 * t), v_color.a * fill);
   } else {
     frag = v_color;
   }

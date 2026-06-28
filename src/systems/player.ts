@@ -223,6 +223,7 @@ function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
   const reach = (wd.meleeRange ?? 30) + p.r;
   const arc = wd.meleeArc ?? 0.9;
   const dead: number[] = [];
+  let connected = false;
   state.hash.query(p.x, p.y, reach + 40, (zi) => {
     const z = Z[zi];
     if (!z) return;
@@ -234,6 +235,7 @@ function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
     let da = Math.atan2(dy, dx) - p.aim;
     da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)));
     if (da > arc) return;
+    connected = true;
     z.hp -= wd.dmg * p.dmgMul;
     z.flash = 0.12;
     z.vx += (dx / d) * wd.knockback;
@@ -246,10 +248,17 @@ function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
   dead.sort((a, b) => b - a);
   for (const zi of dead) killZombie(state, zi);
 
-  // swing feel — same kick/shake channel as a gun, plus a whoosh (shake = local view only)
+  // swing feel — same kick/shake channel as a gun, plus a whoosh (shake = local view only).
+  // recoilX/Y is a render-only offset (drawPlayer), so a forward sign reads as a lunging
+  // stab without touching the collision position — a knife thrusts in, a gun kicks back.
   if (p.id === state.localId) state.cam.shake = Math.min(state.cam.shake + wd.recoil, 18);
-  p.recoilX -= Math.cos(p.aim) * wd.recoil * 0.6;
-  p.recoilY -= Math.sin(p.aim) * wd.recoil * 0.6;
+  p.recoilX += Math.cos(p.aim) * wd.recoil * 0.9;
+  p.recoilY += Math.sin(p.aim) * wd.recoil * 0.9;
+  // landing a hit punches a beat of hitstop (solo only — hitstopT slows the WHOLE sim, so in
+  // co-op it would freeze the shared host view on every teammate's swing; same guard as killZombie)
+  if (connected && state.players.length === 1) {
+    state.hitstopT = Math.max(state.hitstopT, CONFIG.feel.hitstop);
+  }
   p.muzzle = 0.1; // longer than a gun (0.05) so the slash arc is readable at the swing cadence
   Audio.melee();
 }

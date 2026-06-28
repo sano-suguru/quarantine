@@ -7,7 +7,7 @@ import instanceVert from "./shaders/instance.vert?raw";
 const FLOATS = 10;
 
 /** shape flags — must match instance.frag */
-export const SHAPE = { rect: 0, circle: 1, glow: 2, ring: 3, tri: 4, hex: 5 };
+export const SHAPE = { rect: 0, circle: 1, glow: 2, ring: 3, tri: 4, hex: 5, slash: 6 };
 
 let gl: WebGL2RenderingContext;
 let canvas: HTMLCanvasElement;
@@ -294,6 +294,20 @@ function glow(x: number, y: number, rad: number, r: number, g: number, b: number
   write(additive, x, y, rad * 2, rad * 2, 0, r, g, b, a, SHAPE.glow);
 }
 
+/** additive crescent slash-arc (melee swing) — `rot` points the convex leading edge */
+function slash(
+  x: number,
+  y: number,
+  rad: number,
+  rot: number,
+  r: number,
+  g: number,
+  b: number,
+  a = 1,
+): void {
+  write(additive, x, y, rad * 2, rad * 2, rot, r, g, b, a, SHAPE.slash);
+}
+
 /** generic additive instance (sparks, tracers) */
 function add(
   x: number,
@@ -432,6 +446,7 @@ export const Renderer = {
   tri,
   hex,
   glow,
+  slash,
   add,
   number,
   flush,
