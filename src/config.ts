@@ -58,6 +58,23 @@ export const CONFIG = {
     searchVolume: 0.7,
     loopFadeSec: 0.6,
   },
+  // blood decals: a pool is a cluster of layered blobs, not one flat disc. Center blobs are
+  // darker; satellites bias along the hit direction so it reads as a splatter, not a stamp.
+  fx: {
+    blood: {
+      maxDecals: 480, // a pool now costs several decals; raised so pools don't churn the FIFO
+      satellites: 4, // small blobs flung around each base blob
+      baseRadiusBig: [16, 26] as [number, number],
+      baseRadiusSmall: [8, 14] as [number, number],
+      satRadius: [3, 9] as [number, number],
+      satSpread: 22, // world-units satellites scatter from the base
+      splatterBias: 28, // extra world-units satellites travel along the hit dir (the tail)
+      centerColor: [0.16, 0.02, 0.03] as [number, number, number], // dark, near-clotted
+      edgeColor: [0.34, 0.04, 0.05] as [number, number, number], // brighter fresh red
+      life: [26, 40] as [number, number], // seconds before the decal fades out
+      maxAlpha: 0.6, // fresh-pool peak alpha (drawn fade is life/maxLife * maxAlpha)
+    },
+  },
   player: { radius: 16, speed: 200, maxHp: 100, moveRampRate: 1.5, switchRaise: 0.25 },
   cam: { lerp: 8, shakeDecay: 8 },
   feel: {
@@ -142,6 +159,17 @@ export const CONFIG = {
     interactRadius: 70, // how close you must be to interact (repair / search)
     roamersPerDay: 5, // wandering zombies seeded across the map each day
     spawnRing: 680, // base radius (world units) of the off-screen night-spawn ring
+    // night is a timed hold, not a wipe-out: dawn arrives by the clock. Length ramps with the day.
+    nightDurationBase: 55, // seconds of night on day 1
+    nightDurationPerDay: 8, // each later day adds this many seconds of night
+    nightDurationMax: 150, // clamp so very late nights stay finite
+    // living-zombie cap during night: bounds perf/snapshot AND is the "cornered" wall. Day-scaled
+    // for a gentler intro, under a hard ceiling so the snapshot stays within ~16KB.
+    nightCapBase: 45, // cap on day 1
+    nightCapPerDay: 5, // each later day raises the cap by this much
+    nightCapMax: 90, // hard ceiling (perf / snapshot bound)
+    duskFrac: 0.25, // fraction of the day over which light crossfades down to night (sunset)
+    dawnFrac: 0.2, // fraction of the night over which light crossfades up to day (predawn)
   },
   cache: {
     searchTime: 1.5, // seconds of holding interact (and standing still) to loot (day)

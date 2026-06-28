@@ -114,7 +114,6 @@ export interface Snapshot {
   /** shared run stat (kills drive wave count + SALVAGE); money/wlevel/muls are per-player now */
   kills: number;
   waveN: number;
-  waveQueue: number; // remaining queued spawns (count only — HUD uses it)
   players: SnapPlayer[];
   zombies: SnapZombie[];
   bullets: SnapBullet[];
@@ -147,7 +146,6 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
     phaseT: state.phaseT,
     kills: state.kills,
     waveN: state.wave.n,
-    waveQueue: state.wave.queue.length,
     players: state.players.map((p) => ({
       id: p.id,
       x: p.x,
@@ -277,7 +275,6 @@ export function applySnapshot(
   state.phaseT = snap.phaseT;
   state.kills = snap.kills;
   state.wave.n = snap.waveN;
-  state.wave.queue.length = snap.waveQueue; // length only (contents unused on client)
 
   // players: match by id, preserve the predicted local player if requested
   const byId = new Map(state.players.map((p) => [p.id, p]));
@@ -507,7 +504,6 @@ export function encode(snap: Snapshot): ArrayBuffer {
   w.f32(snap.phaseT);
   w.u32(snap.kills);
   w.u16(snap.waveN);
-  w.u16(snap.waveQueue);
 
   // players (few → keep float precision; pack lightOn into a flag byte). Per-player
   // economy (money/wlevel/muls) rides here too — individual wallets.
@@ -624,7 +620,6 @@ export function decode(buf: ArrayBuffer): Snapshot {
   const phaseT = r.f32();
   const kills = r.u32();
   const waveN = r.u16();
-  const waveQueue = r.u16();
 
   const players: SnapPlayer[] = [];
   const pc = r.u8();
@@ -780,7 +775,6 @@ export function decode(buf: ArrayBuffer): Snapshot {
     phaseT,
     kills,
     waveN,
-    waveQueue,
     players,
     zombies,
     bullets,

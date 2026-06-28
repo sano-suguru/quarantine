@@ -1,5 +1,6 @@
 import { CONFIG } from "../config";
 import { resolveDeployableCollisions } from "../data/deployables";
+import { phaseMods } from "../data/phaseMods";
 import { Audio } from "../engine/audio";
 import { circlePush, circlePushFromSegment } from "../engine/geometry";
 import { len, rand } from "../engine/math";
@@ -13,7 +14,7 @@ const LUNGE_DUR = 0.3; // seconds a runner's dash lasts
 export function sysAI(state: State, dt: number): void {
   const Z = state.zombies;
   const lp = localPlayer(state);
-  const night = state.phase === "night";
+  const mod = phaseMods(state.phase, state.day);
 
   state.hash.clear();
   for (let i = 0; i < Z.length; i++) {
@@ -56,8 +57,8 @@ export function sysAI(state: State, dt: number): void {
       dist = len(dx, dy) || 1;
       dx /= dist;
       dy /= dist;
-      // aggro latches on once sensed (or always at night) → guarantees night clears
-      if (night || dist <= z.sense) z.chasing = true;
+      // aggro latches on once sensed; night auto-aggros (mod.autoAggro), day needs line-of-sense
+      if (mod.autoAggro || dist <= z.sense * mod.senseMul) z.chasing = true;
     }
     const chasing = z.chasing && target !== null;
 
@@ -73,7 +74,7 @@ export function sysAI(state: State, dt: number): void {
       hy = dx * s + dy * c;
     } else {
       // wander: drift the heading slowly and amble in that direction
-      z.wanderDir += rand(-1, 1) * z.wander * 3 * dt;
+      z.wanderDir += rand(-1, 1) * z.wander * mod.wanderMul * 3 * dt;
       hx = Math.cos(z.wanderDir);
       hy = Math.sin(z.wanderDir);
     }
@@ -100,7 +101,7 @@ export function sysAI(state: State, dt: number): void {
     const vl = len(vx, vy) || 1;
 
     // lunge: runners periodically dash while chasing
-    if (chasing && z.lunge > 0) {
+    if (chasing && z.lunge > 0 && mod.lunge) {
       if (z.lungeT > 0) z.lungeT -= dt;
       else {
         z.lungeCd -= dt;
@@ -125,7 +126,7 @@ export function sysAI(state: State, dt: number): void {
         break;
       }
     }
-    const spd = z.speed * emerge * roamMul * lungeMul * (1 + lureMul);
+    const spd = z.speed * mod.speedMul * emerge * roamMul * lungeMul * (1 + lureMul);
     z.x += (vx / vl) * spd * dt + z.vx * dt;
     z.y += (vy / vl) * spd * dt + z.vy * dt;
     z.vx *= kbK;

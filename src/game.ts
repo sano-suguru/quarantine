@@ -19,7 +19,7 @@ import { flashlightIntensity } from "./systems/flashlight";
 import { sysFx } from "./systems/fx";
 import { sysPickups } from "./systems/pickups";
 import { effectiveSearchTime, sysPlayer } from "./systems/player";
-import { startDay, startNight, sysSiege } from "./systems/siege";
+import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "./systems/siege";
 import type { Player, State } from "./types";
 import { el, hide, renderList, show } from "./ui";
 
@@ -304,7 +304,7 @@ function spawnDart(lp: Player): void {
  *  from state.time (which advances on host & client) since draw() has no dt of its own. */
 function drawAtmosphere(R: typeof Renderer, lp: Player, ddt: number): void {
   const flc = CONFIG.flashlight;
-  const ambient = state.phase === "day" ? CONFIG.siege.dayAmbient : CONFIG.siege.nightAmbient;
+  const ambient = ambientForClock(state.phase, state.phaseT, state.day);
   const lit = lp.lightOn && lp.battery > 0 && ambient < 0.2; // only meaningful in the dark
   if (lit) {
     // dust motes: faint additive specks drifting in the beam
@@ -379,7 +379,7 @@ export function draw(): void {
   const camY = c.y + (Math.random() * 2 - 1) * sh;
   // daylight floods the arena; night sinks to near-black (flashlight essential)
   const flc = CONFIG.flashlight;
-  const ambient = state.phase === "day" ? CONFIG.siege.dayAmbient : CONFIG.siege.nightAmbient;
+  const ambient = ambientForClock(state.phase, state.phaseT, state.day);
   R.setLightParams(
     Math.cos(flc.halfAngle),
     flc.range,
@@ -406,7 +406,8 @@ export function draw(): void {
 
   // --- ground: blood decals ---
   for (const d of state.decals) {
-    const a = Math.min(0.5, (d.life / d.maxLife) * 0.5);
+    const cap = CONFIG.fx.blood.maxAlpha;
+    const a = Math.min(cap, (d.life / d.maxLife) * cap);
     R.circle(d.x, d.y, d.r, d.color[0], d.color[1], d.color[2], a);
   }
 
@@ -828,15 +829,14 @@ export function updateHUD(): void {
       .join(" · ")}`;
   }
 
-  // day/night phase
+  // day/night phase — an in-game clock; the dial fills toward dusk (day) / dawn (night)
   const phaseEl = el("phase");
-  if (state.phase === "day") {
-    phaseEl.textContent = `DAY ${state.day} · DUSK IN ${Math.ceil(state.phaseT)}s`;
-    phaseEl.classList.remove("night");
-  } else {
-    phaseEl.textContent = `NIGHT ${state.day}`;
-    phaseEl.classList.add("night");
-  }
+  const night = state.phase === "night";
+  phaseEl.textContent = `${night ? "NIGHT" : "DAY"} ${state.day} · ${clockLabel(state.phase, state.phaseT, state.day)}`;
+  phaseEl.classList.toggle("night", night);
+  const dial = el("clock-dial");
+  dial.classList.toggle("night", night);
+  dial.style.setProperty("--frac", String(clockFrac(state.phase, state.phaseT, state.day)));
 
   // contextual interact prompt (repair barricade / search cache)
   const ip = interactPrompt();
@@ -845,8 +845,8 @@ export function updateHUD(): void {
   promptEl.classList.toggle("show", ip !== null);
 
   el("money").textContent = String(p.money);
-  el("remaining").textContent =
-    state.phase === "night" ? String(state.zombies.length + state.wave.queue.length) : "—";
+  // live hostile count — meaningful in both phases now that night survivors carry into the day
+  el("remaining").textContent = String(state.zombies.length);
 
   // weapon slot highlight (slots are built per run from owned weapons)
   if (p.weapon !== lastWeapon) {
@@ -923,21 +923,6 @@ export function startGame(): void {
   buildWeaponSlots();
   startDay(state);
   announce("DAY", state.day);
-}
-
-/**
- * Bring the night early. On a client this is a request to the host (idempotent there);
- * on host/single it runs the authoritative transition directly.
- */
-export function startNightNow(): void {
-  if (Net.mode === "client") {
-    Net.client?.requestNight();
-    return;
-  }
-  if (!state.running || state.paused || state.phase !== "day") return;
-  startNight(state);
-  announce("NIGHT", state.day);
-  Audio.waveStart();
 }
 
 let shopItems: StoreItem[] = [];

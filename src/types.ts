@@ -355,20 +355,19 @@ export interface Deployable {
 /** Day = lit scavenge/repair window; night = the dark horde siege. */
 export type SiegePhase = "day" | "night";
 
-type WavePhase = "prep" | "active" | "cleared";
-
 export interface WaveDefinition {
-  spawn: string[];
+  /** composition weights sampled per spawn pulse */
+  weights: { type: string; w: number }[];
+  /** zombies spawned per pulse */
+  batch: number;
+  /** seconds between pulses */
+  interval: number;
   hpScale: number;
   spdScale: number;
-  interval: number;
 }
 
 interface Wave {
   n: number;
-  phase: WavePhase;
-  t: number;
-  queue: string[];
   def: WaveDefinition | null;
   spawnT: number;
 }
