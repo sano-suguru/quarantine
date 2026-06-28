@@ -40,12 +40,19 @@ bun run format         # biome format --write src index.html
 
 ## Quality gates
 
-Enforced locally via **Lefthook** git hooks (config in `lefthook.yml`; installed by `bun install` through the `prepare` script, or manually with `bunx lefthook install`):
+Enforced **locally** via **Lefthook** git hooks (config in `lefthook.yml`; installed by `bun install` through the `prepare` script, or manually with `bunx lefthook install`), and **remotely** via **GitHub Actions CI**.
+
+Local hooks (fast feedback):
 
 - **pre-commit** — `biome check --write` on staged files. Safe fixes are auto-applied and re-staged; an unfixable lint error blocks the commit.
 - **pre-push** — `bun run typecheck` + `bun run test`. A type error or failing test blocks the push.
 
-There is no CI yet (deferred until a remote exists). To bypass a hook in an emergency: `git commit --no-verify` (avoid).
+CI (`.github/workflows/ci.yml`, runs on PRs and on push to `main`) is the merge gate — two required status checks protect `main`:
+
+- **check** — `bun install --frozen-lockfile`, then `typecheck` + `lint` + `coverage` + `build`. `knip` (dead-code) also runs but is informational (`continue-on-error`), since data tables add exports that knip transiently flags.
+- **signaling** — type-checks `signaling/` (its own package.json, excluded from the root tsc/biome/build) with the root-pinned `tsc`.
+
+A PR can't merge until both checks pass (`gh pr merge --auto` queues it to merge when they're green). To bypass a local hook in an emergency: `git commit --no-verify` (avoid) — CI still gates the merge.
 
 ## Architecture
 
