@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **Data-driven, zero special-case debt.** New behavior rides `CONFIG`/`src/data/*` and existing system seams — never bolt-on branches (CLAUDE.md).
-- **Feel-first, playtest-verified.** Feel changes (#2/#3/#4) are NOT done until played and felt, not just compiled. State playtest results honestly.
+- **Feel-first, playtest-verified.** Feel changes (#2/#3/#4) are NOT done until played and felt. **Playtest cadence (per user): playtests are DEFERRED to the end, not run per task.** During implementation, each task stops at its automated gate (typecheck/lint/test/build) + commit. **Skip every per-task "Playtest (feel gate)" step** — those observations are collected and performed once in the final consolidated playtest (Task 11). Nothing is declared "done"/"working" on feel grounds until Task 11 passes.
 - **Tests cover pure/deterministic code only.** Unit-test pure helpers (`waveDef`, new clock/ambient/phase-mod helpers); do NOT fabricate unit tests for systems/renderer/AI/fx — those are playtest-gated. Co-locate tests as `*.test.ts`.
 - **Single-player must stay behavior-correct; co-op is host-authoritative.** Systems never import net code.
 - **Gates:** `bun run typecheck`, `bun run lint`, `bun run test`, `bun run build` must pass. Co-op wire changes require bumping `PROTOCOL_VERSION` (`src/net/net.ts`).
@@ -1135,21 +1135,41 @@ git commit -m "feat(siege): remove manual \"summon night\" — cycle is fully cl
 
 ---
 
-## Task 10: Co-op smoke test
+## Task 10: Consolidated final playtest (the deferred feel gate)
 
-**Files:** none (verification only).
+**Files:** none (verification + tuning only). This is the single playtest pass for the whole redesign. Tune `CONFIG.siege.*`, `CONFIG.fx.blood`, and `src/data/phaseMods.ts` as needed and re-observe; commit any tuning changes separately.
 
-- [ ] **Step 1: Two-client co-op smoke test (feel gate)**
-
-Run `bun run dev:coop` (one-time: `cd signaling && bun install`). Host a room in one browser, join from a second (two tabs/windows). Confirm: the clock and dial are in sync on the client; day→night→dawn transitions fire for both without anyone pressing Enter; blood, day/night ferocity, and the timed dawn all behave as in single-player; no console errors about protocol mismatch (both are version 8). **State the result honestly.**
-
-- [ ] **Step 2: Final full gate**
+- [ ] **Step 1: Final automated gate**
 
 Run:
 ```bash
 bun run typecheck && bun run lint && bun run test && bun run build
 ```
-Expected: all pass. No commit (verification only).
+Expected: all pass.
+
+- [ ] **Step 2: Single-player feel pass**
+
+`bun run dev`, play through at least day 1 → night 1 → dawn → day 2, and confirm each:
+- **#1 wording** — title "Enter the Quarantine", shop "Face the Day", HUD "Fortify [Q]"; no stray "Deploy".
+- **#3 day** — zombies are visibly slow, short-sighted, drifting; you can out-walk and slip past them while looting.
+- **#4 dusk** — the day clock advances (HUD time + dial), light crossfades into dusk, and night begins automatically with **no Enter** (Enter does nothing now).
+- **#3 night** — clearly ferocious: faster, wider sense, runners lunge, aggro latches on.
+- **#4 night/dawn** — spawns keep coming and the crowd grows toward the cap; kiting collapses (you get cornered); **dawn arrives on the clock** even with zombies alive; sunrise sweeps the horde and the shop opens clean.
+- **#4 ambient** — predawn light lift reads on screen before the shop.
+- **#2 blood** — pools are layered clusters with a directional splatter on bullet impacts (not flat discs); darker centers / brighter edges; no glowing-light-source look under the night flashlight.
+
+State the result honestly; tune and re-observe if any item is off.
+
+- [ ] **Step 3: Two-client co-op smoke test**
+
+Run `bun run dev:coop` (one-time: `cd signaling && bun install`). Host a room in one browser, join from a second. Confirm: clock + dial in sync on the client; day→night→dawn fire for both with no Enter; blood/ferocity/timed-dawn match single-player; no protocol-mismatch errors in the console (both version 8).
+
+- [ ] **Step 4: Commit any tuning changes**
+
+```bash
+git add -A && git commit -m "tune(siege): playtest tuning pass for the cycle/feel redesign"
+```
+(Skip if no tuning was needed.)
 
 ---
 
