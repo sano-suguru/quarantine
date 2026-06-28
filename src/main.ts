@@ -15,7 +15,6 @@ import {
   shopDeploy,
   shopMove,
   startGame,
-  startNightNow,
   syncShopUI,
   togglePause,
   toTitle,
@@ -241,7 +240,6 @@ function main(): void {
         togglePause();
       }
     }
-    if (e.code === "Enter" && state.running) startNightNow();
   });
 
   const step = 1 / CONFIG.simHz;

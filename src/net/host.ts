@@ -1,7 +1,7 @@
 import { CONFIG } from "../config";
 import { HOME_SPAWN } from "../data/map";
 import { addPlayer, removePlayer } from "../engine/players";
-import { applyBuy, applyPlace, getState, shopDeploy, startNightNow } from "../game";
+import { applyBuy, applyPlace, getState, shopDeploy } from "../game";
 import { type NetMsg, PROTOCOL_VERSION } from "./net";
 import { encodeSnapshot } from "./snapshot";
 import type { PeerLink } from "./transport";
@@ -102,8 +102,6 @@ export class Host {
         ); // host drops the requester's queued deployable at their feet (validated, idempotent-safe)
       } else if (msg.t === "deploy") {
         shopDeploy(); // idempotent (no-op unless the shop is open)
-      } else if (msg.t === "nightStart") {
-        startNightNow(); // idempotent (no-op unless we're in the day phase)
       } else if (msg.t === "ping") {
         link.sendRel({ t: "pong", id: msg.id }); // RTT probe echo (see client netStats)
       }

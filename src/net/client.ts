@@ -248,9 +248,6 @@ export class Client {
   requestDeploy(): void {
     this.link.sendRel({ t: "deploy" });
   }
-  requestNight(): void {
-    this.link.sendRel({ t: "nightStart" });
-  }
 
   /**
    * Net diagnostics for the ?netlog HUD. RTT (rel ping/pong EWMA), snapshot interval + jitter,

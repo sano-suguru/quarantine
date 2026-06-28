@@ -19,14 +19,7 @@ import { flashlightIntensity } from "./systems/flashlight";
 import { sysFx } from "./systems/fx";
 import { sysPickups } from "./systems/pickups";
 import { effectiveSearchTime, sysPlayer } from "./systems/player";
-import {
-  ambientForClock,
-  clockFrac,
-  clockLabel,
-  startDay,
-  startNight,
-  sysSiege,
-} from "./systems/siege";
+import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "./systems/siege";
 import type { Player, State } from "./types";
 import { el, hide, renderList, show } from "./ui";
 
@@ -930,21 +923,6 @@ export function startGame(): void {
   buildWeaponSlots();
   startDay(state);
   announce("DAY", state.day);
-}
-
-/**
- * Bring the night early. On a client this is a request to the host (idempotent there);
- * on host/single it runs the authoritative transition directly.
- */
-export function startNightNow(): void {
-  if (Net.mode === "client") {
-    Net.client?.requestNight();
-    return;
-  }
-  if (!state.running || state.paused || state.phase !== "day") return;
-  startNight(state);
-  announce("NIGHT", state.day);
-  Audio.waveStart();
 }
 
 let shopItems: StoreItem[] = [];
