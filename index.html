@@ -104,6 +104,11 @@
   #phase{font-size:13px;letter-spacing:.34em;color:var(--amber);text-transform:uppercase;
     text-shadow:0 0 14px rgba(255,179,71,.45);margin-bottom:3px;}
   #phase.night{color:var(--blood);text-shadow:0 0 16px rgba(255,77,77,.55);}
+  /* day/night dial: a ring that fills toward dusk (day) / dawn (night) via the --frac var */
+  #clock-dial{width:30px;height:30px;border-radius:50%;margin:2px auto 0;
+    background:conic-gradient(var(--amber) calc(var(--frac,0) * 360deg), rgba(255,255,255,.08) 0);
+    box-shadow:inset 0 0 0 2px rgba(0,0,0,.55);transition:background .25s linear;}
+  #clock-dial.night{background:conic-gradient(var(--blood) calc(var(--frac,0) * 360deg), rgba(255,255,255,.06) 0);}
   #prompt{font-size:11px;letter-spacing:.18em;color:var(--toxic);text-transform:uppercase;
     margin-top:5px;opacity:0;transition:opacity .15s;}
   #prompt.show{opacity:1;animation:promptpulse 1.1s ease-in-out infinite;}
@@ -367,7 +372,8 @@
       <div class="weapons" id="weapons-row"></div>
     </div>
     <div style="text-align:center">
-      <div id="phase">DAY 1</div>
+      <div id="phase">DAY 1 &middot; 06:00</div>
+      <div id="clock-dial" aria-hidden="true"></div>
       <div id="wavetag">&mdash; hostiles: <span id="remaining">0</span> &mdash;</div>
       <div id="prompt">[E] repair barricade</div>
     </div>

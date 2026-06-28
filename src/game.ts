@@ -19,7 +19,14 @@ import { flashlightIntensity } from "./systems/flashlight";
 import { sysFx } from "./systems/fx";
 import { sysPickups } from "./systems/pickups";
 import { effectiveSearchTime, sysPlayer } from "./systems/player";
-import { ambientForClock, startDay, startNight, sysSiege } from "./systems/siege";
+import {
+  ambientForClock,
+  clockFrac,
+  clockLabel,
+  startDay,
+  startNight,
+  sysSiege,
+} from "./systems/siege";
 import type { Player, State } from "./types";
 import { el, hide, renderList, show } from "./ui";
 
@@ -829,15 +836,14 @@ export function updateHUD(): void {
       .join(" · ")}`;
   }
 
-  // day/night phase
+  // day/night phase — an in-game clock; the dial fills toward dusk (day) / dawn (night)
   const phaseEl = el("phase");
-  if (state.phase === "day") {
-    phaseEl.textContent = `DAY ${state.day} · DUSK IN ${Math.ceil(state.phaseT)}s`;
-    phaseEl.classList.remove("night");
-  } else {
-    phaseEl.textContent = `NIGHT ${state.day}`;
-    phaseEl.classList.add("night");
-  }
+  const night = state.phase === "night";
+  phaseEl.textContent = `${night ? "NIGHT" : "DAY"} ${state.day} · ${clockLabel(state.phase, state.phaseT, state.day)}`;
+  phaseEl.classList.toggle("night", night);
+  const dial = el("clock-dial");
+  dial.classList.toggle("night", night);
+  dial.style.setProperty("--frac", String(clockFrac(state.phase, state.phaseT, state.day)));
 
   // contextual interact prompt (repair barricade / search cache)
   const ip = interactPrompt();
