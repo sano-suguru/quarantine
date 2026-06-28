@@ -1,5 +1,5 @@
 import { CONFIG } from "../config";
-import { effWeapon } from "../data/arsenal";
+import { effWeapon, meleeArc, meleeReach } from "../data/arsenal";
 import { resolveDeployableCollisions } from "../data/deployables";
 import { WEAPON_ORDER } from "../data/weapons";
 import { Audio } from "../engine/audio";
@@ -44,7 +44,8 @@ export function integrateMovement(
 import { ammoTransfer } from "./ammo";
 import { killZombie } from "./bullets";
 import { lootCache } from "./caches";
-import { fxDamageText, fxImpact, fxMuzzle } from "./fx";
+import { applyFireFeel, decayFeelTimers } from "./feel";
+import { fxDamageText, fxImpact } from "./fx";
 
 /** Seconds of standing-still searching needed to loot a cache. Night searches take longer
  *  (CONFIG.cache.nightSearchMul) — the extra exposure is the risk of looting during the horde. */
@@ -173,13 +174,7 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   inp.weaponSlot = null;
 
   // decay feel timers (visual offsets / cooldowns)
-  const rk = Math.exp(-CONFIG.feel.recoilDecay * dt);
-  p.recoilX *= rk;
-  p.recoilY *= rk;
-  if (p.hitFlash > 0) p.hitFlash -= dt;
-  if (p.iframe > 0) p.iframe -= dt;
-  if (p.muzzle > 0) p.muzzle -= dt;
-  if (p.dryT > 0) p.dryT -= dt;
+  decayFeelTimers(p, dt);
 }
 
 function fireWeapon(state: State, p: Player, wd: WeaponDef): void {
@@ -207,21 +202,15 @@ function fireWeapon(state: State, p: Player, wd: WeaponDef): void {
       color: wd.color,
     });
   }
-  // recoil: shove the player back (per-player visual) + kick the camera (local view only,
-  // so a teammate's gunfire doesn't shake the host's screen)
-  if (p.id === state.localId) state.cam.shake = Math.min(state.cam.shake + wd.recoil, 18);
-  p.recoilX -= Math.cos(p.aim) * wd.recoil * 0.9;
-  p.recoilY -= Math.sin(p.aim) * wd.recoil * 0.9;
-  fxMuzzle(state, tipX, tipY, p.aim, wd.color);
-  p.muzzle = 0.05;
-  Audio.shot(p.weapon);
+  // recoil kick, muzzle flash, shake + shot audio — shared with the client's fire predictor
+  applyFireFeel(state, p, wd);
 }
 
 /** A short melee arc: damage every zombie inside the cone in front of the player. */
 function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
   const Z = state.zombies;
-  const reach = (wd.meleeRange ?? 30) + p.r;
-  const arc = wd.meleeArc ?? 0.9;
+  const reach = meleeReach(wd, p.r);
+  const arc = meleeArc(wd);
   const dead: number[] = [];
   let connected = false;
   state.hash.query(p.x, p.y, reach + 40, (zi) => {
@@ -248,19 +237,13 @@ function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
   dead.sort((a, b) => b - a);
   for (const zi of dead) killZombie(state, zi);
 
-  // swing feel — same kick/shake channel as a gun, plus a whoosh (shake = local view only).
-  // recoilX/Y is a render-only offset (drawPlayer), so a forward sign reads as a lunging
-  // stab without touching the collision position — a knife thrusts in, a gun kicks back.
-  if (p.id === state.localId) state.cam.shake = Math.min(state.cam.shake + wd.recoil, 18);
-  p.recoilX += Math.cos(p.aim) * wd.recoil * 0.9;
-  p.recoilY += Math.sin(p.aim) * wd.recoil * 0.9;
   // landing a hit punches a beat of hitstop (solo only — hitstopT slows the WHOLE sim, so in
   // co-op it would freeze the shared host view on every teammate's swing; same guard as killZombie)
   if (connected && state.players.length === 1) {
     state.hitstopT = Math.max(state.hitstopT, CONFIG.feel.hitstop);
   }
-  p.muzzle = 0.1; // longer than a gun (0.05) so the slash arc is readable at the swing cadence
-  Audio.melee();
+  // swing feel — forward-lunge recoil, muzzle timer, shake + whoosh; shared with the client predictor
+  applyFireFeel(state, p, wd);
 }
 
 /**

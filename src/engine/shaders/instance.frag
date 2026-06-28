@@ -94,13 +94,19 @@ void main(){
     // slash: a crescent blade-arc = an outer disc with an offset disc carved out. The tips
     // run along local y (tangent to the swing arc) and the convex leading edge bulges to +x;
     // it glints brightest along that leading edge for a honed-steel read.
-    float outer = length(v_local) - 0.5;
-    float inner = length(v_local - vec2(-0.18, 0.0)) - 0.52;
+    const float OUTER_R = 0.5;             // outer disc radius
+    const float CARVE_OFF = 0.18;          // carve disc pushed toward -x by this much
+    const float CARVE_R = 0.52;            // carve disc radius
+    float outer = length(v_local) - OUTER_R;
+    float inner = length(v_local - vec2(-CARVE_OFF, 0.0)) - CARVE_R;
     float sd = max(outer, -inner);
     float aa = fwidth(sd) + 1e-4;
     float fill = smoothstep(aa, -aa, sd);
     if(fill <= 0.0) discard;
-    float t = clamp((length(v_local) - 0.34) / 0.16, 0.0, 1.0); // 0 inner edge → 1 leading edge
+    // glint band tracks the actual fill along +x: inner edge = CARVE_R - CARVE_OFF, lead edge = OUTER_R,
+    // so it stays locked to the crescent geometry if the disc radii above are retuned.
+    float fillInner = CARVE_R - CARVE_OFF; // where the carve's +x rim cuts the fill
+    float t = clamp((length(v_local) - fillInner) / (OUTER_R - fillInner), 0.0, 1.0); // 0 inner → 1 lead
     frag = vec4(v_color.rgb * (0.85 + 0.6 * t), v_color.a * fill);
   } else {
     frag = v_color;

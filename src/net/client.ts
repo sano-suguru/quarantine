@@ -5,7 +5,8 @@ import { Audio } from "../engine/audio";
 import { approach, rand } from "../engine/math";
 import { localPlayer } from "../engine/players";
 import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
-import { fxHurt, fxImpact, fxKill, fxMuzzle } from "../systems/fx";
+import { applyFireFeel } from "../systems/feel";
+import { fxHurt, fxImpact, fxKill } from "../systems/fx";
 import { integrateMovement } from "../systems/player";
 import type { Bullet } from "../types";
 import { advanceGhosts } from "./ghost";
@@ -45,6 +46,12 @@ export class Client {
   // the actual bullet + damage stay host-authoritative (arrives via snapshot).
   private fireCdLocal = 0;
   private firedThisHoldLocal = false;
+  // local-player FEEL is predicted too (like position): we own recoil/muzzle frame-to-frame and
+  // re-impose them over each snapshot, so our own swing/kick stays smooth instead of stuttering
+  // at snapshot rate and never pops against the authoritative value.
+  private predRecoilX = 0;
+  private predRecoilY = 0;
+  private predMuzzle = 0;
   // visual-only predicted tracers (negative id) so the shot's bullet line shows instantly
   // instead of ~interpDelay late; the real bullet/damage stay host-authoritative.
   private ghosts: Bullet[] = [];
@@ -301,6 +308,9 @@ export class Client {
     if (!this.predInit || (prevMe && prevMe.hp <= 0 && me.hp > 0)) {
       this.predX = me.x;
       this.predY = me.y;
+      this.predRecoilX = 0;
+      this.predRecoilY = 0;
+      this.predMuzzle = 0;
       this.predInit = true;
       return;
     }
@@ -382,6 +392,15 @@ export class Client {
       lp.x = this.predX;
       lp.y = this.predY;
       if (inp) lp.aim = inp.aim;
+      // feel is predicted like position: decay our owned recoil/muzzle at frame rate, then impose
+      // over the snapshot value (applySnapshot just clobbered them with the host's slice).
+      const recoilRk = Math.exp(-CONFIG.feel.recoilDecay * cdt);
+      this.predRecoilX *= recoilRk;
+      this.predRecoilY *= recoilRk;
+      if (this.predMuzzle > 0) this.predMuzzle -= cdt;
+      lp.recoilX = this.predRecoilX;
+      lp.recoilY = this.predRecoilY;
+      lp.muzzle = Math.max(0, this.predMuzzle);
     }
 
     // advance existing ghost tracers (always, so they self-expire even while host-paused)
@@ -404,16 +423,14 @@ export class Client {
       ) {
         const tipX = lp.x + Math.cos(lp.aim) * lp.r;
         const tipY = lp.y + Math.sin(lp.aim) * lp.r;
-        // melee's swing visual is the cold-steel arc drawn in drawPlayer (off the synced
-        // muzzle/aim/weapon); only guns get the warm muzzle-flash sparks here
-        if (!wd.melee) fxMuzzle(st, tipX, tipY, lp.aim, wd.color);
-        lp.muzzle = wd.melee ? 0.1 : 0.05;
-        const rk = wd.recoil * (wd.melee ? 0.6 : 0.9);
-        lp.recoilX -= Math.cos(lp.aim) * rk;
-        lp.recoilY -= Math.sin(lp.aim) * rk;
-        st.cam.shake = Math.min(st.cam.shake + wd.recoil, 18);
-        if (wd.melee) Audio.melee();
-        else Audio.shot(lp.weapon);
+        // shared fire-feel (recoil/muzzle/shake/audio + the gun's muzzle sparks) — the exact code
+        // the host runs, so our predicted melee lunge / gun kick can never drift from authority.
+        // The slash visual itself is the crescent drawn in drawPlayer off the predicted muzzle.
+        applyFireFeel(st, lp, wd);
+        // take ownership of the resulting feel so the per-frame re-impose keeps it smooth
+        this.predRecoilX = lp.recoilX;
+        this.predRecoilY = lp.recoilY;
+        this.predMuzzle = lp.muzzle;
         // ghost tracers: visual-only, one per pellet, local spread (desync-harmless)
         if (!wd.melee) {
           for (let i = 0; i < wd.pellets; i++) {

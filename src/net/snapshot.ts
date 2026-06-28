@@ -3,6 +3,7 @@ import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { ENEMY_TYPES } from "../data/enemies";
 import { PICKUP_TYPES } from "../data/pickups";
 import { WEAPON_ORDER } from "../data/weapons";
+import { lerp } from "../engine/math";
 import { makePlayer } from "../engine/players";
 import type { Bullet, Deployable, Pickup, SiegePhase, State, Zombie } from "../types";
 
@@ -792,7 +793,6 @@ export function encodeSnapshot(state: State, tick: number, isFull = true): Array
 
 /* ------------------------------ interpolation ------------------------------- */
 
-const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 function lerpAngle(a: number, b: number, t: number): number {
   let d = ((b - a + Math.PI) % TAU) - Math.PI;
   if (d < -Math.PI) d += TAU;

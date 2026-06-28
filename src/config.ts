@@ -61,6 +61,7 @@ export const CONFIG = {
   // blood decals: a pool is a cluster of layered blobs, not one flat disc. Center blobs are
   // darker; satellites bias along the hit direction so it reads as a splatter, not a stamp.
   fx: {
+    maxParticles: 2400, // hard cap on live particles; spawn() drops silently past this
     blood: {
       maxDecals: 480, // a pool now costs several decals; raised so pools don't churn the FIFO
       satellites: 4, // small blobs flung around each base blob
@@ -84,6 +85,12 @@ export const CONFIG = {
     recoilDecay: 16, // exp decay of player recoil offset
     flashDecay: 7, // exp decay of full-screen damage flash
     hurtIframe: 0.12, // contact-damage cooldown floor (panic-proof)
+    shakeMax: 18, // ceiling on cam.shake (one camera = one cap, for fire/melee/kill alike)
+    recoilKick: 0.9, // recoil-offset multiplier (gun kicks back, melee lunges forward)
+    muzzleGun: 0.05, // muzzle-flash timer for a gunshot
+    muzzleMelee: 0.1, // longer than a gun so the slash arc reads at the swing cadence
+    meleeArcDefault: 0.9, // fallback half-angle of the melee cone when a weapon omits meleeArc
+    meleeRangeDefault: 30, // fallback melee reach (added to player radius) when omitted
   },
   horror: {
     lowHp: 0.35, // hp fraction that triggers dread (heartbeat/vignette)

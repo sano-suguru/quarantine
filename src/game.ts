@@ -1,5 +1,12 @@
 import { CONFIG } from "./config";
-import { effWeapon, type StoreItem, salvageEarned, storeItems } from "./data/arsenal";
+import {
+  effWeapon,
+  meleeArc,
+  meleeReach,
+  type StoreItem,
+  salvageEarned,
+  storeItems,
+} from "./data/arsenal";
 import { DEPLOYABLE_TYPES, deployableCount, placeDeployable, placeSpot } from "./data/deployables";
 import { PICKUP_TYPES } from "./data/pickups";
 import { PLAYER_COLORS } from "./data/players";
@@ -598,8 +605,8 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
       // rate, so the sweep is a touch steppier there — the same limitation the old fade had;
       // solo and your own swing are smooth at frame rate.)
       const k = Math.min(1, pl.muzzle / 0.1); // 1 at swing start → 0 at the end
-      const reach = (wd.meleeRange ?? 30) + pl.r;
-      const arc = wd.meleeArc ?? 0.95;
+      const reach = meleeReach(wd, pl.r);
+      const arc = meleeArc(wd);
       const [cr, cg, cb] = wd.color;
       // the blade's leading edge travels from one rim of the cone to the other; its tips run
       // tangent to the arc, so as `sweep` rotates the crescent carves across the cone
