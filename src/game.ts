@@ -751,13 +751,30 @@ function drawDeployables(R: typeof Renderer): void {
       R.ring(d.x, d.y, 12, r, g, b, 0.7);
       drawDeployableHp(R, d, d.x, d.y);
     } else {
-      // turret: base + a barrel that tracks its target; glow dims while reloading
+      // turret: tripod base + rotating housing + twin barrels that track the target
       R.glow(d.x, d.y, 26, r, g, b, d.reloading ? 0.2 : 0.4);
-      R.circle(d.x, d.y, 11, 0.2, 0.22, 0.24, 1);
-      R.ring(d.x, d.y, 11, r, g, b, 0.8);
+      // tripod: three static splayed struts under the base
+      for (const leg of [
+        Math.PI / 2,
+        Math.PI / 2 + (2 * Math.PI) / 3,
+        Math.PI / 2 + (4 * Math.PI) / 3,
+      ]) {
+        R.rect(d.x + Math.cos(leg) * 9, d.y + Math.sin(leg) * 9, 10, 3.5, leg, 0.28, 0.3, 0.32, 1);
+      }
+      R.circle(d.x, d.y, 12, 0.18, 0.2, 0.22, 1); // base plate (matches collider radius)
+      R.ring(d.x, d.y, 12, r, g, b, 0.8);
+      R.hex(d.x, d.y, 7, d.aim, r, g, b, 1); // rotating housing
+      // twin barrels along aim, offset perpendicular so it reads as a gun not a stick
+      const px = Math.cos(d.aim + Math.PI / 2);
+      const py = Math.sin(d.aim + Math.PI / 2);
       const bx = d.x + Math.cos(d.aim) * 14;
-      const by = d.y + Math.sin(d.aim) * 14;
-      R.rect(bx, by, 20, 5, d.aim, r, g, b, 1);
+      const byy = d.y + Math.sin(d.aim) * 14;
+      R.rect(bx + px * 3, byy + py * 3, 20, 3.5, d.aim, r, g, b, 1);
+      R.rect(bx - px * 3, byy - py * 3, 20, 3.5, d.aim, r, g, b, 1);
+      // muzzle glow at the barrel tips; dims while reloading
+      const mx = d.x + Math.cos(d.aim) * 24;
+      const my = d.y + Math.sin(d.aim) * 24;
+      R.glow(mx, my, d.reloading ? 4 : 7, r, g, b, d.reloading ? 0.2 : 0.5);
       drawDeployableHp(R, d, d.x, d.y);
     }
   }
