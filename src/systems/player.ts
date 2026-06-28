@@ -46,6 +46,14 @@ import { killZombie } from "./bullets";
 import { lootCache } from "./caches";
 import { fxDamageText, fxImpact, fxMuzzle } from "./fx";
 
+/** Seconds of standing-still searching needed to loot a cache. Night searches take longer
+ *  (CONFIG.cache.nightSearchMul) — the extra exposure is the risk of looting during the horde. */
+export function effectiveSearchTime(phase: State["phase"]): number {
+  return phase === "night"
+    ? CONFIG.cache.searchTime * CONFIG.cache.nightSearchMul
+    : CONFIG.cache.searchTime;
+}
+
 export function sysPlayer(state: State, dt: number): void {
   // caches a player is actively searching this tick (co-op: more than one player can
   // search, and a cache only loses progress when NOBODY is on it — see reset below)
@@ -59,6 +67,7 @@ export function sysPlayer(state: State, dt: number): void {
 
 function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>): void {
   const inp = p.input;
+  p.searching = false; // re-derived each tick; interact() sets it true while night-searching
 
   // F = toggle the flashlight (off = no drain, near-blind). Edge, consumed below.
   if (inp.lightToggle) {
@@ -292,17 +301,16 @@ function interact(
     }
   }
 
-  // nearest unsearched cache (search target, auto, day only)
+  // nearest unsearched cache (search target, auto). Searchable day AND night — at night it's
+  // slower and the rummaging lures the horde (see below), but no longer silently disabled.
   let cache: (typeof state.caches)[number] | null = null;
   let cacheD = reach;
-  if (state.phase === "day") {
-    for (const c of state.caches) {
-      if (c.looted) continue;
-      const d = len(c.x - p.x, c.y - p.y);
-      if (d < cacheD) {
-        cacheD = d;
-        cache = c;
-      }
+  for (const c of state.caches) {
+    if (c.looted) continue;
+    const d = len(c.x - p.x, c.y - p.y);
+    if (d < cacheD) {
+      cacheD = d;
+      cache = c;
     }
   }
 
@@ -310,7 +318,9 @@ function interact(
   if (cache && !moving && !healing) {
     cache.searchT += dt;
     searched.add(cache); // mark; sysPlayer resets only caches nobody searched
-    if (cache.searchT >= CONFIG.cache.searchTime) {
+    // at night the rummaging is "noise" — flag this player so sysAI surges nearby zombies
+    if (state.phase === "night") p.searching = true;
+    if (cache.searchT >= effectiveSearchTime(state.phase)) {
       lootCache(state, cache.x, cache.y, cache.tier);
       cache.looted = true;
       cache.searchT = 0;

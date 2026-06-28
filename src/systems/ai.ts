@@ -23,6 +23,7 @@ export function sysAI(state: State, dt: number): void {
 
   const kbK = Math.exp(-CONFIG.feel.knockbackDecay * dt);
   const surroundR2 = CONFIG.horror.surroundRadius * CONFIG.horror.surroundRadius;
+  const lureR2 = CONFIG.cache.lureRadius * CONFIG.cache.lureRadius;
   const coneCos = Math.cos(CONFIG.flashlight.halfAngle);
   const aimX = Math.cos(lp.aim);
   const aimY = Math.sin(lp.aim);
@@ -112,7 +113,19 @@ export function sysAI(state: State, dt: number): void {
     const emerge = z.spawnT > 0 ? 0.35 : 1;
     const roamMul = chasing ? 1 : 0.45;
     const lungeMul = z.lungeT > 0 ? z.lunge : 1;
-    const spd = z.speed * emerge * roamMul * lungeMul;
+    // lure: a player rummaging a cache at night draws nearby zombies in faster (the "noise").
+    // Final multiplier so every type gets the same relative bump regardless of lunge state.
+    let lureMul = 0;
+    for (const pl of state.players) {
+      if (!pl.searching) continue;
+      const lx = pl.x - z.x;
+      const ly = pl.y - z.y;
+      if (lx * lx + ly * ly <= lureR2) {
+        lureMul = CONFIG.cache.lureSpeedSurge;
+        break;
+      }
+    }
+    const spd = z.speed * emerge * roamMul * lungeMul * (1 + lureMul);
     z.x += (vx / vl) * spd * dt + z.vx * dt;
     z.y += (vy / vl) * spd * dt + z.vy * dt;
     z.vx *= kbK;
