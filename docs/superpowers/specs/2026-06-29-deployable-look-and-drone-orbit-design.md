@@ -45,9 +45,30 @@ Replace the no-target branch in `tickMovement` (`deployables.ts:69-74`):
 - **Facing (`d.aim`)** while idle = the orbit *tangent* (direction of travel) so the drone
   looks like it's patrolling, plus a small slow scan wobble (e.g. `+ sin(state.time*1.3)*0.25`).
 
-**Engaging is unchanged:** the instant a zombie is within weapon range the existing target
-branch (`deployables.ts:60-68`) takes over — the drone breaks orbit, stands off, and aims at
-the target. So orbit is purely the "nothing to shoot" state.
+**Engage→idle transition fix (REQUIRED — current code is broken for this).** `tickMovement`
+(`deployables.ts:60`) resolves its target from `d.targetId`, but `tickWeapon`
+(`deployables.ts:104-114`) **never nulls `d.targetId` when no zombie is in range** — it only
+overwrites it with a new target. So when a zombie wanders out of weapon range but is still
+alive, `d.targetId` stays set, `tickMovement` keeps resolving it, and the drone stands off and
+chases it forever instead of returning to orbit. The "existing branch just takes over" claim
+only holds once the target *dies*. Fix: in `tickWeapon`, when the resolved `target === null`,
+clear `d.targetId = undefined`. One line, filling a gap in existing logic — not a new branch.
+With that, `tickMovement` falls into the orbit branch the moment the last in-range zombie leaves.
+
+**Engaging is otherwise unchanged:** the instant a zombie is within weapon range the existing
+target branch (`deployables.ts:60-68`) takes over — the drone breaks orbit, stands off, and aims
+at the target. So orbit is purely the "nothing to shoot" state.
+
+**Dynamics to accept (not bugs, just honest about the model):**
+- The "radius `hoverDist` circle" is exact only while the anchor is *still*. The orbit tangent
+  speed is `orbitSpeed * hoverDist ≈ 0.7 * 46 ≈ 32 px/s`, far below the drone's `speed = 210`,
+  so a stationary anchor is circled cleanly. While the player *runs*, the anchor outpaces the
+  orbit and the circle collapses into a trailing arc — reads as "following", which is acceptable;
+  the watchful orbit is most visible when the player holds position.
+- The move deadzone (`if (dist < 4) return`, `deployables.ts:79`) is effectively inert during
+  orbit because the goal point keeps moving ~32 px/s, so the drone micro-steps every frame
+  rather than parking. That's fine (smooth circle, not jitter) — noted so it isn't mistaken for
+  a regression.
 
 ## 2. Drone visual — quad / X silhouette
 
@@ -79,30 +100,49 @@ Rewrite the turret `else` block. Read target: "anchored auto-cannon".
 - **Muzzle:** a small `glow` at the barrel tips; flares on fire (cheap: brighten for a short
   window after a shot, or simply tie to not-reloading — tune in-game).
 
+**Collider stays at `radius: 12` (visual-only change).** The footprint/legs/base are drawn
+larger than the collider for weight, but the physical body and lane-blocking are unchanged. Keep
+the drawn base from sprawling far past the collider so the "what blocks me" read doesn't drift
+too far from the silhouette — heavier-looking, same hitbox, by intent.
+
 ## 4. Supply station visual — supply crate
 
 Extend the `visual === "crate"` block (keep the brown `rect` + colour band + `ring` + pulse).
 
 - **Corner bolts:** four small `rect`s at the crate corners.
 - **Supply mark:** a small cross (two thin `rect`s) or ammo-band line on the top face.
-- **Beacon:** a `glow` that ramps brighter as the next drop nears and flashes on emit. Drive
-  it from the existing emitter cadence — `d.emitCd` vs `def.emitter.interval` gives a 0..1
-  "time to next drop" with no new state (purely visual, read on the render side).
+- **Beacon:** a `glow` that pulses on a cadence, brightest near each drop. **Drive it from
+  `state.time`, NOT `d.emitCd`.** `emitCd` is host-only sim state — it is not in the snapshot
+  (`id/defId/x/y/aim/hpFrac/reloading` only) and clients build deployables via `applySnapshot`,
+  so a client never has `emitCd` and the beacon would be dead/wrong on every non-host screen.
+  Instead phase the pulse off `state.time` with the period taken from `def.emitter.interval`
+  (e.g. `frac = (state.time % interval) / interval`, ramp brightness toward `frac→1`). This is
+  exactly how the existing crate pulse (`Math.sin(state.time*… )`) already runs on both host and
+  client. The phase won't be frame-aligned to the actual host drop, but the "a drop is coming"
+  read is what matters and it animates identically everywhere. No new wire field, no new state.
 
 ## Affected files
 
 - `src/types.ts` — add `orbitSpeed` to `DeployableDef.movement`.
 - `src/data/deployables.ts` — `orbitSpeed` on the `drone` def.
-- `src/systems/deployables.ts` — orbit branch + tangent/scan facing in `tickMovement`.
-- `src/game.ts` — rewrite the three branches of `drawDeployables`.
+- `src/systems/deployables.ts` — orbit branch + tangent/scan facing in `tickMovement`, **and the
+  `d.targetId = undefined` clear in `tickWeapon` when no target is in range** (the transition fix).
+- `src/game.ts` — rewrite the three branches of `drawDeployables` (beacon driven by `state.time`).
 
 No changes to: snapshot wire format, net layer, AI, bullets, collision, or `CONFIG`.
 
 ## Testing / validation
 
-- `deployables.test.ts` is movement/placement logic — keep it green; the orbit change is in
-  the idle branch, so add/adjust a deterministic assertion only if it's cheap (e.g. an idle
-  drone stays within ~`hoverDist` of its anchor). The look itself is **not** unit-tested.
+- `deployables.test.ts` is movement/placement logic — keep it green. Add two cheap deterministic
+  assertions (no RNG in this path):
+  - **Idle orbit bound:** with a still anchor and zero zombies, tick several frames and assert the
+    drone settles to `len(d − anchor) <= hoverDist + 4` (the `+4` absorbs the deadzone / one
+    step of overshoot). Assert the *upper bound* only — it converges over multiple ticks, not in
+    one frame, so don't assert a tight band.
+  - **Engage→idle release:** place a zombie in weapon range (drone targets it), then move/remove it
+    out of range and tick — assert `d.targetId` is cleared and the drone heads back toward the
+    orbit radius (regression guard for the transition fix).
+  The look itself is **not** unit-tested.
 - Real validation is **playtest**: spawn drone + sentry + station, confirm the drone reads as
   a quad and visibly circles on watch, the turret reads as a cannon, the station beacon ramps.
   Tune `orbitSpeed`, rotor speed, barrel offset, beacon ramp in-game.
