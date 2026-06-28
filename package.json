@@ -21,8 +21,8 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "knip": "knip",
-    "lint": "biome check src",
-    "lint:fix": "biome check --write src",
+    "lint": "biome check src index.html",
+    "lint:fix": "biome check --write src index.html",
     "format": "biome format --write src index.html",
     "format:check": "biome format src index.html"
   },

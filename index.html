@@ -27,7 +27,6 @@
     box-shadow:inset 0 0 220px 60px rgba(0,0,0,.85);
     background:radial-gradient(circle at 50% 50%,transparent 45%,rgba(0,0,0,.45) 100%);
     transition:box-shadow .4s;}
-  #hud.low ~ #vignette, body.low #vignette{}
 
   /* heartbeat-synced dread pulse: a red inner vignette throbbing in time with the heartbeat
      (opacity driven from JS each frame, so NO transition here or it would smear the beat) */
@@ -209,12 +208,15 @@
   /* printed-stencil wordmark fill (specificity beats .overlay h1) */
   .overlay h1.wordmark{font-size:clamp(44px, min(12vw,17dvh), 156px);line-height:.84;letter-spacing:.05em;
     color:transparent;-webkit-background-clip:text;background-clip:text;
-    background:repeating-linear-gradient(0deg,#a6ff7f 0 3px,#5fbf38 3px 5px);
+    background-image:repeating-linear-gradient(0deg,#a6ff7f 0 3px,#5fbf38 3px 5px);
     filter:drop-shadow(0 0 26px rgba(125,255,79,.35)) drop-shadow(0 2px 0 rgba(0,0,0,.6));}
   .overlay p{margin:2px 0;color:var(--dim);font-size:13px;letter-spacing:.04em;max-width:52ch;line-height:1.7;}
   .controls{margin-top:14px;display:grid;grid-template-columns:auto auto;gap:4px 14px;
     font-size:12px;color:var(--ink);}
   .controls b{color:var(--toxic);font-weight:600;}
+  /* biome-ignore lint/style/noDescendingSpecificity: base .btn is intentionally defined after its
+     higher-specificity .btn.coop-cta / .coop-secondary .btn variants for readability; the cascade
+     here is governed by specificity (base is uniquely (0,1,0)), not source order, so it's render-neutral. */
   .btn{pointer-events:auto;margin-top:24px;cursor:pointer;border:0;
     font-family:var(--display);font-weight:800;font-size:clamp(20px,2.6vw,30px);
     letter-spacing:.22em;text-transform:uppercase;color:var(--bg);background:var(--toxic);
@@ -420,9 +422,9 @@
     </div>
 
     <div class="btn-row">
-      <button class="btn" id="startBtn">Deploy</button>
-      <button class="btn coop-cta" id="mpCoopBtn">Co-op</button>
-      <button class="btn coop-cta" id="optionsBtn">Options</button>
+      <button type="button" class="btn" id="startBtn">Deploy</button>
+      <button type="button" class="btn coop-cta" id="mpCoopBtn">Co-op</button>
+      <button type="button" class="btn coop-cta" id="optionsBtn">Options</button>
     </div>
   </div>
 
@@ -434,7 +436,7 @@
   <h1 style="font-size:clamp(26px,5vw,44px)">Arsenal</h1>
   <p>Credits <b id="shop-credits" style="color:var(--amber)">0</b> &middot; upgrade your kit, then deploy</p>
   <div class="store" id="choices"></div>
-  <button class="btn" id="deployBtn">Deploy</button>
+  <button type="button" class="btn" id="deployBtn">Deploy</button>
   <div class="hint">[1&ndash;9] / click buy &middot; &uarr;&darr; select &middot; SPACE buy &middot; ENTER deploy</div>
 </div>
 
@@ -449,11 +451,11 @@
   <h1 style="font-size:clamp(26px,5vw,44px)">SETTINGS</h1>
   <div class="controls" style="grid-template-columns:auto auto;gap:10px 16px;align-items:center">
     <span><b>Aim assist</b> auto-aim at nearest</span>
-    <button class="btn" id="settingAimAssist" style="padding:4px 16px;font-size:14px">OFF</button>
+    <button type="button" class="btn" id="settingAimAssist" style="padding:4px 16px;font-size:14px">OFF</button>
     <span><b>Mute</b> all audio</span>
-    <button class="btn" id="settingMute" style="padding:4px 16px;font-size:14px">OFF</button>
+    <button type="button" class="btn" id="settingMute" style="padding:4px 16px;font-size:14px">OFF</button>
   </div>
-  <button class="btn" id="settingsClose">Close</button>
+  <button type="button" class="btn" id="settingsClose">Close</button>
   <p class="hint">[O] toggle &middot; [Esc] close</p>
 </div>
 
@@ -462,7 +464,7 @@
   <h1 class="big">OVERRUN</h1>
   <p>You survived to day <b id="over-wave" style="color:var(--ink)">1</b> &middot; <span id="over-kills">0</span> neutralized &middot; <span id="over-money">0</span> credits earned</p>
   <p style="color:var(--amber)">Salvage recovered: <b id="over-salvage">0</b> &#9670;</p>
-  <button class="btn" id="restartBtn">Redeploy</button>
+  <button type="button" class="btn" id="restartBtn">Redeploy</button>
 </div>
 
 <div id="lobby" class="overlay hidden">
@@ -476,7 +478,7 @@
       <div class="lobby-label">Room code &mdash; share with your squad</div>
       <div class="lobby-row">
         <input id="lobby-room-code" class="lobby-code" readonly value="" />
-        <button class="btn lobby-btn" id="lobby-room-copy">Copy</button>
+        <button type="button" class="btn lobby-btn" id="lobby-room-copy">Copy</button>
       </div>
       <label class="coop-toggle" id="lobby-public-wrap">
         <input type="checkbox" id="lobby-public" checked />
@@ -487,7 +489,7 @@
       <div class="lobby-label">Enter the host's room code</div>
       <div class="lobby-row">
         <input id="lobby-room-input" class="lobby-code" placeholder="RAID" maxlength="8" />
-        <button class="btn lobby-btn" id="lobby-room-go">Join</button>
+        <button type="button" class="btn lobby-btn" id="lobby-room-go">Join</button>
       </div>
     </div>
   </div>
@@ -496,8 +498,8 @@
   <div id="lobby-status" class="hint" style="min-height:16px;margin-top:2px;"></div>
 
   <div style="display:flex;gap:12px;align-items:center;margin-top:8px;">
-    <button class="btn" id="lobby-deploy" style="display:none;">Deploy raid</button>
-    <button class="btn lobby-back-btn" id="lobby-back">Back</button>
+    <button type="button" class="btn" id="lobby-deploy" style="display:none;">Deploy raid</button>
+    <button type="button" class="btn lobby-back-btn" id="lobby-back">Back</button>
   </div>
 
   <p class="hint" style="margin-top:12px;max-width:460px;opacity:.7;line-height:1.5;">
@@ -512,12 +514,12 @@
       <div id="lobby-recv" class="lobby-field">
         <div class="lobby-label" id="lobby-recv-label">Their code</div>
         <textarea id="lobby-in" class="lobby-ta" placeholder="paste the other player's code"></textarea>
-        <button class="btn lobby-btn" id="lobby-go">Connect</button>
+        <button type="button" class="btn lobby-btn" id="lobby-go">Connect</button>
       </div>
       <div id="lobby-send" class="lobby-field">
         <div class="lobby-label" id="lobby-send-label">Your code</div>
         <textarea id="lobby-out" class="lobby-ta" readonly></textarea>
-        <button class="btn lobby-btn" id="lobby-copy">Copy code</button>
+        <button type="button" class="btn lobby-btn" id="lobby-copy">Copy code</button>
       </div>
     </div>
   </details>
@@ -529,29 +531,29 @@
   <h1 style="font-size:clamp(28px,6vw,54px)">CO-OP</h1>
 
   <div class="coop-wrap">
-    <button class="btn" id="coop-quick">Quick Match</button>
+    <button type="button" class="btn" id="coop-quick">Quick Match</button>
     <div class="coop-browser">
       <div class="coop-browser-head"><span>Open Raids</span><span id="coop-scan"></span></div>
       <div id="coop-rooms" class="coop-rooms"></div>
     </div>
     <div class="coop-secondary">
-      <button class="btn lobby-btn" id="coop-host">Host raid</button>
-      <button class="btn lobby-btn" id="coop-joincode">Join by code</button>
+      <button type="button" class="btn lobby-btn" id="coop-host">Host raid</button>
+      <button type="button" class="btn lobby-btn" id="coop-joincode">Join by code</button>
     </div>
   </div>
   <div id="coop-status" class="hint" style="min-height:16px;margin-top:8px;"></div>
-  <button class="btn lobby-back-btn" id="coop-back" style="margin-top:10px;">Back</button>
+  <button type="button" class="btn lobby-back-btn" id="coop-back" style="margin-top:10px;">Back</button>
 </div>
 
 <script>
   // title-screen flashlight: the torch pool follows the cursor while #start is shown
-  (function () {
+  (() => {
     var s = document.getElementById("start");
     if (!s) return;
-    addEventListener("pointermove", function (e) {
+    addEventListener("pointermove", (e) => {
       if (s.classList.contains("hidden")) return;
-      s.style.setProperty("--mx", ((e.clientX / innerWidth) * 100).toFixed(1) + "%");
-      s.style.setProperty("--my", ((e.clientY / innerHeight) * 100).toFixed(1) + "%");
+      s.style.setProperty("--mx", `${((e.clientX / innerWidth) * 100).toFixed(1)}%`);
+      s.style.setProperty("--my", `${((e.clientY / innerHeight) * 100).toFixed(1)}%`);
     }, { passive: true });
   })();
 </script>
