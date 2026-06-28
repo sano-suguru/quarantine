@@ -1,8 +1,7 @@
 import { CONFIG } from "../config";
-import { rand } from "../engine/math";
+import { mixRGB, rand } from "../engine/math";
 import type { ParticleKind, State } from "../types";
 
-const MAX_PARTICLES = 2400;
 const MAX_TEXTS = 160;
 
 type RGB = [number, number, number];
@@ -19,7 +18,7 @@ function spawn(
   kind: ParticleKind,
   drag: number,
 ): void {
-  if (state.particles.length >= MAX_PARTICLES) return;
+  if (state.particles.length >= CONFIG.fx.maxParticles) return;
   state.particles.push({
     x,
     y,
@@ -35,21 +34,44 @@ function spawn(
   });
 }
 
-/** muzzle flash + ejected sparks at the gun tip */
+/** muzzle flash at the gun tip: a hot powder flash + a forward flame cone + ejected embers */
 export function fxMuzzle(state: State, x: number, y: number, aim: number, color: RGB): void {
-  spawn(state, x, y, 0, 0, 0.07, 26, color, "ring", 0);
-  for (let i = 0; i < 5; i++) {
-    const a = aim + rand(-0.4, 0.4);
-    const sp = rand(180, 420);
+  // hot white-yellow flash core — a single bright pop, deliberately NOT weapon-tinted so it
+  // reads as igniting powder rather than the old dull colored halo
+  spawn(state, x, y, 0, 0, 0.05, 22, [1, 0.92, 0.62], "spark", 0);
+  // forward flame tongues: a few hot streaks spat in a tight cone straight down the barrel,
+  // giving the flash a direction (the old symmetric ring read as a halo, not a muzzle blast)
+  for (let i = 0; i < 3; i++) {
+    const a = aim + rand(-0.18, 0.18);
+    const sp = rand(260, 460);
     spawn(
       state,
       x,
       y,
       Math.cos(a) * sp,
       Math.sin(a) * sp,
-      rand(0.08, 0.18),
-      rand(2, 4),
-      color,
+      rand(0.05, 0.1),
+      rand(5, 8),
+      [1, 0.85, 0.5],
+      "spark",
+      8,
+    );
+  }
+  // ejected embers: warm debris, half-blended toward the weapon's color so each gun keeps a
+  // hint of its identity at the muzzle (this is why fxMuzzle still takes `color`)
+  const ember = mixRGB(color, [1, 0.55, 0.2], 0.5);
+  for (let i = 0; i < 4; i++) {
+    const a = aim + rand(-0.5, 0.5);
+    const sp = rand(150, 360);
+    spawn(
+      state,
+      x,
+      y,
+      Math.cos(a) * sp,
+      Math.sin(a) * sp,
+      rand(0.1, 0.2),
+      rand(2, 3.5),
+      ember,
       "spark",
       6,
     );
@@ -204,11 +226,7 @@ function bloodPool(state: State, x: number, y: number, big: boolean, dir?: numbe
     const sx = x + rand(-cfg.satSpread, cfg.satSpread) + dx * rand(0, cfg.splatterBias);
     const sy = y + rand(-cfg.satSpread, cfg.satSpread) + dy * rand(0, cfg.splatterBias);
     const t = rand(0, 1); // outer droplets blend toward the brighter edge color
-    const color: RGB = [
-      cfg.centerColor[0] + (cfg.edgeColor[0] - cfg.centerColor[0]) * t,
-      cfg.centerColor[1] + (cfg.edgeColor[1] - cfg.centerColor[1]) * t,
-      cfg.centerColor[2] + (cfg.edgeColor[2] - cfg.centerColor[2]) * t,
-    ];
+    const color: RGB = mixRGB(cfg.centerColor, cfg.edgeColor, t);
     pushDecal(state, sx, sy, rand(cfg.satRadius[0], cfg.satRadius[1]), color);
   }
 }

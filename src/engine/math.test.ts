@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { approach, clamp, len, rand } from "./math";
+import { approach, clamp, len, lerp, mixRGB, rand } from "./math";
 
 describe("clamp", () => {
   it("returns the value when within range", () => {
@@ -38,6 +38,33 @@ describe("rand", () => {
   it("approaches the upper bound as Math.random() approaches 1", () => {
     vi.spyOn(Math, "random").mockReturnValue(0.999999);
     expect(rand(2, 8)).toBeCloseTo(8, 4);
+  });
+});
+
+describe("lerp", () => {
+  it("returns the start when t is 0", () => {
+    expect(lerp(2, 8, 0)).toBe(2);
+  });
+  it("returns the end when t is 1", () => {
+    expect(lerp(2, 8, 1)).toBe(8);
+  });
+  it("returns the midpoint when t is 0.5", () => {
+    expect(lerp(2, 8, 0.5)).toBe(5);
+  });
+});
+
+describe("mixRGB", () => {
+  it("returns the first color when t is 0", () => {
+    expect(mixRGB([0.2, 0.4, 0.6], [1, 0.55, 0.2], 0)).toEqual([0.2, 0.4, 0.6]);
+  });
+  it("returns the second color when t is 1", () => {
+    expect(mixRGB([0.2, 0.4, 0.6], [1, 0.55, 0.2], 1)).toEqual([1, 0.55, 0.2]);
+  });
+  it("blends each channel halfway at t 0.5 (matches the old (a+b)*0.5 ember idiom)", () => {
+    const [r, g, b] = mixRGB([0.2, 0.4, 0.6], [1, 0.55, 0.2], 0.5);
+    expect(r).toBeCloseTo(0.6, 6);
+    expect(g).toBeCloseTo(0.475, 6);
+    expect(b).toBeCloseTo(0.4, 6);
   });
 });
 

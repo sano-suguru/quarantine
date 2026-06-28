@@ -16,6 +16,15 @@ export function levelCost(level: number): number {
   return CONFIG.arsenal.levelBaseCost + level * CONFIG.arsenal.levelStep;
 }
 
+/** Melee cone half-angle (radians) — weapon's own value, or the CONFIG fallback. */
+export function meleeArc(wd: WeaponDef): number {
+  return wd.meleeArc ?? CONFIG.feel.meleeArcDefault;
+}
+/** Melee reach in world units for a player of radius `r` — weapon range (or CONFIG fallback) + r. */
+export function meleeReach(wd: WeaponDef, r: number): number {
+  return (wd.meleeRange ?? CONFIG.feel.meleeRangeDefault) + r;
+}
+
 /** SALVAGE banked for a run lasting `day` nights with `kills` total kills. */
 export function salvageEarned(day: number, kills: number): number {
   return Math.round(day * CONFIG.arsenal.salvagePerDay + kills * CONFIG.arsenal.salvagePerKill);

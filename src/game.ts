@@ -1,5 +1,12 @@
 import { CONFIG } from "./config";
-import { effWeapon, type StoreItem, salvageEarned, storeItems } from "./data/arsenal";
+import {
+  effWeapon,
+  meleeArc,
+  meleeReach,
+  type StoreItem,
+  salvageEarned,
+  storeItems,
+} from "./data/arsenal";
 import { DEPLOYABLE_TYPES, deployableCount, placeDeployable, placeSpot } from "./data/deployables";
 import { PICKUP_TYPES } from "./data/pickups";
 import { PLAYER_COLORS } from "./data/players";
@@ -592,15 +599,22 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
   if (pl.muzzle > 0) {
     const wd = WEAPONS[pl.weapon];
     if (wd?.melee) {
-      // a cold-steel slash that sweeps the swing cone — driven by the synced
-      // muzzle/aim/weapon, so it reads identically for local, host, and remote players
-      const k = Math.min(1, pl.muzzle / 0.1); // 1 → 0 across the swing window
-      const reach = (wd.meleeRange ?? 30) + pl.r;
+      // a single crescent blade-arc that SWEEPS across the swing cone. Phase comes from the
+      // synced muzzle (1→0 over the swing window), so the arc reads the same for local, host,
+      // and remote players. (In co-op a remote teammate's muzzle only refreshes at snapshot
+      // rate, so the sweep is a touch steppier there — the same limitation the old fade had;
+      // solo and your own swing are smooth at frame rate.)
+      const k = Math.min(1, pl.muzzle / 0.1); // 1 at swing start → 0 at the end
+      const reach = meleeReach(wd, pl.r);
+      const arc = meleeArc(wd);
       const [cr, cg, cb] = wd.color;
-      const cx = px + Math.cos(pl.aim) * reach * 0.75;
-      const cy = py + Math.sin(pl.aim) * reach * 0.75;
-      R.tri(cx, cy, reach * (0.45 + 0.35 * k), pl.aim, cr, cg, cb, 0.8 * k);
-      R.glow(cx, cy, reach * 0.9, cr, cg, cb, 0.45 * k);
+      // the blade's leading edge travels from one rim of the cone to the other; its tips run
+      // tangent to the arc, so as `sweep` rotates the crescent carves across the cone
+      const sweep = pl.aim + arc * (2 * k - 1);
+      const cx = px + Math.cos(sweep) * reach * 0.55;
+      const cy = py + Math.sin(sweep) * reach * 0.55;
+      R.slash(cx, cy, reach * 0.95, sweep, cr, cg, cb, 0.9 * k);
+      R.glow(cx, cy, reach * 0.7, cr, cg, cb, 0.4 * k);
     } else {
       const tx = px + Math.cos(pl.aim) * pl.r * 1.7;
       const ty = py + Math.sin(pl.aim) * pl.r * 1.7;

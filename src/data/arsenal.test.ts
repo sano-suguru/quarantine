@@ -1,9 +1,35 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG } from "../config";
 import { newState } from "../state";
-import type { State } from "../types";
-import { effWeapon, levelCost, salvageEarned, scaledDmg, scaledMag } from "./arsenal";
+import type { State, WeaponDef } from "../types";
+import {
+  effWeapon,
+  levelCost,
+  meleeArc,
+  meleeReach,
+  salvageEarned,
+  scaledDmg,
+  scaledMag,
+} from "./arsenal";
 import { WEAPONS } from "./weapons";
+
+describe("melee accessors", () => {
+  const knife = WEAPONS.knife as WeaponDef; // explicit meleeArc 0.95, meleeRange 30
+  const bareMelee = { melee: true } as WeaponDef; // omits meleeArc/meleeRange
+
+  it("meleeArc returns the weapon's explicit half-angle", () => {
+    expect(meleeArc(knife)).toBe(0.95);
+  });
+  it("meleeArc falls back to the CONFIG default when omitted", () => {
+    expect(meleeArc(bareMelee)).toBe(CONFIG.feel.meleeArcDefault);
+  });
+  it("meleeReach adds the player radius to the weapon's explicit range", () => {
+    expect(meleeReach(knife, 16)).toBe(30 + 16);
+  });
+  it("meleeReach falls back to the CONFIG default range when omitted", () => {
+    expect(meleeReach(bareMelee, 16)).toBe(CONFIG.feel.meleeRangeDefault + 16);
+  });
+});
 
 describe("weapon level scaling", () => {
   it("is the base value at level 0", () => {
