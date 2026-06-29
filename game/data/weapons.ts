@@ -19,6 +19,8 @@ export const WEAPONS: Record<string, WeaponDef> = {
     moveMul: 1.12, // light sidearm — best kiting speed
     reserveStart: 36,
     reserveMax: 96,
+    drawTime: 0.35,
+    viz: [{ dx: 11, dy: 0, rot: 0, len: 15, wid: 6 }],
   },
   smg: {
     name: "SMG",
@@ -38,6 +40,11 @@ export const WEAPONS: Record<string, WeaponDef> = {
     moveMul: 1.05, // light, still mobile
     reserveStart: 64,
     reserveMax: 160,
+    drawTime: 0.4,
+    viz: [
+      { dx: 13, dy: 0, rot: 0, len: 20, wid: 5 },
+      { dx: 9, dy: 5, rot: 0, len: 7, wid: 4 },
+    ],
   },
   shotgun: {
     name: "SHOTGUN",
@@ -57,6 +64,11 @@ export const WEAPONS: Record<string, WeaponDef> = {
     moveMul: 0.9, // mid-weight
     reserveStart: 18,
     reserveMax: 42,
+    drawTime: 0.5,
+    viz: [
+      { dx: 14, dy: 0, rot: 0, len: 23, wid: 9 },
+      { dx: -2, dy: 0, rot: 0, len: 8, wid: 6 },
+    ],
   },
   // ---- meta-unlocked arsenal (locked until bought with SALVAGE) ----
   // Assault rifle: accurate full-auto that punches through one zombie.
@@ -78,6 +90,11 @@ export const WEAPONS: Record<string, WeaponDef> = {
     moveMul: 0.92, // mid-weight
     reserveStart: 90,
     reserveMax: 240,
+    drawTime: 0.45,
+    viz: [
+      { dx: 16, dy: 0, rot: 0, len: 26, wid: 4 },
+      { dx: 10, dy: 5, rot: 0, len: 7, wid: 4 },
+    ],
   },
   // Light machine gun: suppressing fire, huge mag, heavy kick, long reload.
   lmg: {
@@ -98,6 +115,11 @@ export const WEAPONS: Record<string, WeaponDef> = {
     moveMul: 0.68, // heavy — stand your ground (slower than a runner)
     reserveStart: 150,
     reserveMax: 450,
+    drawTime: 0.7,
+    viz: [
+      { dx: 20, dy: 0, rot: 0, len: 34, wid: 5 },
+      { dx: 8, dy: 6, rot: 0, len: 10, wid: 10, shape: "circle" },
+    ],
   },
   // Magnum: a slow, devastating hand-cannon that pierces and throws bodies back.
   magnum: {
@@ -118,6 +140,11 @@ export const WEAPONS: Record<string, WeaponDef> = {
     moveMul: 0.72, // heavy hand-cannon
     reserveStart: 24,
     reserveMax: 60,
+    drawTime: 0.55,
+    viz: [
+      { dx: 11, dy: 0, rot: 0, len: 16, wid: 8 },
+      { dx: 5, dy: 0, rot: 0, len: 9, wid: 9, shape: "hex" },
+    ],
   },
   // Last-resort melee. Always available, consumes no ammo — but deliberately
   // weak and short-ranged: switching to it should feel like desperation.
@@ -140,6 +167,8 @@ export const WEAPONS: Record<string, WeaponDef> = {
     moveMul: 1.0,
     reserveStart: 0,
     reserveMax: 0,
+    drawTime: 0.3,
+    viz: [{ dx: 10, dy: 0, rot: 0, len: 12, wid: 3 }],
     melee: true,
     meleeArc: 0.95,
     meleeRange: 30,

@@ -1,5 +1,24 @@
 import type { PlayerInput } from "./net/playerInput";
 
+export interface GunPart {
+  /** forward offset along aim, world units (+ = toward muzzle) */
+  dx: number;
+  /** lateral offset perpendicular to aim, world units (a mag hangs / a sight sits) */
+  dy: number;
+  /** rotation relative to the rig, radians (0 = aligned with the barrel) */
+  rot: number;
+  /** for rect: length along the barrel axis. For radial shapes: the diameter (rad = len/2). World units. */
+  len: number;
+  /** rect width across the axis (world units). Ignored by radial shapes. */
+  wid: number;
+  /** primitive; defaults to "rect". radial shapes (circle/ring/tri/hex) use rad = len/2 */
+  shape?: "rect" | "circle" | "ring" | "tri" | "hex";
+  /** rgb; defaults to the weapon's `color` */
+  color?: [number, number, number];
+  /** 0..1; defaults to 1 (multiplied by the draw-pose dim) */
+  alpha?: number;
+}
+
 export interface WeaponDef {
   name: string;
   dmg: number;
@@ -22,6 +41,13 @@ export interface WeaponDef {
   reserveStart: number;
   /** hard cap on spare rounds this weapon can hold */
   reserveMax: number;
+  /** held-weapon silhouette: primitives in gun-local space (x = forward along aim, y = lateral).
+   *  drawPlayer applies the player transform + draw-anim pose and renders each part. No per-weapon
+   *  branching — drawWeaponRig dispatches per shape only. */
+  viz: GunPart[];
+  /** seconds to "draw" (lower→raise) after a switch; also the post-switch fire-lockout. Heavier guns
+   *  are slower. MUST be > 0 (the draw pose divides by it). Supersedes CONFIG.player.switchRaise. */
+  drawTime: number;
   /** melee weapons swing an arc instead of spawning bullets; never consume ammo */
   melee?: boolean;
   /** melee half-angle (radians) of the damage cone */
