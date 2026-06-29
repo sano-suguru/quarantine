@@ -269,6 +269,34 @@ describe("Host room cap", () => {
     expect(d.sent.some((m) => m.t === "roomfull")).toBe(false);
   });
 
+  it("a refused peer is untracked at once: dropped from links (no wasted broadcast), uncounted", () => {
+    const host = new Host();
+    const links = [new FakePeerLink(), new FakePeerLink(), new FakePeerLink(), new FakePeerLink()];
+    for (const l of links) host.add(l);
+    for (const l of links) l.fireOpen(); // lobby → 1,2,3 assigned; 4th rejected
+
+    const rejected = links[3] as FakePeerLink;
+    expect(rejected.sent.some((m) => m.t === "roomfull")).toBe(true);
+    expect(host.links.includes(rejected)).toBe(false); // out of the broadcast list immediately
+    expect(host.playerCount()).toBe(4); // host + 3 — the refused peer never inflates the count
+  });
+
+  it("playerCount holds steady through a mid-game drop so the registry never under-advertises", () => {
+    const host = new Host();
+    host.start();
+    const links = [new FakePeerLink(), new FakePeerLink(), new FakePeerLink()];
+    for (const l of links) {
+      host.add(l);
+      l.fireOpen();
+      l.recv({ t: "join" });
+    }
+    expect(host.playerCount()).toBe(4); // host + 3 clients
+
+    links[0]?.fireClose(); // pid 1 drops mid-game → body held absent within grace
+    expect(host.connectedPids()).toHaveLength(2); // only 2 present now (badges shrink)
+    expect(host.playerCount()).toBe(4); // but the held slot still counts → room stays "full" to joiners
+  });
+
   it("a held (absent) ghost keeps its slot — a fresh join is refused, the ghost is NOT evicted", () => {
     const s = getState();
     const host = new Host();

@@ -158,7 +158,7 @@ export class Host {
     if (peer.decided || !this.peers.includes(peer)) return;
     if (peer.claimTimer) clearTimeout(peer.claimTimer);
     peer.claimTimer = null;
-    const slot = pickSlot(this.peers.filter((p) => p.decided).map((p) => p.pid));
+    const slot = pickSlot(this.decidedPids());
     if (slot.kind === "full") {
       this.reject(peer);
       return;
@@ -170,20 +170,20 @@ export class Host {
     if (this.started) this.spawnFresh(peer.pid);
   }
 
-  /** Room is at capacity. Tell the client (it closes its own link on receipt — closing here first
-   *  could drop the unsent rel from the DataChannel buffer). Keep the peer UNDECIDED so its gameplay
-   *  rels are ignored, and fail-safe drop it shortly after in case an old client ignores roomfull. */
+  /** Room is at capacity. Tell the client, then untrack the peer at once: a refused peer is a
+   *  non-participant (not a held body), so it must drop out of broadcast() and the headcount
+   *  immediately. We deliberately do NOT close the link here — closing before the rel flushes could
+   *  drop `roomfull` from the DataChannel buffer, so the client closes its own link on receipt. The
+   *  timer is a fail-safe close for an old client that ignores the message; untracking already
+   *  happened, so it has nothing to do but close. */
   private reject(peer: HostPeer): void {
     peer.link.sendRel({ t: "roomfull" } satisfies NetMsg);
+    this.untrack(peer);
     setTimeout(() => {
-      if (!this.peers.includes(peer)) return; // client already closed → onClose untracked it
-      this.peers = this.peers.filter((x) => x !== peer);
-      const li = this.links.indexOf(peer.link);
-      if (li >= 0) this.links.splice(li, 1);
       try {
         peer.link.close();
       } catch {
-        /* already closing */
+        /* already closing / closed by the client */
       }
     }, REJECT_CLOSE_MS);
   }
@@ -210,12 +210,18 @@ export class Host {
     }
   }
 
+  /** Drop a peer from both tracking arrays (peers + the broadcast link list). Does NOT close the
+   *  link — callers decide whether/when to close (reject() defers it; dropOld() closes at once). */
+  private untrack(peer: HostPeer): void {
+    this.peers = this.peers.filter((x) => x !== peer);
+    const li = this.links.indexOf(peer.link);
+    if (li >= 0) this.links.splice(li, 1);
+  }
+
   /** Untrack a superseded peer and close its (dead) link, guarded so its callbacks no-op. */
   private dropOld(old: HostPeer): void {
     if (old.claimTimer) clearTimeout(old.claimTimer);
-    this.peers = this.peers.filter((x) => x !== old);
-    const li = this.links.indexOf(old.link);
-    if (li >= 0) this.links.splice(li, 1);
+    this.untrack(old);
     try {
       old.link.close();
     } catch {
@@ -275,6 +281,20 @@ export class Host {
   /** pids of currently-connected, decided peers (for the lobby squad badges). */
   connectedPids(): number[] {
     return this.peers.filter((p) => p.open && p.decided).map((p) => p.pid);
+  }
+
+  /** Client pids holding a slot — every decided peer, whether currently open or held absent for
+   *  reconnect. This is the exact set pickSlot treats as occupied, so the cap and the advertised
+   *  count share one definition. */
+  private decidedPids(): number[] {
+    return this.peers.filter((p) => p.decided).map((p) => p.pid);
+  }
+
+  /** Authoritative headcount for the public registry: occupied client slots (incl. held-absent
+   *  ghosts mid-reconnect) + the host. Mirrors pickSlot's occupancy, so a full room is never
+   *  advertised as joinable. (connectedPids() is the lobby badge set — who's present right now.) */
+  playerCount(): number {
+    return this.decidedPids().length + 1;
   }
 
   /** ?netlog test hook: stop broadcasting for `ms` to force a client snapshot-starvation reconnect. */

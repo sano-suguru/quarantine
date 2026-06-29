@@ -270,7 +270,7 @@ function main(): void {
           public: coopPublic,
           phase: hostStarted ? gs.phase : "lobby",
           day: gs.day,
-          players: (Net.host?.connectedPids().length ?? 0) + 1, // host + decided clients
+          players: Net.host?.playerCount() ?? 1, // authoritative: occupied slots + host (= the cap)
         });
       }
     } else {
