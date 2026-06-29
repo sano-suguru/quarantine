@@ -125,8 +125,11 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
       p.ammo = p.mags[id] ?? 0; // restore the new weapon's mag
       p.reloadT = 0;
       // raise time: can't fire for a beat after switching (also blocks switch→instant-fire and
-      // pairs with the move ramp so quick-swapping buys neither speed nor an instant shot)
+      // pairs with the move ramp so quick-swapping buys neither speed nor an instant shot).
+      // When per-weapon visuals land this raise becomes the draw-time a switchT/holster anim
+      // hangs off of — for now it's the audible+mechanical "drawing your weapon" beat.
       p.fireCd = Math.max(p.fireCd, CONFIG.player.switchRaise);
+      Audio.switchWeapon(); // holster-away + ready (mirrors reload(): same host-side path)
     }
   }
   const wd = effWeapon(p, p.weapon);

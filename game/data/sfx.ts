@@ -86,6 +86,12 @@ export const SFX: Record<string, SfxSpec> = {
     durationSeconds: 0.5,
     promptInfluence: 0.8,
   },
+  weapon_switch: {
+    text: "Designed game sound effect: a tactical weapon swap — a holstered firearm sliding away with a quick fabric and gear rustle, then a new weapon readied with a firm metallic charging-handle clack. Close-mic, dry, mono, no music.",
+    durationSeconds: 0.7,
+    promptInfluence: 0.7,
+    variants: 3,
+  },
   // --- zombies (dry/mono; the engine pans + attenuates by distance) ---
   hit: {
     text: "Designed game sound effect: a single bullet impact into rotten flesh, a wet punchy thwack with a short squelch. Close-mic, dry, mono, no music.",

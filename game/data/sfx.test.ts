@@ -18,6 +18,7 @@ const FIXED_KEYS = [
   "kill_small",
   "reload",
   "reload_done",
+  "weapon_switch",
   "dry_fire",
   "hurt",
   "pickup",
