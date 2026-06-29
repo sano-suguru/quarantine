@@ -96,10 +96,11 @@ describe("snapshot binary round-trip", () => {
   });
 
   it("golden: encoded byte layout is stable (bump PROTOCOL_VERSION if this changes)", () => {
-    // A fully deterministic snapshot (no RNG / zombies): newState() + fixed scalars + 2 players.
-    // The encoded bytes are hashed; if the wire layout changes the hash drifts and this test fails
-    // — a forcing function so a `snapshot.ts` format change is paired with a conscious
-    // PROTOCOL_VERSION bump in net.ts (silent desync is the failure mode we're guarding against).
+    // A fully deterministic snapshot (no RNG / zombies): newState() + fixed scalars + 2 players +
+    // one deployable (so the per-deployable byte layout is hashed too — without it a per-deployable
+    // format change like `ammoFrac` slips past this guard). If the wire layout changes the hash
+    // drifts and this test fails — a forcing function so a `snapshot.ts` format change is paired
+    // with a conscious PROTOCOL_VERSION bump in net.ts (silent desync is the failure mode we guard).
     const s = newState();
     s.phase = "night";
     s.day = 3;
@@ -109,6 +110,16 @@ describe("snapshot binary round-trip", () => {
     const p1 = s.players[1] as State["players"][number];
     p1.hp = 50;
     p1.absent = true;
+    s.deployables.push({
+      id: 42,
+      defId: "drone",
+      x: 64,
+      y: -32,
+      aim: 1,
+      hpFrac: 0.5,
+      reloading: true,
+      ammoFrac: 0.5,
+    });
     const bytes = new Uint8Array(encode(captureSnapshot(s, 100)));
     let h = 0x811c9dc5; // FNV-1a over the bytes
     for (const b of bytes) {
@@ -116,7 +127,7 @@ describe("snapshot binary round-trip", () => {
       h = Math.imul(h, 0x01000193);
     }
     expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
-      `"len=281 fnv=1f81b5f2"`,
+      `"len=293 fnv=84d55a05"`,
     );
   });
 

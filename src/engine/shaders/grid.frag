@@ -7,7 +7,7 @@ uniform vec2 u_lightPos[MAX_LIGHTS];
 uniform vec2 u_lightAim[MAX_LIGHTS];
 uniform float u_lightInt[MAX_LIGHTS];
 uniform vec2 u_lightCone[MAX_LIGHTS];  // per-light: x = cos(halfAngle), y = range
-uniform vec3 u_cone;     // shared: x: cos(halfAngle), y: range, z: ambient floor
+uniform float u_ambient; // shared ambient light floor
 uniform vec2 u_personal; // shared: x: radius, y: max brightness of the dim pool
 out vec4 frag;
 float gridLine(vec2 w, float g){
@@ -30,7 +30,7 @@ float lightAt(vec2 w){
     float cone = e * reach * u_lightInt[i];
     best = max(best, max(pool, cone));
   }
-  return clamp(u_cone.z + best, 0.0, 1.0);
+  return clamp(u_ambient + best, 0.0, 1.0);
 }
 void main(){
   vec2 world = u_cam + vec2(v_clip.x, -v_clip.y) * u_half;

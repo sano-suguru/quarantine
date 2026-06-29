@@ -21,7 +21,7 @@ let u_lightCount: WebGLUniformLocation | null;
 let u_lightPos: WebGLUniformLocation | null;
 let u_lightAim: WebGLUniformLocation | null;
 let u_lightInt: WebGLUniformLocation | null;
-let u_cone: WebGLUniformLocation | null;
+let u_ambient: WebGLUniformLocation | null;
 let u_lightCone: WebGLUniformLocation | null;
 let u_personal: WebGLUniformLocation | null;
 let u_emissive: WebGLUniformLocation | null;
@@ -31,7 +31,7 @@ let g_lightCount: WebGLUniformLocation | null;
 let g_lightPos: WebGLUniformLocation | null;
 let g_lightAim: WebGLUniformLocation | null;
 let g_lightInt: WebGLUniformLocation | null;
-let g_cone: WebGLUniformLocation | null;
+let g_ambient: WebGLUniformLocation | null;
 let g_lightCone: WebGLUniformLocation | null;
 let g_personal: WebGLUniformLocation | null;
 let viewHalfX = 400;
@@ -120,7 +120,7 @@ function init(cv: HTMLCanvasElement): void {
   u_lightPos = gl.getUniformLocation(instProg, "u_lightPos");
   u_lightAim = gl.getUniformLocation(instProg, "u_lightAim");
   u_lightInt = gl.getUniformLocation(instProg, "u_lightInt");
-  u_cone = gl.getUniformLocation(instProg, "u_cone");
+  u_ambient = gl.getUniformLocation(instProg, "u_ambient");
   u_lightCone = gl.getUniformLocation(instProg, "u_lightCone");
   u_personal = gl.getUniformLocation(instProg, "u_personal");
   u_emissive = gl.getUniformLocation(instProg, "u_emissive");
@@ -139,7 +139,7 @@ function init(cv: HTMLCanvasElement): void {
   g_lightPos = gl.getUniformLocation(gridProg, "u_lightPos");
   g_lightAim = gl.getUniformLocation(gridProg, "u_lightAim");
   g_lightInt = gl.getUniformLocation(gridProg, "u_lightInt");
-  g_cone = gl.getUniformLocation(gridProg, "u_cone");
+  g_ambient = gl.getUniformLocation(gridProg, "u_ambient");
   g_lightCone = gl.getUniformLocation(gridProg, "u_lightCone");
   g_personal = gl.getUniformLocation(gridProg, "u_personal");
   gridVAO = gl.createVertexArray() as WebGLVertexArrayObject;
@@ -419,7 +419,7 @@ function flush(camX: number, camY: number): void {
   gl.uniform2fv(g_lightAim, lightAim);
   gl.uniform1fv(g_lightInt, lightInt);
   gl.uniform2fv(g_lightCone, lightCone);
-  gl.uniform3f(g_cone, coneCos, coneRange, coneAmbient);
+  gl.uniform1f(g_ambient, coneAmbient);
   gl.uniform2f(g_personal, personalRadius, personalMax);
   gl.bindVertexArray(gridVAO);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -432,7 +432,7 @@ function flush(camX: number, camY: number): void {
   gl.uniform2fv(u_lightAim, lightAim);
   gl.uniform1fv(u_lightInt, lightInt);
   gl.uniform2fv(u_lightCone, lightCone);
-  gl.uniform3f(u_cone, coneCos, coneRange, coneAmbient);
+  gl.uniform1f(u_ambient, coneAmbient);
   gl.uniform2f(u_personal, personalRadius, personalMax);
 
   // normal pass (bodies, ground): fully darkened outside the light

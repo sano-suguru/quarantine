@@ -1,5 +1,5 @@
-import { CONFIG } from "../config";
 import { DEPLOYABLE_TYPES } from "../data/deployables";
+import { waveDef } from "../data/waves";
 import { clamp, len } from "../engine/math";
 import { nearestPlayer } from "../engine/players";
 import { allocId } from "../state";
@@ -7,11 +7,12 @@ import type { Deployable, DeployableDef, SiegePhase, State, Zombie } from "../ty
 import { fxImpact, fxKill } from "./fx";
 import { spawnPickup } from "./pickups";
 
-/** Deployable damage multiplier. At night it tracks the enemy `hpScale` (= 1 + day*perNight) so a
- *  deployable's shots-to-kill ratio is preserved all run; during the day, roamers are base HP
- *  (hpScale 1) AND `state.day` already holds the upcoming night's number, so we return 1. */
-export function deployDmgScale(phase: SiegePhase, day: number, perNight: number): number {
-  return phase === "night" ? 1 + day * perNight : 1;
+/** Deployable damage multiplier. At night it IS the enemy `hpScale` for that night (the caller
+ *  passes `waveDef(state.day).hpScale`), so a deployable's shots-to-kill ratio is preserved all
+ *  run from a single source of truth; during the day, roamers are base HP (hpScale 1) AND
+ *  `state.day` already holds the upcoming night's number, so we return 1. */
+export function deployDmgScale(phase: SiegePhase, nightHpScale: number): number {
+  return phase === "night" ? nightHpScale : 1;
 }
 
 /** Rounds to load into the magazine on reload, drawn from the finite reserve (clamped ≥ 0). */
@@ -43,18 +44,18 @@ export function sysDeployables(state: State, dt: number): void {
     if (def.emitter) tickEmitter(state, d, def);
     if (def.destructible) tickDamage(state, d, def, dt);
     // remaining-ammo fraction for the client ring (reserve + current mag over full load; 1 if infinite)
-    const w = def.weapon;
+    const mag = def.weapon?.mag;
     d.ammoFrac =
-      w?.ammoBudget !== undefined
-        ? clamp(
-            ((d.reserveLeft ?? 0) + (d.ammoLeft ?? 0)) / (w.ammoBudget + (w.magSize ?? 0)),
-            0,
-            1,
-          )
+      mag?.ammoBudget !== undefined
+        ? clamp(((d.reserveLeft ?? 0) + (d.ammoLeft ?? 0)) / (mag.ammoBudget + mag.size), 0, 1)
         : 1;
     // removal: destroyed (hp<=0) OR retired (ammo budget spent)
     const destroyed = !!def.destructible && (d.hp ?? 0) <= 0;
-    const retired = deployRetired(w?.ammoBudget !== undefined, d.reserveLeft ?? 0, d.ammoLeft ?? 0);
+    const retired = deployRetired(
+      mag?.ammoBudget !== undefined,
+      d.reserveLeft ?? 0,
+      d.ammoLeft ?? 0,
+    );
     if (destroyed || retired) {
       dead.push(i);
       if (destroyed)
@@ -116,7 +117,7 @@ function tickMovement(state: State, d: Deployable, def: DeployableDef, dt: numbe
     gx = anchor.x + Math.cos(a) * m.hoverDist;
     gy = anchor.y + Math.sin(a) * m.hoverDist;
     // face the direction of travel (orbit tangent) + a slow scan wobble
-    d.aim = a + Math.PI / 2 + Math.sin(state.time * 1.3) * 0.25;
+    d.aim = a + Math.PI / 2 + Math.sin(state.time * m.scanFreq) * m.scanAmp;
   }
 
   const dx = gx - d.x;
@@ -133,8 +134,8 @@ function tickMovement(state: State, d: Deployable, def: DeployableDef, dt: numbe
 }
 
 /** Acquire (with target hysteresis) the nearest zombie in range, aim, and fire on the weapon
- *  cooldown. A magazine (magSize/reloadTime) caps sustained DPS with a reload gap — interval
- *  is the per-shot cooldown, reloadTime is the magazine refill. No ammo purchase. */
+ *  cooldown. An optional `mag` (size/reloadTime) caps sustained DPS with a reload gap — interval
+ *  is the per-shot cooldown, mag.reloadTime is the magazine refill. No ammo purchase. */
 function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number): void {
   const w = def.weapon as NonNullable<DeployableDef["weapon"]>;
   if ((d.weaponCd ?? 0) > 0) d.weaponCd = (d.weaponCd ?? 0) - dt;
@@ -166,16 +167,16 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
 
   // magazine: while reloading, hold fire; when it completes, refill and reset the shot cd so
   // the unit fires immediately rather than waiting another interval on top of the reload.
-  if (w.magSize !== undefined && (d.reloadT ?? 0) > 0) {
+  if (w.mag && (d.reloadT ?? 0) > 0) {
     d.reloadT = (d.reloadT ?? 0) - dt;
     if ((d.reloadT ?? 0) <= 0) {
       d.reloadT = 0;
-      if (w.ammoBudget !== undefined) {
-        const refill = reloadRefill(d.reserveLeft ?? 0, w.magSize ?? 0);
+      if (w.mag.ammoBudget !== undefined) {
+        const refill = reloadRefill(d.reserveLeft ?? 0, w.mag.size);
         d.ammoLeft = refill;
         d.reserveLeft = (d.reserveLeft ?? 0) - refill;
       } else {
-        d.ammoLeft = w.magSize;
+        d.ammoLeft = w.mag.size;
       }
       d.weaponCd = 0;
     }
@@ -184,13 +185,10 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
   if (target) {
     d.aim = Math.atan2(target.y - d.y, target.x - d.x);
     const canFire =
-      (d.reloadT ?? 0) <= 0 &&
-      (d.weaponCd ?? 0) <= 0 &&
-      (w.magSize === undefined || (d.ammoLeft ?? 0) > 0);
+      (d.reloadT ?? 0) <= 0 && (d.weaponCd ?? 0) <= 0 && (!w.mag || (d.ammoLeft ?? 0) > 0);
     if (canFire) {
       const speed = w.bulletSpeed;
-      const dmg =
-        w.dmg * deployDmgScale(state.phase, state.day, CONFIG.deployables.dmgScalePerNight);
+      const dmg = w.dmg * deployDmgScale(state.phase, waveDef(state.day).hpScale);
       state.bullets.push({
         id: allocId(state),
         x: d.x,
@@ -207,9 +205,9 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
         color: def.color,
       });
       d.weaponCd = w.interval;
-      if (w.magSize !== undefined) {
+      if (w.mag) {
         d.ammoLeft = (d.ammoLeft ?? 0) - 1;
-        if ((d.ammoLeft ?? 0) <= 0) d.reloadT = w.reloadTime ?? 0;
+        if ((d.ammoLeft ?? 0) <= 0) d.reloadT = w.mag.reloadTime;
       }
     }
   }

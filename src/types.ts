@@ -296,18 +296,18 @@ export interface DeployableDef {
   /** how many of this type may exist at once this run */
   cap: number;
   color: [number, number, number];
-  /** auto-fire at the nearest zombie. `interval` = seconds between shots; `magSize`/`reloadTime`
-   *  add a self-recharging magazine (caps sustained DPS via a reload gap; no ammo purchase). */
+  /** auto-fire at the nearest zombie. `interval` = seconds between shots. An optional `mag`
+   *  adds a magazine (caps sustained DPS via a reload gap; no ammo purchase); omit it for a
+   *  no-reload continuous weapon. */
   weapon?: {
     range: number;
     dmg: number;
     bulletSpeed: number;
     interval: number;
-    magSize?: number;
-    reloadTime?: number;
-    /** total rounds the unit will ever fire before retiring (RTB). Omitted = infinite (self-
-     *  recharging magazine, e.g. the sentry). Reloads draw from this reserve. */
-    ammoBudget?: number;
+    /** magazine: `size` rounds fire before a `reloadTime`-second reload. `ammoBudget` (nested
+     *  here so it can't exist without a magazine) is the total rounds the unit will ever fire
+     *  before retiring (RTB); omitted = infinite reserve (self-recharging, e.g. the sentry). */
+    mag?: { size: number; reloadTime: number; ammoBudget?: number };
   };
   /** periodically drop a pickup (`emit` = pickup defId) every `interval` seconds */
   emitter?: { emit: string; interval: number };
@@ -320,6 +320,9 @@ export interface DeployableDef {
     engageDist: number;
     switchMargin: number;
     orbitSpeed: number;
+    /** idle barrel scan: a slow sinusoidal aim wobble — `scanFreq` rad/s, `scanAmp` radians */
+    scanFreq: number;
+    scanAmp: number;
   };
   /** takes contact damage from adjacent zombies; removed at hp<=0 */
   destructible?: { maxHp: number; contactRadius: number; contactDps: number };
