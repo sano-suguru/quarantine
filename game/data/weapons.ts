@@ -20,11 +20,13 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 36,
     reserveMax: 96,
     drawTime: 0.35,
-    // compact sidearm: wide receiver → thin blunt barrel + a stubby grip
+    // pistol — angled grip + frame, a bright slide along the top, barrel + front sight
     viz: [
-      { dx: 13, dy: 0, rot: 0, len: 11, wid: 7 },
-      { dx: 22, dy: 0, rot: 0, len: 12, wid: 4.5 },
-      { dx: 8, dy: 5, rot: 0, len: 6, wid: 5 },
+      { dx: 7, dy: 5, rot: 0.18, len: 7, wid: 5, color: [0.6, 0.5, 0.24] }, // grip
+      { dx: 13, dy: 0, rot: 0, len: 12, wid: 7, color: [0.6, 0.5, 0.24] }, // frame
+      { dx: 15, dy: -1.6, rot: 0, len: 15, wid: 3.2, color: [1.0, 0.95, 0.7], alpha: 0.85 }, // slide
+      { dx: 24, dy: 0, rot: 0, len: 9, wid: 4 }, // barrel
+      { dx: 27.5, dy: -3.2, rot: 0, len: 2, wid: 2.2, color: [1.0, 0.95, 0.7] }, // front sight
     ],
   },
   smg: {
@@ -46,11 +48,14 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 64,
     reserveMax: 160,
     drawTime: 0.4,
-    // boxy SMG: chunky receiver → thin barrel + a prominent magazine below
+    // SMG — stubby brace + boxy receiver, a bright top rail, barrel + muzzle, long angled mag
     viz: [
-      { dx: 14, dy: 0, rot: 0, len: 14, wid: 8 },
-      { dx: 26, dy: 0, rot: 0, len: 13, wid: 5 },
-      { dx: 12, dy: 7, rot: 0, len: 10, wid: 5 },
+      { dx: 2, dy: 0, rot: 0, len: 7, wid: 6, color: [0.33, 0.57, 0.6] }, // brace
+      { dx: 14, dy: 0, rot: 0, len: 15, wid: 8, color: [0.33, 0.57, 0.6] }, // receiver
+      { dx: 15, dy: -3.5, rot: 0, len: 13, wid: 1.6, color: [0.8, 1.0, 1.0], alpha: 0.8 }, // top rail
+      { dx: 27, dy: 0, rot: 0, len: 12, wid: 4.5 }, // barrel
+      { dx: 33, dy: 0, rot: 0, len: 3, wid: 5, color: [0.33, 0.57, 0.6] }, // muzzle
+      { dx: 12, dy: 7, rot: 0.12, len: 12, wid: 5, color: [0.33, 0.57, 0.6] }, // angled magazine
     ],
   },
   shotgun: {
@@ -72,12 +77,15 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 18,
     reserveMax: 42,
     drawTime: 0.5,
-    // shotgun: receiver → twin barrels sitting CLOSE (thin seam, not a wide fork) + stock
+    // shotgun: stock + receiver, a bright pump/forend band wrapping the close twin barrels,
+    // and a front bead sight
     viz: [
-      { dx: 14, dy: 0, rot: 0, len: 16, wid: 10 },
-      { dx: 26, dy: -2.9, rot: 0, len: 13, wid: 4.5 },
-      { dx: 26, dy: 2.9, rot: 0, len: 13, wid: 4.5 },
-      { dx: 3, dy: 0, rot: 0, len: 10, wid: 7 },
+      { dx: 3, dy: 0, rot: 0, len: 10, wid: 7, color: [0.6, 0.42, 0.21] }, // stock
+      { dx: 14, dy: 0, rot: 0, len: 16, wid: 10, color: [0.6, 0.42, 0.21] }, // receiver
+      { dx: 23, dy: 0, rot: 0, len: 6, wid: 10.5, color: [1.0, 0.86, 0.6], alpha: 0.8 }, // forend band
+      { dx: 28, dy: -2.9, rot: 0, len: 12, wid: 4.5 }, // barrel top
+      { dx: 28, dy: 2.9, rot: 0, len: 12, wid: 4.5 }, // barrel bottom
+      { dx: 34.5, dy: 0, rot: 0, len: 2, wid: 2, color: [1.0, 0.86, 0.6] }, // bead sight
     ],
   },
   // ---- meta-unlocked arsenal (locked until bought with SALVAGE) ----
@@ -135,12 +143,27 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 150,
     reserveMax: 450,
     drawTime: 0.7,
-    // LMG = biggest rig: receiver → longest blunt barrel + fat drum + stock
+    // LMG = biggest rig: stock + receiver, bright carry handle on top, longest barrel + muzzle,
+    // fat drum with a bright hub, and a little front bipod
     viz: [
-      { dx: 14, dy: 0, rot: 0, len: 16, wid: 10 },
-      { dx: 34, dy: 0, rot: 0, len: 28, wid: 6 },
-      { dx: 13, dy: 9, rot: 0, len: 16, wid: 16, shape: "circle" },
-      { dx: 1, dy: 0, rot: 0, len: 11, wid: 9 },
+      { dx: 1, dy: 0, rot: 0, len: 11, wid: 9, color: [0.6, 0.5, 0.3] }, // stock
+      { dx: 16, dy: 0, rot: 0, len: 18, wid: 10, color: [0.6, 0.5, 0.3] }, // receiver
+      { dx: 16, dy: -5, rot: 0, len: 9, wid: 2.2, color: [1.0, 0.95, 0.75], alpha: 0.85 }, // carry handle
+      { dx: 36, dy: 0, rot: 0, len: 26, wid: 6 }, // barrel
+      { dx: 49, dy: 0, rot: 0, len: 5, wid: 7, color: [0.6, 0.5, 0.3] }, // muzzle
+      { dx: 13, dy: 9, rot: 0, len: 16, wid: 16, shape: "circle", color: [0.6, 0.5, 0.3] }, // drum
+      {
+        dx: 13,
+        dy: 9,
+        rot: 0,
+        len: 5,
+        wid: 5,
+        shape: "circle",
+        color: [1.0, 0.95, 0.75],
+        alpha: 0.9,
+      }, // drum hub
+      { dx: 42, dy: -4.5, rot: 0.5, len: 7, wid: 2, color: [0.6, 0.5, 0.3] }, // bipod leg
+      { dx: 42, dy: 4.5, rot: -0.5, len: 7, wid: 2, color: [0.6, 0.5, 0.3] }, // bipod leg
     ],
   },
   // Magnum: a slow, devastating hand-cannon that pierces and throws bodies back.
@@ -163,11 +186,25 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 24,
     reserveMax: 60,
     drawTime: 0.55,
-    // magnum = hand-cannon: big hex cylinder + short FAT blunt barrel + grip
+    // magnum = revolver: angled grip + frame, big hex cylinder with a bright hub, short fat
+    // barrel with a bright top rib + front sight
     viz: [
-      { dx: 24, dy: 0, rot: 0, len: 11, wid: 8 },
-      { dx: 10, dy: 0, rot: 0, len: 14, wid: 14, shape: "hex" },
-      { dx: 5, dy: 5, rot: 0, len: 6, wid: 5 },
+      { dx: 5, dy: 5, rot: 0.25, len: 7, wid: 5, color: [0.6, 0.33, 0.3] }, // grip
+      { dx: 14, dy: 0, rot: 0, len: 12, wid: 8, color: [0.6, 0.33, 0.3] }, // frame
+      { dx: 10, dy: 0, rot: 0, len: 14, wid: 14, shape: "hex", color: [0.6, 0.33, 0.3] }, // cylinder
+      {
+        dx: 10,
+        dy: 0,
+        rot: 0,
+        len: 4,
+        wid: 4,
+        shape: "circle",
+        color: [1.0, 0.78, 0.72],
+        alpha: 0.9,
+      }, // cylinder hub
+      { dx: 24, dy: 0, rot: 0, len: 12, wid: 8 }, // fat barrel
+      { dx: 24, dy: -2.5, rot: 0, len: 12, wid: 1.6, color: [1.0, 0.78, 0.72], alpha: 0.8 }, // top rib
+      { dx: 30, dy: -2.8, rot: 0, len: 2, wid: 2, color: [1.0, 0.78, 0.72] }, // front sight
     ],
   },
   // Last-resort melee. Always available, consumes no ammo — but deliberately
@@ -192,13 +229,14 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 0,
     reserveMax: 0,
     drawTime: 0.3,
-    // knife = grip → small crossguard → blade → point. The tip's base matches the blade
-    // width (rad≈0.57·wid) so it tapers like a blade, not a wide arrowhead. Smallest rig.
+    // knife = dark grip (pommel + handle) → bright steel crossguard + blade tapering to a
+    // point (tip base matches blade width so it tapers like a blade, not an arrowhead)
     viz: [
-      { dx: 8, dy: 0, rot: 0, len: 8, wid: 4.5 },
-      { dx: 13, dy: 0, rot: 0, len: 2, wid: 8 },
-      { dx: 17, dy: 0, rot: 0, len: 7, wid: 4 },
-      { dx: 22, dy: 0, rot: 0, len: 4.5, wid: 4, shape: "tri" },
+      { dx: 3, dy: 0, rot: 0, len: 3, wid: 5, color: [0.5, 0.54, 0.6] }, // pommel
+      { dx: 8, dy: 0, rot: 0, len: 8, wid: 4.5, color: [0.5, 0.54, 0.6] }, // handle
+      { dx: 13, dy: 0, rot: 0, len: 2, wid: 8, color: [0.95, 0.98, 1.0] }, // crossguard
+      { dx: 17, dy: 0, rot: 0, len: 7, wid: 4, color: [0.95, 0.98, 1.0] }, // blade
+      { dx: 22, dy: 0, rot: 0, len: 4.5, wid: 4, shape: "tri", color: [0.95, 0.98, 1.0] }, // point
     ],
     melee: true,
     meleeArc: 0.95,
