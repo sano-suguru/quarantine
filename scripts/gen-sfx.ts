@@ -51,7 +51,7 @@ async function genOne(spec: SfxSpec, path: string): Promise<void> {
       });
       const chunks: Uint8Array[] = [];
       for await (const chunk of audio) chunks.push(chunk);
-      await Bun.write(path, new Blob(chunks as BlobPart[]));
+      await Bun.write(path, new Blob(chunks));
       console.log(`✓ ${path}`);
       return;
     } catch (err) {
