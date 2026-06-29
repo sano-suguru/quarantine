@@ -720,34 +720,76 @@ function drawDeployables(R: typeof Renderer): void {
     const [r, g, b] = def.color;
     const visual = def.visual ?? (def.movement ? "drone" : def.emitter ? "crate" : "turret");
     if (visual === "drone") {
-      // an airborne unit: a ground shadow stays put while the body bobs above it
+      // an airborne quad: a ground shadow stays put while the body bobs above it
       const by = d.y + Math.sin(state.time * 4 + d.x * 0.05) * 3;
       R.circle(d.x, d.y, 8, 0, 0, 0, 0.28); // shadow (no bob)
-      R.glow(d.x, by, 18, r, g, b, d.reloading ? 0.2 : 0.45); // scanner; dims while reloading
-      const rot = state.time * 9; // spinning rotor blades (ring() can't rotate)
-      R.tri(d.x, by, 7, rot, r, g, b, 0.5);
-      R.tri(d.x, by, 7, rot + 2.094, r, g, b, 0.5);
-      R.tri(d.x, by, 7, rot + 4.189, r, g, b, 0.5);
-      R.hex(d.x, by, 6, state.time * 2, r, g, b, 1);
-      R.ring(d.x, by, 9, r, g, b, 0.7);
-      R.rect(d.x + Math.cos(d.aim) * 10, by + Math.sin(d.aim) * 10, 12, 3, d.aim, r, g, b, 0.9);
+      R.glow(d.x, by, 18, r, g, b, d.reloading ? 0.2 : 0.45); // under-body scanner; dims on reload
+      // chassis: two arms crossing in an X (oriented to aim) + a small core
+      const arm = 11;
+      R.rect(d.x, by, arm * 2, 2.5, d.aim + Math.PI / 4, r, g, b, 0.85);
+      R.rect(d.x, by, arm * 2, 2.5, d.aim - Math.PI / 4, r, g, b, 0.85);
+      R.hex(d.x, by, 5, state.time * 1.5, r, g, b, 1); // core body
+      // four rotors at the arm tips; a fast-spinning tri reads as blade blur
+      const rot = state.time * 14;
+      for (const off of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4]) {
+        const rx = d.x + Math.cos(d.aim + off) * arm;
+        const ry = by + Math.sin(d.aim + off) * arm;
+        R.ring(rx, ry, 4, r, g, b, 0.7); // rotor housing
+        R.tri(rx, ry, 3.5, rot, r, g, b, 0.5); // blade blur
+      }
+      // forward camera eye; dims while reloading (reloading is snapshot-synced, targetId is not)
+      const ex = d.x + Math.cos(d.aim) * 9;
+      const ey = by + Math.sin(d.aim) * 9;
+      R.glow(ex, ey, 6, r, g, b, d.reloading ? 0.3 : 0.8);
       drawDeployableHp(R, d, d.x, by);
     } else if (visual === "crate") {
-      // supply station: a glowing crate that pulses as it nears its next drop
-      const pulse = 0.5 + 0.3 * Math.sin(state.time * 3 + d.x);
-      R.glow(d.x, d.y, 24, r, g, b, 0.35 + pulse * 0.2);
-      R.rect(d.x, d.y, 20, 16, 0, 0.5, 0.42, 0.26, 1);
-      R.rect(d.x, d.y, 20, 4, 0, r, g, b, 0.9);
+      // supply station: a glowing crate with a beacon that ramps toward each drop. Phase from
+      // state.time (synced on host & client); the emitter drops on the same state.time grid
+      // (see tickEmitter), so the beacon ramp peaks exactly as a drop lands — no host-only state.
+      const interval = def.emitter?.interval ?? 8;
+      const frac = (state.time % interval) / interval; // 0..1 toward the next drop
+      const beacon = 0.3 + 0.6 * frac * frac; // ramps brighter as the drop nears
+      R.glow(d.x, d.y, 24, r, g, b, 0.3 + beacon * 0.3);
+      R.rect(d.x, d.y, 20, 16, 0, 0.5, 0.42, 0.26, 1); // crate body
+      R.rect(d.x, d.y, 20, 4, 0, r, g, b, 0.9); // colour band
+      // corner bolts
+      for (const sx of [-1, 1]) {
+        for (const sy of [-1, 1]) {
+          R.rect(d.x + sx * 8, d.y + sy * 6, 2.5, 2.5, 0, r, g, b, 0.8);
+        }
+      }
+      // supply mark: a small cross on the top face
+      R.rect(d.x, d.y, 7, 2, 0, 0.9, 0.9, 0.85, 0.9);
+      R.rect(d.x, d.y, 2, 7, 0, 0.9, 0.9, 0.85, 0.9);
+      // beacon light on top, flashes as the drop nears
+      R.glow(d.x, d.y - 12, 5, r, g, b, beacon);
       R.ring(d.x, d.y, 12, r, g, b, 0.7);
       drawDeployableHp(R, d, d.x, d.y);
     } else {
-      // turret: base + a barrel that tracks its target; glow dims while reloading
+      // turret: tripod base + rotating housing + twin barrels that track the target
       R.glow(d.x, d.y, 26, r, g, b, d.reloading ? 0.2 : 0.4);
-      R.circle(d.x, d.y, 11, 0.2, 0.22, 0.24, 1);
-      R.ring(d.x, d.y, 11, r, g, b, 0.8);
+      // tripod: three static splayed struts under the base
+      for (const leg of [
+        Math.PI / 2,
+        Math.PI / 2 + (2 * Math.PI) / 3,
+        Math.PI / 2 + (4 * Math.PI) / 3,
+      ]) {
+        R.rect(d.x + Math.cos(leg) * 9, d.y + Math.sin(leg) * 9, 10, 3.5, leg, 0.28, 0.3, 0.32, 1);
+      }
+      R.circle(d.x, d.y, 12, 0.18, 0.2, 0.22, 1); // base plate (matches collider radius)
+      R.ring(d.x, d.y, 12, r, g, b, 0.8);
+      R.hex(d.x, d.y, 7, d.aim, r, g, b, 1); // rotating housing
+      // twin barrels along aim, offset perpendicular so it reads as a gun not a stick
+      const px = Math.cos(d.aim + Math.PI / 2);
+      const py = Math.sin(d.aim + Math.PI / 2);
       const bx = d.x + Math.cos(d.aim) * 14;
-      const by = d.y + Math.sin(d.aim) * 14;
-      R.rect(bx, by, 20, 5, d.aim, r, g, b, 1);
+      const barrelY = d.y + Math.sin(d.aim) * 14;
+      R.rect(bx + px * 3, barrelY + py * 3, 20, 3.5, d.aim, r, g, b, 1);
+      R.rect(bx - px * 3, barrelY - py * 3, 20, 3.5, d.aim, r, g, b, 1);
+      // muzzle glow at the barrel tips; dims while reloading
+      const mx = d.x + Math.cos(d.aim) * 24;
+      const my = d.y + Math.sin(d.aim) * 24;
+      R.glow(mx, my, d.reloading ? 4 : 7, r, g, b, d.reloading ? 0.2 : 0.5);
       drawDeployableHp(R, d, d.x, d.y);
     }
   }

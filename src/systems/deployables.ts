@@ -20,7 +20,7 @@ export function sysDeployables(state: State, dt: number): void {
     if (!def) continue;
     if (def.movement) tickMovement(state, d, def, dt);
     if (def.weapon) tickWeapon(state, d, def, dt);
-    if (def.emitter) tickEmitter(state, d, def, dt);
+    if (def.emitter) tickEmitter(state, d, def);
     if (def.destructible) {
       tickDamage(state, d, def, dt);
       if ((d.hp ?? 0) <= 0) dead.push(i);
@@ -67,10 +67,13 @@ function tickMovement(state: State, d: Deployable, def: DeployableDef, dt: numbe
     gx = anchor.x + Math.cos(a) * reach;
     gy = anchor.y + Math.sin(a) * reach;
   } else {
-    // hover behind the anchor, with a per-id angular offset so multiple drones don't stack
-    const a = anchor.aim + Math.PI + ((d.id * 1.618) % (Math.PI * 2));
+    // idle: orbit the anchor on watch. the per-id golden-angle phase spreads multiple drones
+    // around the ring; state.time drives the sweep so it's deterministic (host & client agree).
+    const a = ((d.id * 1.618) % (Math.PI * 2)) + state.time * m.orbitSpeed;
     gx = anchor.x + Math.cos(a) * m.hoverDist;
     gy = anchor.y + Math.sin(a) * m.hoverDist;
+    // face the direction of travel (orbit tangent) + a slow scan wobble
+    d.aim = a + Math.PI / 2 + Math.sin(state.time * 1.3) * 0.25;
   }
 
   const dx = gx - d.x;
@@ -111,6 +114,7 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
     d.targetId = nearest.id;
   } else {
     target = null;
+    d.targetId = undefined; // no zombie in range → release so tickMovement returns to orbit
   }
 
   // magazine: while reloading, hold fire; when it completes, refill and reset the shot cd so
@@ -160,13 +164,16 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
   if (def.destructible) d.hpFrac = clamp((d.hp ?? 0) / def.destructible.maxHp, 0, 1);
 }
 
-/** Drop a pickup every `interval` seconds (first drop is immediate, matching the legacy emitter). */
-function tickEmitter(state: State, d: Deployable, def: DeployableDef, dt: number): void {
+/** Drop a pickup on the absolute `interval` grid (`state.time` crossing k*interval), so the drop
+ *  lands exactly where the beacon resets. Advancing `emitAt` by `interval` (not re-arming relative
+ *  to now) keeps it on the grid with no drift, and clients see the same cadence as the host since
+ *  both are driven by the synced `state.time`. */
+function tickEmitter(state: State, d: Deployable, def: DeployableDef): void {
   const e = def.emitter as NonNullable<DeployableDef["emitter"]>;
-  if ((d.emitCd ?? 0) > 0) d.emitCd = (d.emitCd ?? 0) - dt;
-  if ((d.emitCd ?? 0) <= 0) {
+  if (d.emitAt === undefined) d.emitAt = (Math.floor(state.time / e.interval) + 1) * e.interval;
+  if (state.time >= d.emitAt) {
     spawnPickup(state, d.x, d.y, e.emit);
-    d.emitCd = e.interval;
+    d.emitAt += e.interval;
   }
 }
 

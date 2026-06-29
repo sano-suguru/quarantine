@@ -309,7 +309,13 @@ export interface DeployableDef {
   /** periodically drop a pickup (`emit` = pickup defId) every `interval` seconds */
   emitter?: { emit: string; interval: number };
   /** leash-follow the nearest alive player and approach zombies to engage */
-  movement?: { speed: number; leashMax: number; hoverDist: number; switchMargin: number };
+  movement?: {
+    speed: number;
+    leashMax: number;
+    hoverDist: number;
+    switchMargin: number;
+    orbitSpeed: number;
+  };
   /** takes contact damage from adjacent zombies; removed at hp<=0 */
   destructible?: { maxHp: number; contactRadius: number; contactDps: number };
   /** a physical body: pushes zombies and players out of `radius`, so a placed structure blocks
@@ -338,8 +344,9 @@ export interface Deployable {
   // ---- host-only sim state (not in snapshot; clients don't simulate it) ----
   /** countdown to the next shot */
   weaponCd?: number;
-  /** countdown to the next emit */
-  emitCd?: number;
+  /** absolute sim time of the next scheduled emit, snapped to the interval grid — so drops land
+   *  exactly where the `state.time`-driven beacon resets (host & client read the same phase) */
+  emitAt?: number;
   /** rounds left in the magazine */
   ammoLeft?: number;
   /** reload countdown (>0 = reloading) */

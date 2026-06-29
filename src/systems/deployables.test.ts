@@ -48,7 +48,8 @@ describe("placeDeployable / deployableCount", () => {
     expect(sentry.reloading).toBe(false);
     const station = place(s, "ammostation");
     expect(station.hp).toBeUndefined(); // emitter is indestructible
-    expect(station.emitCd).toBe(0);
+    // first drop is scheduled at the next interval grid boundary (placed at t=0 → t=interval)
+    expect(station.emitAt).toBe(DEPLOYABLE_TYPES.ammostation?.emitter?.interval);
   });
 
   it("ignores an unknown defId", () => {
@@ -163,17 +164,28 @@ describe("sysDeployables — weapon (refactor equivalence + magazine)", () => {
   });
 });
 
-describe("sysDeployables — emitter (refactor equivalence)", () => {
-  it("drops a pickup on its interval", () => {
+describe("sysDeployables — emitter (drops on the absolute state.time grid, in sync with the beacon)", () => {
+  it("schedules the first drop at the next grid boundary, then every interval — not on placement", () => {
     const s = newState();
-    place(s, "ammostation");
+    const interval = DEPLOYABLE_TYPES.ammostation?.emitter?.interval ?? 8;
+    s.time = 2.5; // placed mid-cycle
+    const st = place(s, "ammostation");
     s.pickups = [];
-    sysDeployables(s, 0.016); // emitCd 0 → emits immediately
+    // the beacon resets on absolute grid boundaries (state.time % interval); the first drop
+    // is scheduled at the next one (t=interval), NOT immediately on placement.
+    expect(st.emitAt).toBe(interval);
+
+    sysDeployables(s, 0.016); // t still 2.5 → before the boundary → no drop
+    expect(s.pickups.length).toBe(0);
+
+    s.time = interval; // cross the boundary the beacon resets on
+    sysDeployables(s, 0.016);
     expect(s.pickups.length).toBe(1);
     expect(s.pickups[0]?.defId).toBe("ammo");
-    sysDeployables(s, 0.016); // not yet
-    expect(s.pickups.length).toBe(1);
-    sysDeployables(s, (DEPLOYABLE_TYPES.ammostation?.emitter?.interval ?? 8) + 0.1);
+    expect(st.emitAt).toBe(interval * 2); // advanced one grid step, still aligned
+
+    s.time = interval * 2; // next boundary
+    sysDeployables(s, 0.016);
     expect(s.pickups.length).toBe(2);
   });
 });
@@ -306,5 +318,43 @@ describe("sysDeployables — composition smoke", () => {
     for (let i = 0; i < 5; i++) sysDeployables(s, 0.016);
     expect(s.bullets.length).toBeGreaterThan(0); // fired
     expect(d.hp).toBeLessThan(hp0); // took contact damage
+  });
+});
+
+describe("sysDeployables — drone orbit-on-watch", () => {
+  it("orbits the anchor over time instead of holding a fixed angle behind it", () => {
+    const s = newState(); // player 0 at (0,0)
+    s.zombies = [];
+    const d = place(s, "drone");
+    const p0 = s.players[0] as State["players"][number];
+    const hoverDist = DEPLOYABLE_TYPES.drone?.movement?.hoverDist ?? 46;
+
+    // settle at time 0
+    for (let i = 0; i < 80; i++) sysDeployables(s, 0.05);
+    const r0 = len(d.x - p0.x, d.y - p0.y);
+    expect(r0).toBeLessThanOrEqual(hoverDist + 4); // sits on the orbit ring (+ deadzone slack)
+    const angle0 = Math.atan2(d.y - p0.y, d.x - p0.x);
+
+    // advance sim time → the orbit angle must sweep (a fixed-angle hover would not move)
+    s.time = 3;
+    for (let i = 0; i < 80; i++) sysDeployables(s, 0.05);
+    const angle1 = Math.atan2(d.y - p0.y, d.x - p0.x);
+    const dA = Math.abs(((angle1 - angle0 + Math.PI) % (2 * Math.PI)) - Math.PI);
+    expect(dA).toBeGreaterThan(0.3);
+  });
+
+  it("releases targetId when the last zombie leaves weapon range (returns to orbit)", () => {
+    const s = newState();
+    s.zombies = [];
+    const d = place(s, "drone");
+    d.x = 0;
+    d.y = 0;
+    const z = zombieAt(s, 100, 0, 1e9); // inside drone weapon range (320)
+    sysDeployables(s, 0.016);
+    expect(d.targetId).toBe(z.id); // acquired
+
+    z.x = 5000; // alive but far outside weapon range
+    sysDeployables(s, 0.016); // tickWeapon must clear the stale target
+    expect(d.targetId).toBeUndefined();
   });
 });
