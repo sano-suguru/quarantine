@@ -28,7 +28,7 @@ import { sysFx } from "./systems/fx";
 import { sysPickups } from "./systems/pickups";
 import { effectiveSearchTime, sysPlayer } from "./systems/player";
 import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "./systems/siege";
-import type { Player, State } from "./types";
+import type { Player, State, WeaponDef } from "./types";
 import { el, hide, renderList, show } from "./ui";
 
 let state: State = newState();
@@ -611,6 +611,53 @@ export function draw(): void {
   R.flush(camX, camY);
 }
 
+/** Draw the held-weapon silhouette from its data-driven `viz` parts, posed by the draw-anim timer.
+ *  Generic per-shape dispatch only — no per-weapon branches (CLAUDE.md). The whole rig dips toward
+ *  the body and dims at switch start, then extends out and aligns to aim as switchT → 0. */
+function drawWeaponRig(
+  R: typeof Renderer,
+  px: number,
+  py: number,
+  aim: number,
+  wd: WeaponDef,
+  switchT: number,
+): void {
+  const raise = switchT > 0 ? 1 - switchT / wd.drawTime : 1; // 0 = just switched, 1 = ready
+  const e = 1 - (1 - raise) * (1 - raise); // ease-out
+  const DOWN = 0.6; // rad the rig dips off-aim mid-draw (sign may need flipping in dev — Y is flipped)
+  const ang = aim + (1 - e) * DOWN; // dip while drawing → align when ready
+  const fwdScale = 0.3 + 0.7 * e; // pulled in → full extension
+  const aMul = 0.6 + 0.4 * e; // dimmed → full
+  const ca = Math.cos(ang);
+  const sa = Math.sin(ang);
+  for (const part of wd.viz) {
+    const fwd = part.dx * fwdScale;
+    const lat = part.dy;
+    const wx = px + ca * fwd - sa * lat;
+    const wy = py + sa * fwd + ca * lat;
+    const [cr, cg, cb] = part.color ?? wd.color;
+    const a = (part.alpha ?? 1) * aMul;
+    const rot = ang + part.rot;
+    switch (part.shape) {
+      case "circle":
+        R.circle(wx, wy, part.len / 2, cr, cg, cb, a);
+        break;
+      case "ring":
+        R.ring(wx, wy, part.len / 2, cr, cg, cb, a);
+        break;
+      case "hex":
+        R.hex(wx, wy, part.len / 2, rot, cr, cg, cb, a);
+        break;
+      case "tri":
+        R.tri(wx, wy, part.len / 2, rot, cr, cg, cb, a);
+        break;
+      default:
+        R.rect(wx, wy, part.len, part.wid, rot, cr, cg, cb, a);
+        break;
+    }
+  }
+}
+
 /** draw one player: body, gun, muzzle/reload/heal feedback; teammates get an overhead HP bar */
 function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
   const col = isLocal
@@ -622,9 +669,8 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
   R.circle(px, py, pl.r, col[0], col[1], col[2], 1);
   R.ring(px, py, pl.r * 0.6, 0.05, 0.18, 0.05, 0.9);
   if (pl.hitFlash > 0) R.glow(px, py, pl.r * 3.4, 1, 0.2, 0.2, Math.min(0.9, pl.hitFlash * 3));
-  const bx = px + Math.cos(pl.aim) * pl.r * 0.9;
-  const by = py + Math.sin(pl.aim) * pl.r * 0.9;
-  R.rect(bx, by, pl.r * 1.4, 6, pl.aim, 0.85, 0.95, 0.8, 1);
+  const heldWd = WEAPONS[pl.weapon];
+  if (heldWd) drawWeaponRig(R, px, py, pl.aim, heldWd, pl.switchT);
   if (pl.muzzle > 0) {
     const wd = WEAPONS[pl.weapon];
     if (wd?.melee) {
