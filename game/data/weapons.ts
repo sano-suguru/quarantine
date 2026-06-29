@@ -20,10 +20,12 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 36,
     reserveMax: 96,
     drawTime: 0.35,
-    // compact sidearm: short barrel poking past the body + a stubby grip
+    // compact sidearm: receiver → short barrel → muzzle tip, + a stubby grip
     viz: [
-      { dx: 18, dy: 0, rot: 0, len: 16, wid: 6 },
-      { dx: 9, dy: 4, rot: 0, len: 6, wid: 5 },
+      { dx: 13, dy: 0, rot: 0, len: 11, wid: 7 },
+      { dx: 21, dy: 0, rot: 0, len: 8, wid: 4.5 },
+      { dx: 26, dy: 0, rot: 0, len: 6, wid: 6, shape: "tri" },
+      { dx: 8, dy: 5, rot: 0, len: 6, wid: 5 },
     ],
   },
   smg: {
@@ -45,9 +47,11 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 64,
     reserveMax: 160,
     drawTime: 0.4,
-    // boxy SMG: medium barrel + a prominent angled magazine hanging below
+    // boxy SMG: chunky receiver → barrel → muzzle, + a prominent magazine below
     viz: [
-      { dx: 20, dy: 0, rot: 0, len: 22, wid: 6 },
+      { dx: 14, dy: 0, rot: 0, len: 14, wid: 8 },
+      { dx: 25, dy: 0, rot: 0, len: 10, wid: 5 },
+      { dx: 31, dy: 0, rot: 0, len: 6, wid: 6, shape: "tri" },
       { dx: 12, dy: 7, rot: 0, len: 10, wid: 5 },
     ],
   },
@@ -70,9 +74,11 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 18,
     reserveMax: 42,
     drawTime: 0.5,
-    // shotgun signature = THICK barrel + a chunky stock behind the body
+    // shotgun: THICK receiver → thick barrel → wide muzzle, + a chunky stock
     viz: [
-      { dx: 20, dy: 0, rot: 0, len: 26, wid: 12 },
+      { dx: 13, dy: 0, rot: 0, len: 14, wid: 13 },
+      { dx: 25, dy: 0, rot: 0, len: 12, wid: 10 },
+      { dx: 32, dy: 0, rot: 0, len: 11, wid: 11, shape: "tri" },
       { dx: 3, dy: 0, rot: 0, len: 10, wid: 8 },
     ],
   },
@@ -97,11 +103,13 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 90,
     reserveMax: 240,
     drawTime: 0.45,
-    // rifle = long, thin barrel + magazine + a small top sight (precise look)
+    // rifle = receiver → long thin barrel → muzzle, + magazine + a top sight
     viz: [
-      { dx: 24, dy: 0, rot: 0, len: 32, wid: 5 },
+      { dx: 14, dy: 0, rot: 0, len: 12, wid: 7 },
+      { dx: 28, dy: 0, rot: 0, len: 20, wid: 4.5 },
+      { dx: 39, dy: 0, rot: 0, len: 6, wid: 5, shape: "tri" },
       { dx: 14, dy: 7, rot: 0, len: 9, wid: 5 },
-      { dx: 18, dy: -5, rot: 0, len: 5, wid: 3 },
+      { dx: 16, dy: -5, rot: 0, len: 5, wid: 3 },
     ],
   },
   // Light machine gun: suppressing fire, huge mag, heavy kick, long reload.
@@ -124,9 +132,11 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 150,
     reserveMax: 450,
     drawTime: 0.7,
-    // LMG = the biggest rig: longest barrel + a fat drum mag + a stock
+    // LMG = biggest rig: receiver → longest barrel → muzzle, + fat drum + stock
     viz: [
-      { dx: 28, dy: 0, rot: 0, len: 40, wid: 7 },
+      { dx: 14, dy: 0, rot: 0, len: 16, wid: 10 },
+      { dx: 32, dy: 0, rot: 0, len: 24, wid: 6 },
+      { dx: 46, dy: 0, rot: 0, len: 8, wid: 7, shape: "tri" },
       { dx: 13, dy: 9, rot: 0, len: 16, wid: 16, shape: "circle" },
       { dx: 1, dy: 0, rot: 0, len: 11, wid: 9 },
     ],
@@ -151,10 +161,11 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 24,
     reserveMax: 60,
     drawTime: 0.55,
-    // magnum = short but VERY fat barrel + a big hex cylinder + grip (hand-cannon)
+    // magnum = hand-cannon: big hex cylinder, short FAT barrel → muzzle, + grip
     viz: [
-      { dx: 18, dy: 0, rot: 0, len: 18, wid: 12 },
-      { dx: 9, dy: 0, rot: 0, len: 14, wid: 14, shape: "hex" },
+      { dx: 23, dy: 0, rot: 0, len: 9, wid: 8 },
+      { dx: 28, dy: 0, rot: 0, len: 9, wid: 9, shape: "tri" },
+      { dx: 10, dy: 0, rot: 0, len: 14, wid: 14, shape: "hex" },
       { dx: 5, dy: 5, rot: 0, len: 6, wid: 5 },
     ],
   },
@@ -180,10 +191,11 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 0,
     reserveMax: 0,
     drawTime: 0.3,
-    // knife = tiny, thin blade + a small crossguard (clearly the smallest rig)
+    // knife = thin blade tapering to a pointed tip + a small crossguard (smallest rig)
     viz: [
-      { dx: 16, dy: 0, rot: 0, len: 18, wid: 3 },
-      { dx: 7, dy: 0, rot: 0, len: 3, wid: 7 },
+      { dx: 13, dy: 0, rot: 0, len: 13, wid: 3 },
+      { dx: 21, dy: 0, rot: 0, len: 7, wid: 3.5, shape: "tri" },
+      { dx: 6, dy: 0, rot: 0, len: 3, wid: 7 },
     ],
     melee: true,
     meleeArc: 0.95,
