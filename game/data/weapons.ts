@@ -72,10 +72,11 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 18,
     reserveMax: 42,
     drawTime: 0.5,
-    // shotgun: THICK receiver → thick blunt barrel + a chunky stock
+    // shotgun: receiver → SIDE-BY-SIDE twin barrels (gap between them) + chunky stock
     viz: [
-      { dx: 13, dy: 0, rot: 0, len: 14, wid: 13 },
-      { dx: 27, dy: 0, rot: 0, len: 16, wid: 10 },
+      { dx: 13, dy: 0, rot: 0, len: 14, wid: 12 },
+      { dx: 27, dy: -4, rot: 0, len: 16, wid: 4.5 },
+      { dx: 27, dy: 4, rot: 0, len: 16, wid: 4.5 },
       { dx: 3, dy: 0, rot: 0, len: 10, wid: 8 },
     ],
   },
