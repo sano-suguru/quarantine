@@ -3,7 +3,7 @@ import { CONFIG } from "../config";
 import { makePlayer } from "../engine/players";
 import { getState } from "../game";
 import type { State } from "../types";
-import { Host } from "./host";
+import { Host, pickSlot } from "./host";
 import type { NetMsg } from "./net";
 import { emptyInput } from "./playerInput";
 import type { PeerLink } from "./transport";
@@ -209,5 +209,114 @@ describe("Host grace + reconnect", () => {
     link2.fireOpen();
     link2.recv({ t: "rejoin", pid, nonce });
     expect(s.players.some((p) => p.id === link2.hello()?.localId)).toBe(true);
+  });
+});
+
+describe("pickSlot", () => {
+  it("assigns the lowest free client slot starting at 1", () => {
+    expect(pickSlot([])).toEqual({ kind: "assign", pid: 1 });
+    expect(pickSlot([1])).toEqual({ kind: "assign", pid: 2 });
+    expect(pickSlot([1, 2])).toEqual({ kind: "assign", pid: 3 });
+  });
+
+  it("fills the lowest gap, not the next-highest", () => {
+    expect(pickSlot([1, 3])).toEqual({ kind: "assign", pid: 2 });
+    expect(pickSlot([2, 3])).toEqual({ kind: "assign", pid: 1 });
+  });
+
+  it("is full when all three client slots are occupied (held/absent peers still count)", () => {
+    expect(pickSlot([1, 2, 3])).toEqual({ kind: "full" });
+  });
+
+  it("ignores the host slot (0) and never returns it", () => {
+    expect(pickSlot([0])).toEqual({ kind: "assign", pid: 1 });
+  });
+});
+
+describe("Host room cap", () => {
+  it("rejects a 4th client: sends roomfull, assigns no slot, spawns no body", () => {
+    const s = getState();
+    const host = new Host();
+    const links = [new FakePeerLink(), new FakePeerLink(), new FakePeerLink(), new FakePeerLink()];
+    for (const l of links) host.add(l);
+    for (const l of links) l.fireOpen(); // lobby → decide a slot immediately on open
+    host.start(); // Deploy
+
+    expect(host.connectedPids().sort()).toEqual([1, 2, 3]);
+    expect(s.players.map((p) => p.id).sort()).toEqual([0, 1, 2, 3]); // host(0) + 3 clients, no 4th
+    for (const l of links.slice(0, 3)) {
+      expect(l.hello()).toBeTruthy();
+      expect(l.sent.some((m) => m.t === "roomfull")).toBe(false);
+    }
+    expect(links[3]?.hello()).toBeUndefined(); // 4th got no slot
+    expect(links[3]?.sent.some((m) => m.t === "roomfull")).toBe(true);
+  });
+
+  it("a pre-game drop frees its slot for the next join (no held body before deploy)", () => {
+    const host = new Host();
+    const [a, b, c] = [new FakePeerLink(), new FakePeerLink(), new FakePeerLink()];
+    for (const l of [a, b, c]) {
+      host.add(l);
+      l.fireOpen();
+    }
+    expect(host.connectedPids().sort()).toEqual([1, 2, 3]);
+
+    a.fireClose(); // pre-game (host not started) → peer fully removed, slot 1 freed
+    const d = new FakePeerLink();
+    host.add(d);
+    d.fireOpen();
+    expect(d.hello()?.localId).toBe(1); // reuses the freed slot
+    expect(d.sent.some((m) => m.t === "roomfull")).toBe(false);
+  });
+
+  it("a refused peer is untracked at once: dropped from links (no wasted broadcast), uncounted", () => {
+    const host = new Host();
+    const links = [new FakePeerLink(), new FakePeerLink(), new FakePeerLink(), new FakePeerLink()];
+    for (const l of links) host.add(l);
+    for (const l of links) l.fireOpen(); // lobby → 1,2,3 assigned; 4th rejected
+
+    const rejected = links[3] as FakePeerLink;
+    expect(rejected.sent.some((m) => m.t === "roomfull")).toBe(true);
+    expect(host.links.includes(rejected)).toBe(false); // out of the broadcast list immediately
+    expect(host.playerCount()).toBe(4); // host + 3 — the refused peer never inflates the count
+  });
+
+  it("playerCount holds steady through a mid-game drop so the registry never under-advertises", () => {
+    const host = new Host();
+    host.start();
+    const links = [new FakePeerLink(), new FakePeerLink(), new FakePeerLink()];
+    for (const l of links) {
+      host.add(l);
+      l.fireOpen();
+      l.recv({ t: "join" });
+    }
+    expect(host.playerCount()).toBe(4); // host + 3 clients
+
+    links[0]?.fireClose(); // pid 1 drops mid-game → body held absent within grace
+    expect(host.connectedPids()).toHaveLength(2); // only 2 present now (badges shrink)
+    expect(host.playerCount()).toBe(4); // but the held slot still counts → room stays "full" to joiners
+  });
+
+  it("a held (absent) ghost keeps its slot — a fresh join is refused, the ghost is NOT evicted", () => {
+    const s = getState();
+    const host = new Host();
+    host.start();
+    const links = [new FakePeerLink(), new FakePeerLink(), new FakePeerLink()];
+    for (const l of links) {
+      host.add(l);
+      l.fireOpen();
+      l.recv({ t: "join" });
+    }
+    expect(s.players.map((p) => p.id).sort()).toEqual([0, 1, 2, 3]);
+
+    links[0]?.fireClose(); // pid 1 drops mid-game → body held absent, slot reserved within grace
+    expect(s.players.find((p) => p.id === 1)?.absent).toBe(true);
+
+    const fresh = new FakePeerLink();
+    host.add(fresh);
+    fresh.fireOpen();
+    fresh.recv({ t: "join" }); // mid-game fresh join while the room is full of (live + ghost)
+    expect(fresh.sent.some((m) => m.t === "roomfull")).toBe(true); // ghost protected (feel-first)
+    expect(fresh.hello()).toBeUndefined();
   });
 });

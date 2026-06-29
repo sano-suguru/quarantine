@@ -83,6 +83,8 @@ export class Client {
       rejoin?: { pid: number; nonce: string } | null;
       /** host runs an incompatible wire version (manual-SDP path; signaling gates the rest) */
       onVersionMismatch?: () => void;
+      /** the room is full (host + 3): stop and surface a terminal "room is full" to the lobby */
+      onRoomFull?: () => void;
     } = {},
   ) {
     this.wire(link);
@@ -109,6 +111,16 @@ export class Client {
         if (this.started) clientApplyHello(msg.localId, msg.owned);
       } else if (msg.t === "gameover") {
         clientGameOver(msg.salvage, msg.day, msg.kills, msg.money);
+      } else if (msg.t === "roomfull") {
+        // host turned us away (room at capacity). Stop net activity and tear down our own link
+        // — the host deliberately did NOT close it (so this rel wasn't dropped from the buffer).
+        this.live = false;
+        this.hooks.onRoomFull?.();
+        try {
+          this.link.close();
+        } catch {
+          /* already closing */
+        }
       } else if (msg.t === "pong") {
         const sent = this.pingSent.get(msg.id);
         if (sent !== undefined) {

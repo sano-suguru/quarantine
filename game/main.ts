@@ -270,6 +270,7 @@ function main(): void {
           public: coopPublic,
           phase: hostStarted ? gs.phase : "lobby",
           day: gs.day,
+          players: Net.host?.playerCount() ?? 1, // authoritative: occupied slots + host (= the cap)
         });
       }
     } else {
@@ -417,7 +418,7 @@ function wireCoop(): void {
   const roomJoin = el("lobby-room-join");
   const roomCode = el<HTMLInputElement>("lobby-room-code");
   const roomInput = el<HTMLInputElement>("lobby-room-input");
-  const roomGo = el("lobby-room-go");
+  const roomGo = el<HTMLButtonElement>("lobby-room-go");
   const squad = el("lobby-squad");
   squad.classList.add("squad-row"); // flex layout for the chips renderList drops in directly
   const status = el("lobby-status");
@@ -554,6 +555,7 @@ function wireCoop(): void {
         public: coopPublic,
         phase: hostStarted ? gs.phase : "lobby",
         day: gs.day,
+        players: (Net.host?.connectedPids().length ?? 0) + 1, // host + decided clients
       });
     };
 
@@ -588,7 +590,12 @@ function wireCoop(): void {
     );
     coopHostHandle = hostHandle; // the host tick pushes registry meta through this
     // seed the listing now; buffered in hostRoom and flushed the instant the signaling WS opens
-    hostHandle.setMeta({ public: isPublic, phase: "lobby", day: 1 });
+    hostHandle.setMeta({
+      public: isPublic,
+      phase: "lobby",
+      day: 1,
+      players: (Net.host?.connectedPids().length ?? 0) + 1,
+    });
 
     // manual fallback: opening <details> hides the room code (so the mode is unambiguous)
     // and lazily builds an offer on first open.
@@ -643,7 +650,9 @@ function wireCoop(): void {
 
     const join = async (): Promise<void> => {
       const code = roomInput.value.trim().toUpperCase(); // idFromName is case-sensitive
-      if (!code) return;
+      if (!code || roomGo.disabled) return; // re-entry guard: ignore double-click / Enter spam
+      roomGo.disabled = true;
+      let rejected = false; // roomfull set a terminal message → don't let onClose clobber it
       setClientLobby({ k: "joining" });
       try {
         const link = await joinRoom(code);
@@ -658,6 +667,20 @@ function wireCoop(): void {
               /* sessionStorage unavailable — reconnect just falls back to a fresh slot */
             }
           },
+          // host turned us away: room is full. Terminal (manual connect can't get in either), so
+          // do NOT open the manual fallback — surface a clear message and re-enable Join so the
+          // player can try a different code.
+          onRoomFull: () => {
+            rejected = true;
+            clearTimeout(failTimer); // roomfull can arrive before/around open → don't let the
+            // NAT-timeout later clobber this terminal message with a "failed"
+            coopRoomCode = null; // don't try to reconnect to a room we were refused from
+            setClientLobby({
+              k: "lost",
+              msg: "room is full — the squad is already at capacity (4).",
+            });
+            roomGo.disabled = false;
+          },
         });
         setClientLobby({ k: "linking" });
         // joinRoom resolves when our ANSWER is sent, NOT when the P2P link actually opens. A
@@ -667,6 +690,7 @@ function wireCoop(): void {
         let opened = false;
         failTimer = setTimeout(() => {
           if (opened) return;
+          roomGo.disabled = false;
           setClientLobby({
             k: "failed",
             msg: failMsg(
@@ -681,6 +705,8 @@ function wireCoop(): void {
         });
         link.onClose(() => {
           clearTimeout(failTimer);
+          if (rejected) return; // roomfull already showed the terminal "room is full"
+          roomGo.disabled = false;
           setClientLobby(
             opened
               ? { k: "lost", msg: "disconnected from host." }
@@ -691,6 +717,7 @@ function wireCoop(): void {
           );
         });
       } catch (err) {
+        roomGo.disabled = false;
         setClientLobby({
           k: "failed",
           msg: `${err instanceof Error ? err.message : err} — try manual connect below`,
@@ -735,6 +762,13 @@ function wireCoop(): void {
                 msg: "host is on a different version — update to play together",
               });
               link.close();
+            },
+            // host turned us away: room is full (the client closes its own link on this event)
+            onRoomFull: () => {
+              setClientLobby({
+                k: "lost",
+                msg: "room is full — the squad is already at capacity (4).",
+              });
             },
           });
           link.onOpen(() => setClientLobby({ k: "connected" }));
@@ -875,6 +909,14 @@ function wireCoop(): void {
         } catch {
           /* sessionStorage unavailable */
         }
+      },
+      onRoomFull: () => {
+        clearTimeout(t); // defensive — normally already cleared on open
+        Net.client = null;
+        Net.mode = "single";
+        coopRoomCode = null;
+        openHostLobby(true);
+        setStatus("This raid is full — hosting a public one instead.");
       },
     });
     let opened = false;

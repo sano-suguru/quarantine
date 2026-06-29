@@ -50,7 +50,7 @@ export interface HostRoom {
   /** Publish/refresh this room in the public registry (public=false unlists it). Sent on the host
    *  signaling socket; drive it from the host's Worker-clock tick so it isn't throttled in a
    *  backgrounded tab and doubles as the registry liveness heartbeat. */
-  setMeta(meta: { public: boolean; phase: string; day: number }): void;
+  setMeta(meta: { public: boolean; phase: string; day: number; players: number }): void;
 }
 
 /**
@@ -68,7 +68,7 @@ export function hostRoom(
   let connected = 0;
   // latest public-listing meta; flushed the instant the socket opens so a public room registers
   // immediately (not after the first heartbeat tick), and re-sent on every setMeta thereafter.
-  let lastMeta: { public: boolean; phase: string; day: number } | null = null;
+  let lastMeta: { public: boolean; phase: string; day: number; players: number } | null = null;
 
   ws.addEventListener("open", () => {
     if (lastMeta) ws.send(JSON.stringify({ t: "meta", ...lastMeta }));
