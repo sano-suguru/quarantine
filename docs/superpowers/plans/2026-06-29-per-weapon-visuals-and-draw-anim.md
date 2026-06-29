@@ -178,7 +178,7 @@ git commit -m "feat(weapons): add per-weapon viz silhouette + drawTime data"
 - Modify: `game/types.ts` (add `Player.switchT`)
 - Modify: `game/engine/players.ts:37` (`makePlayer`), `:99` (`revivePlayer`)
 - Modify: `game/systems/player.ts:120-134` (switch block) + the per-frame decrement
-- Modify: `game/config.ts:79-82` (remove `switchRaise`)
+- Modify: `game/config.ts` (remove `switchRaise` — the `player:` entry at :82 **and** the comment at :47-48)
 - Test: `game/systems/player.test.ts:157-166` (update)
 
 **Interfaces:**
@@ -271,14 +271,29 @@ Then add the per-frame decrement next to the existing `fireCd` decrement (line 1
 import { WEAPON_ORDER, WEAPONS } from "../data/weapons";
 ```
 
-- [ ] **Step 6: Remove `switchRaise`** — `game/config.ts`
+- [ ] **Step 6: Remove `switchRaise`** — `game/config.ts` (two places)
 
-Replace lines 79-82 with:
+There are **two** `switchRaise` references in this file — both must go (the final `grep` gate checks for zero).
+
+(a) Replace lines 79-82 with:
 
 ```ts
   // drawTime (per-weapon, in WeaponDef) is the fire-lockout + lower→raise draw beat after a swap,
   // paired with the weapon_switch SFX + move ramp. Tune per weapon by playtest, not clip length.
   player: { radius: 16, speed: 200, maxHp: 100, moveRampRate: 1.5 },
+```
+
+(b) The `moveRampRate` explanation comment at lines 47-48 also names `switchRaise`. Replace:
+
+```ts
+  // moveRampRate = how fast curMoveMul approaches the weapon's weight (per sec); switchRaise =
+  // fire lockout after a weapon switch.
+```
+
+with:
+
+```ts
+  // moveRampRate = how fast curMoveMul approaches the weapon's weight (per sec).
 ```
 
 - [ ] **Step 7: Run test + typecheck to verify pass**
