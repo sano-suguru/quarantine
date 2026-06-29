@@ -140,8 +140,18 @@ describe("snapshot binary round-trip", () => {
       hpFrac: 1,
       reloading: false,
     });
+    s.deployables.push({
+      id: 79,
+      defId: "drone",
+      x: 0,
+      y: 0,
+      aim: 0,
+      hpFrac: 1,
+      reloading: false,
+      ammoFrac: 0.5,
+    });
     const back = decode(encode(captureSnapshot(s, 9)));
-    expect(back.deployables).toHaveLength(2);
+    expect(back.deployables).toHaveLength(3);
     const sentry = back.deployables.find((d) => d.id === 77);
     expect(sentry?.defId).toBe("sentry");
     expect(Math.abs((sentry?.x ?? 0) - 120)).toBeLessThanOrEqual(POS_TOL);
@@ -153,6 +163,8 @@ describe("snapshot binary round-trip", () => {
     expect(station?.defId).toBe("ammostation");
     expect(station?.hpFrac).toBeCloseTo(1, 2);
     expect(station?.reloading).toBe(false);
+    const drone = back.deployables.find((d) => d.id === 79);
+    expect(drone?.ammoFrac ?? 0).toBeCloseTo(0.5, 2); // 1-byte quantized
   });
 
   it("stays under the 16KB SCTP message limit for a heavy night", () => {
