@@ -1,0 +1,10 @@
+{
+  // Dev tooling (Bun-run scripts), not part of the game bundle. Own tsconfig so the editor +
+  // `bun run typecheck` resolve Bun/node globals instead of the game's DOM/vite-client env.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["bun"],
+    "lib": ["ES2022"]
+  },
+  "include": ["."]
+}

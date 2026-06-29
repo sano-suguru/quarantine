@@ -4,7 +4,7 @@ import { SFX } from "./sfx";
 import { WEAPON_ORDER, WEAPONS } from "./weapons";
 
 /**
- * Drift guard between the SFX manifest (src/data/sfx.ts), the playback keys the code actually
+ * Drift guard between the SFX manifest (game/data/sfx.ts), the playback keys the code actually
  * requests (engine/audio.ts / game.ts), and the generated files on disk. The runtime doesn't
  * import the manifest (to keep prompts out of the bundle), so this is the one place that keeps
  * the three in lockstep — add a weapon/enemy or a new sound and a missing prompt/file fails here.
@@ -70,7 +70,7 @@ describe("sfx manifest ↔ code ↔ files", () => {
     const missing = [...requiredKeys].filter((k) => !filePresentKeys.has(k));
     expect(
       missing,
-      `keys used by code but with no mp3 in src/audio/sfx: ${missing.join(", ")}`,
+      `keys used by code but with no mp3 in game/audio/sfx: ${missing.join(", ")}`,
     ).toEqual([]);
   });
 

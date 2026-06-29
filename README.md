@@ -61,7 +61,7 @@ If the Biome postinstall is blocked on first install, run `bun pm trust @biomejs
 ## Co-op multiplayer (2–4 players)
 
 Online co-op is **host-as-peer** (one player's browser is the authoritative host) over WebRTC.
-Play the deployed build at **<https://quarantine-signaling.snsgr.workers.dev/>**: one player
+Play the deployed build at **<https://quarantine.snsgr.workers.dev/>**: one player
 clicks **Host co-op** and shares the room code; the others click **Join co-op** and enter it.
 The host presses **Deploy** to start.
 
@@ -78,16 +78,16 @@ What to expect:
   that run's SALVAGE isn't banked.
 
 Running your own co-op locally or self-hosting the relay: see
-[`signaling/README.md`](./signaling/README.md).
+[`worker/README.md`](./worker/README.md).
 
 ## Project layout
 
 The engine is data-driven: adding a weapon, enemy, upgrade, or tuning the
-difficulty curve means editing a table under `src/data/` — not the engine.
+difficulty curve means editing a table under `game/data/` — not the engine.
 
 ```
-index.html          markup + CSS, loads src/main.ts
-src/
+index.html          markup + CSS, loads game/main.ts
+game/
   main.ts           init + fixed-timestep game loop
   game.ts           state singleton, flow, update/draw/HUD
   data/             weapons, enemies, waves, upgrades  ← extension points

@@ -1,4 +1,4 @@
-name = "quarantine-signaling"
+name = "quarantine"
 main = "room.ts"
 compatibility_date = "2026-06-01"
 
@@ -23,7 +23,7 @@ tag = "v2"
 new_sqlite_classes = ["Registry"]
 
 # Serve the built game from this same Worker (single origin => no cross-origin / Mixed Content,
-# one deploy). `directory` is relative to this file (signaling/), so ../dist = repo-root dist/.
+# one deploy). `directory` is relative to this file (worker/), so ../dist = repo-root dist/.
 # Default routing serves an asset on a path match and falls through to the Worker `fetch` on a
 # miss — so `/` and `/assets/*` are static while `/room/CODE` (WebSocket) still hits the DO.
 # Deliberately NO `not_found_handling`/SPA mode: it would return index.html for unknown paths

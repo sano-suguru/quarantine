@@ -24,13 +24,14 @@ jobs:
       - run: bun run knip
         continue-on-error: true
 
-  # signaling/ has its own package.json/lockfile and is excluded from the main tsc/biome/build, so a
-  # type regression there would otherwise slip through. Type-check it with the root (pinned) tsc.
-  signaling:
+  # worker/ has its own package.json/lockfile and is excluded from the main tsc/build (biome covers
+  # it via config), so a type regression there would otherwise slip through. Type-check it with the
+  # root (pinned) tsc.
+  worker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile # root — provides typescript
-      - run: cd signaling && bun install --frozen-lockfile # worker deps (wrangler, workers-types)
-      - run: bunx tsc --noEmit --project signaling/tsconfig.json
+      - run: cd worker && bun install --frozen-lockfile # worker deps (wrangler, workers-types)
+      - run: bunx tsc --noEmit --project worker/tsconfig.json

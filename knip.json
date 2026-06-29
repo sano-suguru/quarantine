@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/**/*.test.ts"],
-  "project": ["src/**/*.ts"],
-  "ignore": ["signaling/**"]
+  "entry": ["game/**/*.test.ts"],
+  "project": ["game/**/*.ts"],
+  "ignore": ["worker/**"]
 }

@@ -86,7 +86,7 @@ function resume(): void {
   if (ctx.state === "suspended") void ctx.resume();
 }
 
-// --- one-shot SFX: thin wrappers over the sample player (keys live in src/audio/sfx/) ---
+// --- one-shot SFX: thin wrappers over the sample player (keys live in game/audio/sfx/) ---
 
 function shot(weapon: string): void {
   playSample(`shot_${weapon}`);

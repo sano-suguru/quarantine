@@ -1,8 +1,8 @@
 /**
  * Batch-generate QUARANTINE's sound effects with the ElevenLabs Sound Effects API and write
- * them to src/audio/sfx/<key>[_n].mp3, where engine/audioAssets.ts auto-discovers them.
+ * them to game/audio/sfx/<key>[_n].mp3, where engine/audioAssets.ts auto-discovers them.
  *
- * Prompts + params live in the single source of truth src/data/sfx.ts (also used by the drift
+ * Prompts + params live in the single source of truth game/data/sfx.ts (also used by the drift
  * test). This file is just the runner.
  *
  * Usage (Bun auto-loads .env → ELEVENLABS_API_KEY):
@@ -18,9 +18,9 @@
  */
 import { existsSync } from "node:fs";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
-import { SFX, type SfxSpec } from "../src/data/sfx";
+import { SFX, type SfxSpec } from "../game/data/sfx";
 
-const OUT_DIR = "src/audio/sfx";
+const OUT_DIR = "game/audio/sfx";
 const OUTPUT_FORMAT = "mp3_44100_128"; // 192k needs Creator tier; drop to mp3_44100_64 if blocked
 const CONCURRENCY = 3; // keep small to stay under rate limits
 const MAX_RETRIES = 3;
@@ -51,7 +51,7 @@ async function genOne(spec: SfxSpec, path: string): Promise<void> {
       });
       const chunks: Uint8Array[] = [];
       for await (const chunk of audio) chunks.push(chunk);
-      await Bun.write(path, new Blob(chunks as BlobPart[]));
+      await Bun.write(path, new Blob(chunks));
       console.log(`✓ ${path}`);
       return;
     } catch (err) {

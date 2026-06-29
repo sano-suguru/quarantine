@@ -1,13 +1,15 @@
-# QUARANTINE signaling
+# QUARANTINE worker
 
-Room-code signaling relay for co-op (Cloudflare Worker + Durable Object). It only brokers
-the WebRTC offer/answer between the host and joining clients — once the P2P DataChannel is
-up, this server is no longer in the path. No game state, no persistent storage.
+The co-op backend Worker (Cloudflare Worker + Durable Objects). It brokers WebRTC
+offer/answer between the host and joining clients (signaling — once the P2P DataChannel is up,
+it's out of the path), mints ephemeral TURN credentials (`/turn`), holds the public-room
+registry (`/rooms`), and serves the built game via Static Assets. No game state in the relay
+path, no persistent storage.
 
 ## Local development (no Cloudflare account needed)
 
 ```bash
-cd signaling
+cd worker
 bun install            # installs wrangler + workers-types
 bunx wrangler dev      # serves ws://127.0.0.1:8787
 ```
@@ -17,13 +19,13 @@ in a few browser tabs can Host/Join by room code against this local relay.
 
 ## Deploy (via GitHub Actions — not local `wrangler deploy`)
 
-Deployment is done by the **`.github/workflows/deploy-signaling.yml`** workflow, not by
+Deployment is done by the **`.github/workflows/deploy-worker.yml`** workflow, not by
 running wrangler locally. Prerequisites before it can run:
 
 1. Push this repo to a GitHub remote.
 2. Create a Cloudflare API token with the **Edit Cloudflare Workers** permission.
 3. Add repository **Secrets**: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
-4. Run the workflow manually (Actions → Deploy signaling → Run workflow / `workflow_dispatch`).
+4. Run the workflow manually (Actions → Deploy worker → Run workflow / `workflow_dispatch`).
 
 Until those exist the workflow is dormant (it has no push trigger, so committing this
 directory does not fire a failing run).
@@ -32,7 +34,7 @@ The workflow also **builds the game and serves it from this same Worker** via St
 (`[assets] directory = "../dist"`), so the deploy step runs `bun run build` before
 `wrangler-action`. Because the game and the relay share one origin, the client derives the
 signaling host from `location.host` over HTTPS — **no need to hardcode the deployed host**.
-`CONFIG.net.signalUrl` (in `src/config.ts`) is the **dev/localhost default only** (used over
+`CONFIG.net.signalUrl` (in `game/config.ts`) is the **dev/localhost default only** (used over
 plain HTTP against `bun run signal`).
 
 ## Notes
@@ -51,11 +53,11 @@ plain HTTP against `bun run signal`).
 Peers behind symmetric NAT or UDP-blocking networks can't connect P2P on STUN alone, so the
 Worker mints **ephemeral** ICE servers from **Cloudflare Realtime TURN**. The client fetches
 `/turn` before connecting and merges the result into its `RTCConfiguration` (see
-`src/net/transport.ts` `resolveIceServers`). The TURN key secret never leaves the Worker —
+`game/net/transport.ts` `resolveIceServers`). The TURN key secret never leaves the Worker —
 clients only ever receive short-lived credentials. The response includes
 `turns:turn.cloudflare.com:443` (TLS/443), which gets through most UDP-blocking firewalls.
 
-**Worker secrets** (set in the dashboard: Workers & Pages → `quarantine-signaling` → Settings →
+**Worker secrets** (set in the dashboard: Workers & Pages → `quarantine` → Settings →
 Variables and Secrets, type **Secret**; they persist across GHA deploys). All four are required —
 the budget guard fails **closed**, so TURN stays off until they're all present:
 
