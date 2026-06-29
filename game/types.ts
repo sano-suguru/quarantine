@@ -46,7 +46,7 @@ export interface WeaponDef {
    *  branching — drawWeaponRig dispatches per shape only. */
   viz: GunPart[];
   /** seconds to "draw" (lower→raise) after a switch; also the post-switch fire-lockout. Heavier guns
-   *  are slower. MUST be > 0 (the draw pose divides by it). Supersedes CONFIG.player.switchRaise. */
+   *  are slower. MUST be > 0 (the draw pose divides by it). */
   drawTime: number;
   /** melee weapons swing an arc instead of spawning bullets; never consume ammo */
   melee?: boolean;
@@ -116,6 +116,9 @@ export interface Player {
   mags: Record<string, number>;
   fireCd: number;
   reloadT: number;
+  /** weapon-draw timer: set to the new weapon's drawTime on switch, counts down to 0. Drives the
+   *  lower→raise held-weapon animation. Cosmetic — the fire-lockout is fireCd. Synced (u8). */
+  switchT: number;
   hitFlash: number;
   recoilX: number;
   recoilY: number;

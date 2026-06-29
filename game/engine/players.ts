@@ -36,6 +36,7 @@ export function makePlayer(id: number, x: number, y: number, name = `P${id + 1}`
     mags,
     fireCd: 0,
     reloadT: 0,
+    switchT: 0,
     hitFlash: 0,
     recoilX: 0,
     recoilY: 0,
@@ -97,6 +98,7 @@ export function revivePlayer(
   }
   p.healT = 0;
   p.reloadT = 0;
+  p.switchT = 0;
   p.dryT = 0;
   p.recoilX = 0;
   p.recoilY = 0;
