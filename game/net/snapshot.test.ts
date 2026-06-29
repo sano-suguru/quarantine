@@ -127,7 +127,7 @@ describe("snapshot binary round-trip", () => {
       h = Math.imul(h, 0x01000193);
     }
     expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
-      `"len=293 fnv=84d55a05"`,
+      `"len=295 fnv=b7e42223"`,
     );
   });
 
@@ -176,6 +176,15 @@ describe("snapshot binary round-trip", () => {
     expect(station?.reloading).toBe(false);
     const drone = back.deployables.find((d) => d.id === 79);
     expect(drone?.ammoFrac ?? 0).toBeCloseTo(0.5, 2); // 1-byte quantized
+  });
+
+  it("round-trips switchT (u8-quantized) through encode/decode", () => {
+    const s = newState();
+    const p = s.players[0] as State["players"][number];
+    p.switchT = 0.4;
+    const snap = decode(encode(captureSnapshot(s, 100)));
+    // u8 over MAX_DRAWTIME (0.8): step ≈ 0.003, so 2-dp closeness is comfortable
+    expect(snap.players[0]?.switchT).toBeCloseTo(0.4, 2);
   });
 
   it("stays under the 16KB SCTP message limit for a heavy night", () => {

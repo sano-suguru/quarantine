@@ -56,6 +56,7 @@ interface SnapPlayer {
   /** spare ammo per weapon, in WEAPON_ORDER order (for the client HUD reserve count) */
   reserve: number[];
   reloadT: number;
+  switchT: number;
   healT: number;
   battery: number;
   lightOn: boolean;
@@ -165,6 +166,7 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
       ammo: p.ammo,
       reserve: WEAPON_ORDER.map((id) => p.reserve[id] ?? 0),
       reloadT: p.reloadT,
+      switchT: p.switchT,
       healT: p.healT,
       battery: p.battery,
       lightOn: p.lightOn,
@@ -308,6 +310,7 @@ export function applySnapshot(
       p.wlevel[id] = sp.wlevel[i] ?? 0;
     });
     p.reloadT = sp.reloadT;
+    p.switchT = sp.switchT;
     p.healT = sp.healT;
     p.battery = sp.battery;
     p.lightOn = sp.lightOn;
@@ -426,6 +429,8 @@ const dqpos = (q: number): number => (q / 32767) * ARENA;
 const q01 = (v: number, max: number): number =>
   Math.max(0, Math.min(255, Math.round((v / max) * 255)));
 const dq01 = (b: number, max: number): number => (b / 255) * max;
+/** quantization ceiling for Player.switchT (≥ the largest WeaponDef.drawTime, with headroom) */
+const MAX_DRAWTIME = 0.8;
 
 class Writer {
   private buf: ArrayBuffer;
@@ -533,6 +538,7 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.u8(p.reserve.length);
     for (const r of p.reserve) w.u16(Math.max(0, Math.min(65535, Math.round(r))));
     w.f32(p.reloadT);
+    w.u8(q01(p.switchT, MAX_DRAWTIME));
     w.f32(p.healT);
     w.f32(p.battery);
     w.f32(p.muzzle);
@@ -650,6 +656,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
     const rc = r.u8();
     for (let j = 0; j < rc; j++) reserve.push(r.u16());
     const reloadT = r.f32();
+    const switchT = dq01(r.u8(), MAX_DRAWTIME);
     const healT = r.f32();
     const battery = r.f32();
     const muzzle = r.f32();
@@ -683,6 +690,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
       ammo,
       reserve,
       reloadT,
+      switchT,
       healT,
       battery,
       lightOn,
