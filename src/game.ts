@@ -12,6 +12,7 @@ import { PICKUP_TYPES } from "./data/pickups";
 import { PLAYER_COLORS } from "./data/players";
 import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "./data/weapons";
 import { Audio } from "./engine/audio";
+import { type LightCandidate, selectLights } from "./engine/lights";
 import { anyAlive, localPlayer, nearestPlayer, revivePlayer } from "./engine/players";
 import { Renderer, SHAPE } from "./engine/renderer";
 import { addSalvage, buyUnlock, loadMeta } from "./meta";
@@ -395,8 +396,11 @@ export function draw(): void {
     flc.personalMax,
     flc.emissiveFloor,
   );
-  // one aimed flashlight per living player — teammates' cones light the dark too
+  // one aimed flashlight per living player + weapon-bearing deployables, culled to viewport
   R.beginLights();
+  const dcfg = CONFIG.deployables;
+  const { x: hx, y: hy } = R.worldToScreenHalf();
+  const cands: LightCandidate[] = [];
   for (const pl of state.players) {
     if (pl.hp <= 0 || pl.absent) continue;
     const intensity = flashlightIntensity(
@@ -407,7 +411,32 @@ export function draw(): void {
       flc.baseFlickerDepth,
       flickerNoise(state.time, pl.id),
     );
-    R.addLight(pl.x, pl.y, Math.cos(pl.aim), Math.sin(pl.aim), intensity);
+    cands.push({
+      x: pl.x,
+      y: pl.y,
+      ax: Math.cos(pl.aim),
+      ay: Math.sin(pl.aim),
+      intens: intensity,
+      range: flc.range,
+      cosHalf: Math.cos(flc.halfAngle),
+      priority: 1,
+    });
+  }
+  for (const d of state.deployables) {
+    if (!DEPLOYABLE_TYPES[d.defId]?.weapon) continue;
+    cands.push({
+      x: d.x,
+      y: d.y,
+      ax: Math.cos(d.aim),
+      ay: Math.sin(d.aim),
+      intens: dcfg.lightIntensity * (d.reloading ? 0.6 : 1),
+      range: flc.range * dcfg.lightRangeMul,
+      cosHalf: Math.cos(dcfg.lightHalfAngle),
+      priority: 0,
+    });
+  }
+  for (const c of selectLights(cands, camX, camY, hx, hy, R.maxLights())) {
+    R.addLight(c.x, c.y, c.ax, c.ay, c.intens, c.cosHalf, c.range);
   }
   R.begin();
 

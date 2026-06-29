@@ -468,4 +468,5 @@ export const Renderer = {
   number,
   flush,
   worldToScreenHalf,
+  maxLights: () => MAX_LIGHTS,
 };
