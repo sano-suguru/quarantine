@@ -1,5 +1,6 @@
 import { CONFIG } from "../config";
 import { effWeapon } from "../data/arsenal";
+import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { ENEMY_TYPES } from "../data/enemies";
 import { Audio } from "../engine/audio";
 import { approach, rand } from "../engine/math";
@@ -234,6 +235,18 @@ export class Client {
       if (p && pl.hitFlash > p.hitFlash + 0.01) {
         fxHurt(st, pl.x, pl.y);
         if (pl.id === st.localId) Audio.hurt();
+      }
+    }
+    const nextDIds = new Set(next.deployables.map((d) => d.id));
+    for (const d of prev.deployables) {
+      if (!nextDIds.has(d.id)) {
+        const def = DEPLOYABLE_TYPES[d.defId];
+        const color = (def?.color ?? GREY) as RGB;
+        if (d.ammoFrac <= 0.02) {
+          fxImpact(st, d.x, d.y, 0, color); // soft power-down on RTB
+        } else {
+          fxKill(st, d.x, d.y, color, color, true); // loud destruction burst
+        }
       }
     }
   }

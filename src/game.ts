@@ -726,7 +726,10 @@ function drawDeployables(R: typeof Renderer): void {
       // hitched as the drone swept around the ring.
       const by = d.y + Math.sin(state.time * 4 + d.id * 2.399) * 3;
       R.circle(d.x, d.y, 8, 0, 0, 0, 0.28); // shadow (no bob)
-      R.glow(d.x, by, 18, r, g, b, d.reloading ? 0.2 : 0.45); // under-body scanner; dims on reload
+      const af = d.ammoFrac ?? 1;
+      const lowBlink = af < 0.2 ? 0.4 + 0.6 * Math.abs(Math.sin(state.time * 8)) : 1;
+      R.glow(d.x, by, 18, r, g, b, (d.reloading ? 0.2 : 0.4) * lowBlink); // dimmed scanner
+      R.ring(d.x, by, 13 * af + 3, r, g, b, 0.5 * lowBlink); // shrinks as ammo depletes
       // chassis: two arms crossing in an X (oriented to aim) + a small core
       const arm = 11;
       R.rect(d.x, by, arm * 2, 2.5, d.aim + Math.PI / 4, r, g, b, 0.85);

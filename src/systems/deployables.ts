@@ -4,6 +4,7 @@ import { clamp, len } from "../engine/math";
 import { nearestPlayer } from "../engine/players";
 import { allocId } from "../state";
 import type { Deployable, DeployableDef, SiegePhase, State, Zombie } from "../types";
+import { fxImpact, fxKill } from "./fx";
 import { spawnPickup } from "./pickups";
 
 /** Deployable damage multiplier. At night it tracks the enemy `hpScale` (= 1 + day*perNight) so a
@@ -54,7 +55,12 @@ export function sysDeployables(state: State, dt: number): void {
     // removal: destroyed (hp<=0) OR retired (ammo budget spent)
     const destroyed = !!def.destructible && (d.hp ?? 0) <= 0;
     const retired = deployRetired(w?.ammoBudget !== undefined, d.reserveLeft ?? 0, d.ammoLeft ?? 0);
-    if (destroyed || retired) dead.push(i);
+    if (destroyed || retired) {
+      dead.push(i);
+      if (destroyed)
+        fxKill(state, d.x, d.y, def.color, def.color, true); // loud destruction burst
+      else fxImpact(state, d.x, d.y, 0, def.color); // soft power-down on RTB
+    }
   }
   for (let k = dead.length - 1; k >= 0; k--) {
     const i = dead[k] as number;
