@@ -31,7 +31,7 @@ export const DEPLOYABLE_TYPES: Record<string, DeployableDef> = {
     desc: "Fixed turret — auto-fires at the nearest zombie",
     cost: 120,
     cap: 3,
-    weapon: { range: 380, dmg: 14, bulletSpeed: 900, interval: 0.7, magSize: 18, reloadTime: 2.5 },
+    weapon: { range: 380, dmg: 22, bulletSpeed: 900, interval: 0.4, magSize: 18, reloadTime: 2.5 },
     destructible: { maxHp: 160, contactRadius: 16, contactDps: 18 },
     collider: { radius: 12 }, // physical body (~turret base) → blocks a lane; zombies pile & chew it
     color: [0.6, 0.85, 1.0],
@@ -43,7 +43,15 @@ export const DEPLOYABLE_TYPES: Record<string, DeployableDef> = {
     desc: "Mobile drone — follows the squad and hunts nearby zombies",
     cost: 150,
     cap: 2,
-    weapon: { range: 320, dmg: 10, bulletSpeed: 800, interval: 0.5, magSize: 10, reloadTime: 2.2 },
+    weapon: {
+      range: 320,
+      dmg: 26,
+      bulletSpeed: 800,
+      interval: 0.2,
+      magSize: 24,
+      reloadTime: 1.3,
+      ammoBudget: 90,
+    },
     movement: {
       speed: 210,
       leashMax: 160,

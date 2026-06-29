@@ -305,6 +305,9 @@ export interface DeployableDef {
     interval: number;
     magSize?: number;
     reloadTime?: number;
+    /** total rounds the unit will ever fire before retiring (RTB). Omitted = infinite (self-
+     *  recharging magazine, e.g. the sentry). Reloads draw from this reserve. */
+    ammoBudget?: number;
   };
   /** periodically drop a pickup (`emit` = pickup defId) every `interval` seconds */
   emitter?: { emit: string; interval: number };
