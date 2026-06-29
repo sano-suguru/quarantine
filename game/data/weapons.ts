@@ -72,12 +72,12 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 18,
     reserveMax: 42,
     drawTime: 0.5,
-    // shotgun: big receiver → twin barrels sitting CLOSE (thin seam, not a wide fork) + stock
+    // shotgun: receiver → twin barrels sitting CLOSE (thin seam, not a wide fork) + stock
     viz: [
-      { dx: 14, dy: 0, rot: 0, len: 16, wid: 12 },
-      { dx: 26, dy: -3.2, rot: 0, len: 13, wid: 5.5 },
-      { dx: 26, dy: 3.2, rot: 0, len: 13, wid: 5.5 },
-      { dx: 3, dy: 0, rot: 0, len: 10, wid: 8 },
+      { dx: 14, dy: 0, rot: 0, len: 16, wid: 10 },
+      { dx: 26, dy: -2.9, rot: 0, len: 13, wid: 4.5 },
+      { dx: 26, dy: 2.9, rot: 0, len: 13, wid: 4.5 },
+      { dx: 3, dy: 0, rot: 0, len: 10, wid: 7 },
     ],
   },
   // ---- meta-unlocked arsenal (locked until bought with SALVAGE) ----
