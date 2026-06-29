@@ -242,6 +242,7 @@ export class Client {
       if (!nextDIds.has(d.id)) {
         const def = DEPLOYABLE_TYPES[d.defId];
         const color = (def?.color ?? GREY) as RGB;
+        // best-effort: RTB vs destroyed inferred from last-synced ammoFrac — a destruction in the final-rounds window may show the soft cue (cosmetic, no desync).
         if (d.ammoFrac <= 0.02) {
           fxImpact(st, d.x, d.y, 0, color); // soft power-down on RTB
         } else {
