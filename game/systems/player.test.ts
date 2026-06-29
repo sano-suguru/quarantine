@@ -154,14 +154,17 @@ describe("sysPlayer — move-weight ramp & weapon switch", () => {
     expect(p.curMoveMul).toBeCloseTo(target, 6);
   });
 
-  it("switches to an owned weapon and applies the fire raise (no instant fire)", () => {
+  it("switches to an owned weapon and applies the draw timer (no instant fire)", () => {
     const s = newState();
     const p = s.players[0] as State["players"][number];
     p.input = { ...emptyInput(), weaponSlot: 1 }; // smg (owned starter)
     sysPlayer(s, 0.016);
     expect(p.weapon).toBe("smg");
-    // raise sets fireCd to switchRaise, then this tick decrements it once
-    expect(p.fireCd).toBeGreaterThan(CONFIG.player.switchRaise - 0.02);
+    const drawTime = WEAPONS.smg?.drawTime ?? 0;
+    // switch sets switchT and the fire-lockout to the new weapon's drawTime, then this tick
+    // decrements them once (by dt=0.016)
+    expect(p.fireCd).toBeGreaterThan(drawTime - 0.02);
+    expect(p.switchT).toBeGreaterThan(drawTime - 0.02);
     expect(p.input.weaponSlot).toBeNull(); // edge consumed (no double-switch next sub-step)
   });
 

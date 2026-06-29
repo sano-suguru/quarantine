@@ -44,8 +44,7 @@ export const CONFIG = {
     quickMatchTimeoutMs: 6000, // per-candidate connect wait before falling back to hosting
   },
   // speed is the only move speed now (sprint removed); the equipped weapon's moveMul scales it.
-  // moveRampRate = how fast curMoveMul approaches the weapon's weight (per sec); switchRaise =
-  // fire lockout after a weapon switch.
+  // moveRampRate = how fast curMoveMul approaches the weapon's weight (per sec).
   // sample-based SFX (engine/audioAssets.ts). sfxVolume balances generated samples against
   // the procedural synth beds; maxSampleVoices caps simultaneous one-shots so a full horde
   // (uncapped hit/kill fire) can't pile up BufferSources and clip.
@@ -76,10 +75,9 @@ export const CONFIG = {
       maxAlpha: 0.6, // fresh-pool peak alpha (drawn fade is life/maxLife * maxAlpha)
     },
   },
-  // switchRaise = fire-lockout after a weapon swap: the "drawing your weapon" beat (paired with
-  // the weapon_switch SFX + move ramp). Becomes the draw-time for a switchT/holster anim once
-  // per-weapon visuals exist. ~0.5s by ear; tune by playtest, not by matching the clip length.
-  player: { radius: 16, speed: 200, maxHp: 100, moveRampRate: 1.5, switchRaise: 0.5 },
+  // drawTime (per-weapon, in WeaponDef) is the fire-lockout + lower→raise draw beat after a swap,
+  // paired with the weapon_switch SFX + move ramp. Tune per weapon by playtest, not clip length.
+  player: { radius: 16, speed: 200, maxHp: 100, moveRampRate: 1.5 },
   cam: { lerp: 8, shakeDecay: 8 },
   feel: {
     hitstop: 0.05, // seconds of slow-mo on a kill

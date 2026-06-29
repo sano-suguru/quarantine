@@ -1,7 +1,7 @@
 import { CONFIG } from "../config";
 import { effWeapon, meleeArc, meleeReach } from "../data/arsenal";
 import { resolveDeployableCollisions } from "../data/deployables";
-import { WEAPON_ORDER } from "../data/weapons";
+import { WEAPON_ORDER, WEAPONS } from "../data/weapons";
 import { Audio } from "../engine/audio";
 import { circlePushFromSegment } from "../engine/geometry";
 import { approach, clamp, len, rand } from "../engine/math";
@@ -124,11 +124,11 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
       p.weapon = id;
       p.ammo = p.mags[id] ?? 0; // restore the new weapon's mag
       p.reloadT = 0;
-      // raise time: can't fire for a beat after switching (also blocks switch→instant-fire and
-      // pairs with the move ramp so quick-swapping buys neither speed nor an instant shot).
-      // When per-weapon visuals land this raise becomes the draw-time a switchT/holster anim
-      // hangs off of — for now it's the audible+mechanical "drawing your weapon" beat.
-      p.fireCd = Math.max(p.fireCd, CONFIG.player.switchRaise);
+      // draw timer: the gun is lowered then raised over drawTime; you can't fire until it's up.
+      // drawTime is wlevel-independent so read WEAPONS directly. Heavier guns draw slower.
+      const drawTime = WEAPONS[id]?.drawTime ?? 0.5;
+      p.switchT = drawTime;
+      p.fireCd = Math.max(p.fireCd, drawTime);
       Audio.switchWeapon(); // holster-away + ready (mirrors reload(): same host-side path)
     }
   }
@@ -153,6 +153,7 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   }
 
   if (p.fireCd > 0) p.fireCd -= dt;
+  if (p.switchT > 0) p.switchT -= dt;
   const wantFire = inp.firing && (wd.auto || !p.firedThisHold);
   if (wantFire && p.fireCd <= 0 && p.reloadT <= 0 && !healing) {
     if (wd.melee || p.ammo > 0) {

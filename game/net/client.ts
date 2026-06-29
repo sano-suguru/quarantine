@@ -432,6 +432,7 @@ export class Client {
         wantFire &&
         this.fireCdLocal <= 0 &&
         lp.reloadT <= 0 &&
+        lp.switchT <= 0 &&
         lp.healT <= 0 &&
         (wd.melee || lp.ammo > 0)
       ) {
