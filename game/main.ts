@@ -1,3 +1,4 @@
+import "./style.css";
 import { CONFIG } from "./config";
 import { PLAYER_COLORS } from "./data/players";
 import { Audio } from "./engine/audio";
