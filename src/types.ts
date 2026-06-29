@@ -362,6 +362,11 @@ export interface Deployable {
   anchorId?: number;
   /** weapon: current target zombie (for target hysteresis) */
   targetId?: number;
+  /** host-only: rounds left before RTB (ammoBudget types) */
+  reserveLeft?: number;
+  // ---- synced display state ----
+  /** synced 0..1: remaining ammo for the ring (1 if infinite-reserve) */
+  ammoFrac?: number;
 }
 
 /** Day = lit scavenge/repair window; night = the dark horde siege. */

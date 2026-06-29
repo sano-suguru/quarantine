@@ -13,6 +13,17 @@ export function deployDmgScale(phase: SiegePhase, day: number, perNight: number)
   return phase === "night" ? 1 + day * perNight : 1;
 }
 
+/** Rounds to load into the magazine on reload, drawn from the finite reserve (clamped ≥ 0). */
+export function reloadRefill(reserveLeft: number, magSize: number): number {
+  return Math.min(magSize, Math.max(0, reserveLeft));
+}
+
+/** A budgeted unit retires (RTB) once it can neither fire nor reload: reserve and magazine empty.
+ *  Infinite-reserve units (no ammoBudget) never retire this way. */
+export function deployRetired(hasBudget: boolean, reserveLeft: number, ammoLeft: number): boolean {
+  return hasBudget && reserveLeft <= 0 && ammoLeft <= 0;
+}
+
 /**
  * Tick placed fortifications (host sim only — clients see them via the snapshot, and the
  * turret's bullets / station's pickups sync through the existing bullet & pickup paths). Each
@@ -29,10 +40,21 @@ export function sysDeployables(state: State, dt: number): void {
     if (def.movement) tickMovement(state, d, def, dt);
     if (def.weapon) tickWeapon(state, d, def, dt);
     if (def.emitter) tickEmitter(state, d, def);
-    if (def.destructible) {
-      tickDamage(state, d, def, dt);
-      if ((d.hp ?? 0) <= 0) dead.push(i);
-    }
+    if (def.destructible) tickDamage(state, d, def, dt);
+    // remaining-ammo fraction for the client ring (reserve + current mag over full load; 1 if infinite)
+    const w = def.weapon;
+    d.ammoFrac =
+      w?.ammoBudget !== undefined
+        ? clamp(
+            ((d.reserveLeft ?? 0) + (d.ammoLeft ?? 0)) / (w.ammoBudget + (w.magSize ?? 0)),
+            0,
+            1,
+          )
+        : 1;
+    // removal: destroyed (hp<=0) OR retired (ammo budget spent)
+    const destroyed = !!def.destructible && (d.hp ?? 0) <= 0;
+    const retired = deployRetired(w?.ammoBudget !== undefined, d.reserveLeft ?? 0, d.ammoLeft ?? 0);
+    if (destroyed || retired) dead.push(i);
   }
   for (let k = dead.length - 1; k >= 0; k--) {
     const i = dead[k] as number;
@@ -142,7 +164,13 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
     d.reloadT = (d.reloadT ?? 0) - dt;
     if ((d.reloadT ?? 0) <= 0) {
       d.reloadT = 0;
-      d.ammoLeft = w.magSize;
+      if (w.ammoBudget !== undefined) {
+        const refill = reloadRefill(d.reserveLeft ?? 0, w.magSize ?? 0);
+        d.ammoLeft = refill;
+        d.reserveLeft = (d.reserveLeft ?? 0) - refill;
+      } else {
+        d.ammoLeft = w.magSize;
+      }
       d.weaponCd = 0;
     }
   }

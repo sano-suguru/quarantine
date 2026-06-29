@@ -11,7 +11,7 @@ import { len } from "../engine/math";
 import { addPlayer } from "../engine/players";
 import { newState } from "../state";
 import type { Deployable, DeployableDef, State } from "../types";
-import { deployDmgScale, sysDeployables } from "./deployables";
+import { deployDmgScale, deployRetired, reloadRefill, sysDeployables } from "./deployables";
 import { spawnZombie } from "./wave";
 
 /** Spawn a zombie and force it to an exact position (spawnZombie itself uses RNG placement). */
@@ -368,5 +368,29 @@ describe("deployDmgScale", () => {
   it("does NOT scale during the day (roamers are base HP)", () => {
     expect(deployDmgScale("day", 1, 0.1)).toBe(1);
     expect(deployDmgScale("day", 10, 0.1)).toBe(1);
+  });
+});
+
+describe("reloadRefill", () => {
+  it("refills a full magazine when the reserve covers it", () => {
+    expect(reloadRefill(90, 24)).toBe(24);
+  });
+  it("refills only the remaining reserve on the last (partial) magazine", () => {
+    expect(reloadRefill(10, 24)).toBe(10);
+  });
+  it("refills nothing when the reserve is empty", () => {
+    expect(reloadRefill(0, 24)).toBe(0);
+    expect(reloadRefill(-5, 24)).toBe(0);
+  });
+});
+
+describe("deployRetired", () => {
+  it("retires a budgeted unit only when reserve AND magazine are empty", () => {
+    expect(deployRetired(true, 0, 0)).toBe(true);
+    expect(deployRetired(true, 0, 3)).toBe(false); // still has rounds in the mag
+    expect(deployRetired(true, 5, 0)).toBe(false); // still has reserve to reload
+  });
+  it("never retires an infinite-reserve unit (the sentry)", () => {
+    expect(deployRetired(false, 0, 0)).toBe(false);
   });
 });

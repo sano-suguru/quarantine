@@ -154,6 +154,7 @@ export function placeDeployable(state: State, defId: string, x: number, y: numbe
     d.weaponCd = 0;
     d.reloadT = 0;
     if (def.weapon.magSize !== undefined) d.ammoLeft = def.weapon.magSize;
+    if (def.weapon.ammoBudget !== undefined) d.reserveLeft = def.weapon.ammoBudget;
   }
   // schedule the first drop at the next interval grid boundary (where the beacon resets), so the
   // drop cadence is in phase with the state.time-driven beacon rather than offset by placement time.
