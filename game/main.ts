@@ -270,6 +270,7 @@ function main(): void {
           public: coopPublic,
           phase: hostStarted ? gs.phase : "lobby",
           day: gs.day,
+          players: (Net.host?.connectedPids().length ?? 0) + 1, // host + decided clients
         });
       }
     } else {
@@ -554,6 +555,7 @@ function wireCoop(): void {
         public: coopPublic,
         phase: hostStarted ? gs.phase : "lobby",
         day: gs.day,
+        players: (Net.host?.connectedPids().length ?? 0) + 1, // host + decided clients
       });
     };
 
@@ -588,7 +590,12 @@ function wireCoop(): void {
     );
     coopHostHandle = hostHandle; // the host tick pushes registry meta through this
     // seed the listing now; buffered in hostRoom and flushed the instant the signaling WS opens
-    hostHandle.setMeta({ public: isPublic, phase: "lobby", day: 1 });
+    hostHandle.setMeta({
+      public: isPublic,
+      phase: "lobby",
+      day: 1,
+      players: (Net.host?.connectedPids().length ?? 0) + 1,
+    });
 
     // manual fallback: opening <details> hides the room code (so the mode is unambiguous)
     // and lazily builds an offer on first open.

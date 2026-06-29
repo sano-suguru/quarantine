@@ -173,7 +173,7 @@ type Incoming =
   // host → relay: publish/refresh this room in the public registry (public=false unlists it).
   // Sent on the host's signaling socket, driven by the host's Worker-clock tick (not throttled
   // when backgrounded), so it doubles as the liveness heartbeat for the registry TTL.
-  | { t: "meta"; public: boolean; phase: string; day: number };
+  | { t: "meta"; public: boolean; phase: string; day: number; players?: number };
 
 /** One room: a single host plus up to 3 clients. Pure offer/answer relay, in memory. */
 export class Room {
@@ -191,6 +191,10 @@ export class Room {
   private isPublic = false;
   private metaPhase = "lobby";
   private metaDay = 1;
+  // authoritative player count from the host's meta (host + established clients). The DO can't
+  // count established peers itself (clients close their signaling socket once P2P is up), so it
+  // trusts the host. null until the first meta arrives → fall back to the socket count.
+  private metaPlayers: number | null = null;
 
   constructor(
     _state: DurableObjectState,
@@ -263,6 +267,7 @@ export class Room {
         this.isPublic = !!m.public;
         this.metaPhase = typeof m.phase === "string" ? m.phase : "lobby";
         this.metaDay = typeof m.day === "number" ? m.day : 1;
+        this.metaPlayers = typeof m.players === "number" ? m.players : null;
         void this.syncRegistry();
       }
     });
@@ -293,7 +298,7 @@ export class Room {
         const entry = {
           code: this.code,
           v: this.hostV,
-          players: 1 + this.clients.size, // host + connected clients (authoritative socket count)
+          players: this.metaPlayers ?? 1 + this.clients.size, // host-reported (established peers); fallback to socket count
           max: 4,
           phase: this.metaPhase,
           day: this.metaDay,
