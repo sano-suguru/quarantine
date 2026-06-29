@@ -186,11 +186,13 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 0,
     reserveMax: 0,
     drawTime: 0.3,
-    // knife = thin blade tapering to a pointed tip + a small crossguard (smallest rig)
+    // knife = grip → small crossguard → blade → point. The tip's base matches the blade
+    // width (rad≈0.57·wid) so it tapers like a blade, not a wide arrowhead. Smallest rig.
     viz: [
-      { dx: 13, dy: 0, rot: 0, len: 13, wid: 3 },
-      { dx: 21, dy: 0, rot: 0, len: 7, wid: 3.5, shape: "tri" },
-      { dx: 6, dy: 0, rot: 0, len: 3, wid: 7 },
+      { dx: 8, dy: 0, rot: 0, len: 8, wid: 4.5 },
+      { dx: 13, dy: 0, rot: 0, len: 2, wid: 8 },
+      { dx: 17, dy: 0, rot: 0, len: 7, wid: 4 },
+      { dx: 22, dy: 0, rot: 0, len: 4.5, wid: 4, shape: "tri" },
     ],
     melee: true,
     meleeArc: 0.95,
