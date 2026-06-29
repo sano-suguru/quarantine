@@ -20,11 +20,10 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 36,
     reserveMax: 96,
     drawTime: 0.35,
-    // compact sidearm: receiver → short barrel → muzzle tip, + a stubby grip
+    // compact sidearm: wide receiver → thin blunt barrel + a stubby grip
     viz: [
       { dx: 13, dy: 0, rot: 0, len: 11, wid: 7 },
-      { dx: 21, dy: 0, rot: 0, len: 8, wid: 4.5 },
-      { dx: 26, dy: 0, rot: 0, len: 6, wid: 6, shape: "tri" },
+      { dx: 22, dy: 0, rot: 0, len: 12, wid: 4.5 },
       { dx: 8, dy: 5, rot: 0, len: 6, wid: 5 },
     ],
   },
@@ -47,11 +46,10 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 64,
     reserveMax: 160,
     drawTime: 0.4,
-    // boxy SMG: chunky receiver → barrel → muzzle, + a prominent magazine below
+    // boxy SMG: chunky receiver → thin barrel + a prominent magazine below
     viz: [
       { dx: 14, dy: 0, rot: 0, len: 14, wid: 8 },
-      { dx: 25, dy: 0, rot: 0, len: 10, wid: 5 },
-      { dx: 31, dy: 0, rot: 0, len: 6, wid: 6, shape: "tri" },
+      { dx: 26, dy: 0, rot: 0, len: 13, wid: 5 },
       { dx: 12, dy: 7, rot: 0, len: 10, wid: 5 },
     ],
   },
@@ -74,11 +72,10 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 18,
     reserveMax: 42,
     drawTime: 0.5,
-    // shotgun: THICK receiver → thick barrel → wide muzzle, + a chunky stock
+    // shotgun: THICK receiver → thick blunt barrel + a chunky stock
     viz: [
       { dx: 13, dy: 0, rot: 0, len: 14, wid: 13 },
-      { dx: 25, dy: 0, rot: 0, len: 12, wid: 10 },
-      { dx: 32, dy: 0, rot: 0, len: 11, wid: 11, shape: "tri" },
+      { dx: 27, dy: 0, rot: 0, len: 16, wid: 10 },
       { dx: 3, dy: 0, rot: 0, len: 10, wid: 8 },
     ],
   },
@@ -103,11 +100,10 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 90,
     reserveMax: 240,
     drawTime: 0.45,
-    // rifle = receiver → long thin barrel → muzzle, + magazine + a top sight
+    // rifle = receiver → long thin blunt barrel + magazine + a top sight
     viz: [
       { dx: 14, dy: 0, rot: 0, len: 12, wid: 7 },
-      { dx: 28, dy: 0, rot: 0, len: 20, wid: 4.5 },
-      { dx: 39, dy: 0, rot: 0, len: 6, wid: 5, shape: "tri" },
+      { dx: 29.5, dy: 0, rot: 0, len: 23, wid: 4.5 },
       { dx: 14, dy: 7, rot: 0, len: 9, wid: 5 },
       { dx: 16, dy: -5, rot: 0, len: 5, wid: 3 },
     ],
@@ -132,11 +128,10 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 150,
     reserveMax: 450,
     drawTime: 0.7,
-    // LMG = biggest rig: receiver → longest barrel → muzzle, + fat drum + stock
+    // LMG = biggest rig: receiver → longest blunt barrel + fat drum + stock
     viz: [
       { dx: 14, dy: 0, rot: 0, len: 16, wid: 10 },
-      { dx: 32, dy: 0, rot: 0, len: 24, wid: 6 },
-      { dx: 46, dy: 0, rot: 0, len: 8, wid: 7, shape: "tri" },
+      { dx: 34, dy: 0, rot: 0, len: 28, wid: 6 },
       { dx: 13, dy: 9, rot: 0, len: 16, wid: 16, shape: "circle" },
       { dx: 1, dy: 0, rot: 0, len: 11, wid: 9 },
     ],
@@ -161,10 +156,9 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 24,
     reserveMax: 60,
     drawTime: 0.55,
-    // magnum = hand-cannon: big hex cylinder, short FAT barrel → muzzle, + grip
+    // magnum = hand-cannon: big hex cylinder + short FAT blunt barrel + grip
     viz: [
-      { dx: 23, dy: 0, rot: 0, len: 9, wid: 8 },
-      { dx: 28, dy: 0, rot: 0, len: 9, wid: 9, shape: "tri" },
+      { dx: 24, dy: 0, rot: 0, len: 11, wid: 8 },
       { dx: 10, dy: 0, rot: 0, len: 14, wid: 14, shape: "hex" },
       { dx: 5, dy: 5, rot: 0, len: 6, wid: 5 },
     ],
