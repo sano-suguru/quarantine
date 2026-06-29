@@ -417,7 +417,7 @@ function wireCoop(): void {
   const roomJoin = el("lobby-room-join");
   const roomCode = el<HTMLInputElement>("lobby-room-code");
   const roomInput = el<HTMLInputElement>("lobby-room-input");
-  const roomGo = el("lobby-room-go");
+  const roomGo = el<HTMLButtonElement>("lobby-room-go");
   const squad = el("lobby-squad");
   squad.classList.add("squad-row"); // flex layout for the chips renderList drops in directly
   const status = el("lobby-status");
@@ -643,7 +643,9 @@ function wireCoop(): void {
 
     const join = async (): Promise<void> => {
       const code = roomInput.value.trim().toUpperCase(); // idFromName is case-sensitive
-      if (!code) return;
+      if (!code || roomGo.disabled) return; // re-entry guard: ignore double-click / Enter spam
+      roomGo.disabled = true;
+      let rejected = false; // roomfull set a terminal message → don't let onClose clobber it
       setClientLobby({ k: "joining" });
       try {
         const link = await joinRoom(code);
@@ -658,6 +660,20 @@ function wireCoop(): void {
               /* sessionStorage unavailable — reconnect just falls back to a fresh slot */
             }
           },
+          // host turned us away: room is full. Terminal (manual connect can't get in either), so
+          // do NOT open the manual fallback — surface a clear message and re-enable Join so the
+          // player can try a different code.
+          onRoomFull: () => {
+            rejected = true;
+            clearTimeout(failTimer); // roomfull can arrive before/around open → don't let the
+            // NAT-timeout later clobber this terminal message with a "failed"
+            coopRoomCode = null; // don't try to reconnect to a room we were refused from
+            setClientLobby({
+              k: "lost",
+              msg: "room is full — the squad is already at capacity (4).",
+            });
+            roomGo.disabled = false;
+          },
         });
         setClientLobby({ k: "linking" });
         // joinRoom resolves when our ANSWER is sent, NOT when the P2P link actually opens. A
@@ -667,6 +683,7 @@ function wireCoop(): void {
         let opened = false;
         failTimer = setTimeout(() => {
           if (opened) return;
+          roomGo.disabled = false;
           setClientLobby({
             k: "failed",
             msg: failMsg(
@@ -681,6 +698,8 @@ function wireCoop(): void {
         });
         link.onClose(() => {
           clearTimeout(failTimer);
+          if (rejected) return; // roomfull already showed the terminal "room is full"
+          roomGo.disabled = false;
           setClientLobby(
             opened
               ? { k: "lost", msg: "disconnected from host." }
@@ -691,6 +710,7 @@ function wireCoop(): void {
           );
         });
       } catch (err) {
+        roomGo.disabled = false;
         setClientLobby({
           k: "failed",
           msg: `${err instanceof Error ? err.message : err} — try manual connect below`,
@@ -735,6 +755,13 @@ function wireCoop(): void {
                 msg: "host is on a different version — update to play together",
               });
               link.close();
+            },
+            // host turned us away: room is full (the client closes its own link on this event)
+            onRoomFull: () => {
+              setClientLobby({
+                k: "lost",
+                msg: "room is full — the squad is already at capacity (4).",
+              });
             },
           });
           link.onOpen(() => setClientLobby({ k: "connected" }));
