@@ -101,12 +101,18 @@ export const WEAPONS: Record<string, WeaponDef> = {
     reserveStart: 90,
     reserveMax: 240,
     drawTime: 0.45,
-    // rifle = receiver → long thin blunt barrel + magazine + a top sight
+    // rifle — DETAIL DEMO: color-broken parts (dark body / mid barrel / bright optic),
+    // a ring+dot optic, an angled magazine, and a muzzle device. Shows how far the parts
+    // system goes with no engine change. (Same technique can roll out to the other guns.)
     viz: [
-      { dx: 14, dy: 0, rot: 0, len: 12, wid: 7 },
-      { dx: 29.5, dy: 0, rot: 0, len: 23, wid: 4.5 },
-      { dx: 14, dy: 7, rot: 0, len: 9, wid: 5 },
-      { dx: 16, dy: -5, rot: 0, len: 5, wid: 3 },
+      { dx: 2, dy: 0, rot: 0, len: 9, wid: 6, color: [0.45, 0.62, 0.4] }, // stock
+      { dx: 13, dy: 0, rot: 0, len: 14, wid: 7, color: [0.45, 0.62, 0.4] }, // receiver
+      { dx: 23, dy: 0, rot: 0, len: 8, wid: 5.5 }, // handguard (base color)
+      { dx: 32, dy: 0, rot: 0, len: 16, wid: 4 }, // barrel (base color)
+      { dx: 40, dy: 0, rot: 0, len: 4, wid: 5, color: [0.45, 0.62, 0.4] }, // muzzle device
+      { dx: 14, dy: 7, rot: 0.22, len: 10, wid: 5, color: [0.45, 0.62, 0.4] }, // angled magazine
+      { dx: 14, dy: -4.2, rot: 0, len: 6.5, wid: 6.5, shape: "ring", color: [0.88, 1.0, 0.82] }, // optic ring
+      { dx: 14, dy: -4.2, rot: 0, len: 2.2, wid: 2.2, shape: "circle", color: [0.88, 1.0, 0.82] }, // optic lens
     ],
   },
   // Light machine gun: suppressing fire, huge mag, heavy kick, long reload.
