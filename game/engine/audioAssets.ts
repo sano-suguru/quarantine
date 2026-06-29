@@ -1,7 +1,7 @@
 /**
  * Sample-based SFX layer, layered behind the procedural Audio API (engine/audio.ts).
  *
- * Generated MP3s live in `src/audio/sfx/<key>[_n].mp3` and are auto-discovered at build
+ * Generated MP3s live in `game/audio/sfx/<key>[_n].mp3` and are auto-discovered at build
  * time — dropping a file in adds it to the registry with no code change. Playback is the
  * PREFERRED source; engine/audio.ts falls back to its synth when a key has no sample
  * (during async load, on fetch failure, or for keys never generated). Variants `<key>_1`,

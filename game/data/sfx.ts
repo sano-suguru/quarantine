@@ -1,11 +1,11 @@
 /**
  * Single source of truth for the game's sound-effect set: each key maps to the ElevenLabs
  * prompt + generation parameters. `scripts/gen-sfx.ts` reads this to batch-generate the mp3s
- * into `src/audio/sfx/<key>[_n].mp3`, where `engine/audioAssets.ts` auto-discovers them.
+ * into `game/audio/sfx/<key>[_n].mp3`, where `engine/audioAssets.ts` auto-discovers them.
  *
  * Keep this in lockstep with the playback keys in `engine/audio.ts` / `game.ts` — the keys are
  * `shot_<weapon>` (non-melee weapons), `groan_<enemyType>`, `melee`, and the fixed names below.
- * `src/data/sfx.test.ts` expands the dynamic keys from WEAPONS/ENEMY_TYPES and asserts every
+ * `game/data/sfx.test.ts` expands the dynamic keys from WEAPONS/ENEMY_TYPES and asserts every
  * code-side key has both a manifest entry here and a generated file (bidirectional drift guard).
  *
  * NOTE: this module is imported by the generator (Bun) and the test (Vitest node) only — NOT by

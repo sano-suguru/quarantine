@@ -1,6 +1,6 @@
-name: Deploy signaling
+name: Deploy worker
 
-# Manual-only for now: no push trigger, so committing signaling/ never fires a failing run
+# Manual-only for now: no push trigger, so committing worker/ never fires a failing run
 # before the Cloudflare secrets exist. Add a push trigger once the repo has a remote and the
 # CLOUDFLARE_* secrets are configured.
 on:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # wrangler-action auto-detects signaling/bun.lock and installs deps with bun, so the
+      # wrangler-action auto-detects worker/bun.lock and installs deps with bun, so the
       # runner needs bun on PATH (also used by the game build step below for Static Assets).
       # Version is resolved from root package.json `packageManager` (no bun-version needed).
       - uses: oven-sh/setup-bun@v2
@@ -21,6 +21,6 @@ jobs:
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v4
         with:
-          workingDirectory: signaling
+          workingDirectory: worker
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

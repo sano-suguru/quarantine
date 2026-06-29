@@ -20,7 +20,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["game/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "text-summary", "html"],
@@ -30,43 +30,43 @@ export default defineConfig({
       // is validated by playtest, not unit tests (see CLAUDE.md), so it is excluded from the gate —
       // this is the documented testing boundary, not a way to dodge coverage on testable logic.
       include: [
-        "src/data/**",
-        "src/systems/**",
-        "src/config.ts",
-        "src/state.ts",
-        "src/meta.ts",
-        "src/engine/math.ts",
-        "src/engine/geometry.ts",
-        "src/engine/spatialHash.ts",
-        "src/engine/players.ts",
-        "src/net/snapshot.ts",
-        "src/net/ghost.ts",
-        "src/net/registry.ts",
-        "src/net/host.ts",
+        "game/data/**",
+        "game/systems/**",
+        "game/config.ts",
+        "game/state.ts",
+        "game/meta.ts",
+        "game/engine/math.ts",
+        "game/engine/geometry.ts",
+        "game/engine/spatialHash.ts",
+        "game/engine/players.ts",
+        "game/net/snapshot.ts",
+        "game/net/ghost.ts",
+        "game/net/registry.ts",
+        "game/net/host.ts",
       ],
       exclude: [
         "**/*.test.ts",
         "**/*.d.ts",
-        "src/types.ts",
+        "game/types.ts",
         // render / audio / shaders — feel, validated by playtest
-        "src/engine/renderer.ts",
-        "src/engine/audio.ts",
-        "src/engine/shaders/**",
+        "game/engine/renderer.ts",
+        "game/engine/audio.ts",
+        "game/engine/shaders/**",
         // DOM / entry / orchestration+render boundaries
-        "src/input.ts",
-        "src/main.ts",
-        "src/ui.ts",
-        "src/game.ts", // ~900-line update/draw/HUD loop is feel; its one pure fn (applyBuy) is covered by game.test.ts
+        "game/input.ts",
+        "game/main.ts",
+        "game/ui.ts",
+        "game/game.ts", // ~900-line update/draw/HUD loop is feel; its one pure fn (applyBuy) is covered by game.test.ts
         // feel/visual systems — CLAUDE.md: AI movement, camera, particles are not unit-tested
-        "src/systems/ai.ts",
-        "src/systems/camera.ts",
-        "src/systems/fx.ts",
+        "game/systems/ai.ts",
+        "game/systems/camera.ts",
+        "game/systems/fx.ts",
         // net IO boundaries (WebRTC/WS/fetch/Worker)
-        "src/net/client.ts",
-        "src/net/signaling.ts",
-        "src/net/transport.ts",
-        "src/net/localInput.ts",
-        "src/net/ticker.ts",
+        "game/net/client.ts",
+        "game/net/signaling.ts",
+        "game/net/transport.ts",
+        "game/net/localInput.ts",
+        "game/net/ticker.ts",
       ],
       // branch coverage is coarse under v8 — track lines/functions/statements only.
       // Regression floor: measured baseline (L 78.9 / F 81.0 / S 76.2) rounded down ~2pts after

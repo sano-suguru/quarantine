@@ -11,7 +11,7 @@
   "scripts": {
     "prepare": "lefthook install",
     "dev": "vite",
-    "signal": "cd signaling && bunx wrangler dev",
+    "signal": "cd worker && bunx wrangler dev",
     "dev:coop": "concurrently -k -n game,signal -c green,cyan \"vite\" \"bun run signal\"",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
@@ -21,10 +21,10 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "knip": "knip",
-    "lint": "biome check src index.html",
-    "lint:fix": "biome check --write src index.html",
-    "format": "biome format --write src index.html",
-    "format:check": "biome format src index.html"
+    "lint": "biome check",
+    "lint:fix": "biome check --write",
+    "format": "biome format --write",
+    "format:check": "biome format"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",
