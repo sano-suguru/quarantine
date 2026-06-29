@@ -23,6 +23,10 @@ interface HostPeer {
 /** Max simultaneous clients (host is pid 0; clients claim pids 1..MAX_CLIENTS). */
 export const MAX_CLIENTS = 3;
 
+/** After sending `roomfull`, give the client this long to close its own link before the host
+ *  force-closes it (covers an old client that ignores the message). */
+const REJECT_CLOSE_MS = 2000;
+
 export type SlotDecision = { kind: "assign"; pid: number } | { kind: "full" };
 
 /**
@@ -147,16 +151,41 @@ export class Host {
     });
   }
 
-  /** Assign a fresh slot + nonce, send Hello, and (if running) spawn the player. */
+  /** Assign a fresh slot + nonce, send Hello, and (if running) spawn the player. Rejects when the
+   *  room is full. NOTE: must stay synchronous — pickSlot reads the live peer set and the result is
+   *  applied before any other onOpen/onRel runs; an `await` here would let two joins claim one slot. */
   private decideFresh(peer: HostPeer): void {
     if (peer.decided || !this.peers.includes(peer)) return;
     if (peer.claimTimer) clearTimeout(peer.claimTimer);
     peer.claimTimer = null;
-    peer.pid = this.allocPid();
+    const slot = pickSlot(this.peers.filter((p) => p.decided).map((p) => p.pid));
+    if (slot.kind === "full") {
+      this.reject(peer);
+      return;
+    }
+    peer.pid = slot.pid;
     peer.nonce = makeNonce();
     peer.decided = true;
     this.sendHello(peer);
     if (this.started) this.spawnFresh(peer.pid);
+  }
+
+  /** Room is at capacity. Tell the client (it closes its own link on receipt — closing here first
+   *  could drop the unsent rel from the DataChannel buffer). Keep the peer UNDECIDED so its gameplay
+   *  rels are ignored, and fail-safe drop it shortly after in case an old client ignores roomfull. */
+  private reject(peer: HostPeer): void {
+    peer.link.sendRel({ t: "roomfull" } satisfies NetMsg);
+    setTimeout(() => {
+      if (!this.peers.includes(peer)) return; // client already closed → onClose untracked it
+      this.peers = this.peers.filter((x) => x !== peer);
+      const li = this.links.indexOf(peer.link);
+      if (li >= 0) this.links.splice(li, 1);
+      try {
+        peer.link.close();
+      } catch {
+        /* already closing */
+      }
+    }, REJECT_CLOSE_MS);
   }
 
   /** A reconnect claim: match pid+nonce to the held body and re-attach in place; else fresh. */
@@ -204,13 +233,6 @@ export class Host {
       v: PROTOCOL_VERSION,
     };
     peer.link.sendRel(hello);
-  }
-
-  /** Lowest free player slot among decided peers (host is 0; clients 1..3). */
-  private allocPid(): number {
-    const used = new Set(this.peers.filter((p) => p.decided).map((p) => p.pid));
-    for (let n = 1; n <= 3; n++) if (!used.has(n)) return n;
-    return (Math.max(0, ...used) || 0) + 1; // shouldn't happen (room caps at 3 clients)
   }
 
   /** Spawn a fresh player for a slot: alive at HOME by day/shop; a downed spectator at night
