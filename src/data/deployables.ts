@@ -31,7 +31,13 @@ export const DEPLOYABLE_TYPES: Record<string, DeployableDef> = {
     desc: "Fixed turret — auto-fires at the nearest zombie",
     cost: 120,
     cap: 3,
-    weapon: { range: 380, dmg: 14, bulletSpeed: 900, interval: 0.7, magSize: 18, reloadTime: 2.5 },
+    weapon: {
+      range: 380,
+      dmg: 22,
+      bulletSpeed: 900,
+      interval: 0.4,
+      mag: { size: 18, reloadTime: 2.5 },
+    },
     destructible: { maxHp: 160, contactRadius: 16, contactDps: 18 },
     collider: { radius: 12 }, // physical body (~turret base) → blocks a lane; zombies pile & chew it
     color: [0.6, 0.85, 1.0],
@@ -43,8 +49,24 @@ export const DEPLOYABLE_TYPES: Record<string, DeployableDef> = {
     desc: "Mobile drone — follows the squad and hunts nearby zombies",
     cost: 150,
     cap: 2,
-    weapon: { range: 320, dmg: 10, bulletSpeed: 800, interval: 0.5, magSize: 10, reloadTime: 2.2 },
-    movement: { speed: 210, leashMax: 160, hoverDist: 46, switchMargin: 80, orbitSpeed: 0.7 },
+    weapon: {
+      range: 320,
+      dmg: 26,
+      bulletSpeed: 800,
+      interval: 0.2,
+      mag: { size: 24, reloadTime: 1.3, ammoBudget: 90 },
+    },
+    movement: {
+      speed: 210,
+      leashMax: 160,
+      hoverDist: 95, // far enough out of the player's personal-light pool that the drone's own
+      // light reads as a separate source at night (was 46 — washed out hugging the player)
+      engageDist: 64,
+      switchMargin: 80,
+      orbitSpeed: 0.7,
+      scanFreq: 1.3,
+      scanAmp: 0.25,
+    },
     destructible: { maxHp: 60, contactRadius: 20, contactDps: 24 },
     visual: "drone",
     color: [1.0, 0.45, 0.25],
@@ -138,7 +160,8 @@ export function placeDeployable(state: State, defId: string, x: number, y: numbe
   if (def.weapon) {
     d.weaponCd = 0;
     d.reloadT = 0;
-    if (def.weapon.magSize !== undefined) d.ammoLeft = def.weapon.magSize;
+    if (def.weapon.mag) d.ammoLeft = def.weapon.mag.size;
+    if (def.weapon.mag?.ammoBudget !== undefined) d.reserveLeft = def.weapon.mag.ammoBudget;
   }
   // schedule the first drop at the next interval grid boundary (where the beacon resets), so the
   // drop cadence is in phase with the state.time-driven beacon rather than offset by placement time.

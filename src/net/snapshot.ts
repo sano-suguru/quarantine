@@ -131,6 +131,7 @@ export interface Snapshot {
     aim: number;
     hpFrac: number;
     reloading: boolean;
+    ammoFrac: number;
   }[];
 }
 
@@ -213,6 +214,7 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
       aim: d.aim,
       hpFrac: d.hpFrac,
       reloading: d.reloading,
+      ammoFrac: d.ammoFrac ?? 1,
     })),
   };
 }
@@ -400,6 +402,7 @@ export function applySnapshot(
       ex.aim = sd.aim;
       ex.hpFrac = sd.hpFrac;
       ex.reloading = sd.reloading;
+      ex.ammoFrac = sd.ammoFrac;
       return ex;
     }
     return {
@@ -410,6 +413,7 @@ export function applySnapshot(
       aim: sd.aim,
       hpFrac: sd.hpFrac,
       reloading: sd.reloading,
+      ammoFrac: sd.ammoFrac,
     };
   });
 }
@@ -606,6 +610,7 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.u8(q01(((d.aim % TAU) + TAU) % TAU, TAU));
     const hp7 = Math.round(Math.max(0, Math.min(1, d.hpFrac)) * 127);
     w.u8((d.reloading ? 1 : 0) | (hp7 << 1));
+    w.u8(Math.round(Math.max(0, Math.min(1, d.ammoFrac)) * 255));
   }
 
   return w.done();
@@ -754,6 +759,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
     const y = dqpos(r.i16());
     const aim = dq01(r.u8(), TAU);
     const status = r.u8();
+    const ammoFrac = r.u8() / 255;
     deployables.push({
       id,
       defId,
@@ -762,6 +768,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
       aim,
       reloading: (status & 1) === 1,
       hpFrac: (status >> 1) / 127,
+      ammoFrac,
     });
   }
 

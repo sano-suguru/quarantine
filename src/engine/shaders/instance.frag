@@ -1,12 +1,13 @@
 #version 300 es
 precision mediump float;
-#define MAX_LIGHTS 4
+#define MAX_LIGHTS 8
 in vec2 v_local; in vec4 v_color; in float v_shape; in vec2 v_world;
 uniform int u_lightCount;              // active flashlights (one per player)
 uniform vec2 u_lightPos[MAX_LIGHTS];   // each light's world origin
 uniform vec2 u_lightAim[MAX_LIGHTS];   // each light's normalized aim direction
 uniform float u_lightInt[MAX_LIGHTS];  // each cone's brightness (battery/flicker), 0 = off
-uniform vec3 u_cone;     // shared: x: cos(halfAngle), y: range, z: ambient floor
+uniform vec2 u_lightCone[MAX_LIGHTS];  // per-light: x = cos(halfAngle), y = range
+uniform float u_ambient; // shared ambient light floor
 uniform vec2 u_personal; // shared: x: radius, y: max brightness of the dim pool
 uniform float u_emissive;  // darkness floor for this pass (0 normal, >0 additive)
 out vec4 frag;
@@ -25,12 +26,12 @@ float lightAt(vec2 w){
     // aimed cone: angle gate * distance falloff * intensity
     vec2 dir = dist > 1e-3 ? d / dist : u_lightAim[i];
     float ca = dot(dir, u_lightAim[i]);
-    float e = smoothstep(u_cone.x, mix(u_cone.x, 1.0, 0.35), ca);
-    float reach = smoothstep(u_cone.y, u_cone.y * 0.25, dist);
+    float e = smoothstep(u_lightCone[i].x, mix(u_lightCone[i].x, 1.0, 0.35), ca);
+    float reach = smoothstep(u_lightCone[i].y, u_lightCone[i].y * 0.25, dist);
     float cone = e * reach * u_lightInt[i];
     best = max(best, max(pool, cone));
   }
-  return clamp(u_cone.z + best, 0.0, 1.0);
+  return clamp(u_ambient + best, 0.0, 1.0);
 }
 
 // regular hexagon signed distance (negative inside), p/r in local space

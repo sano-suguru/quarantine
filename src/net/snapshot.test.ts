@@ -96,10 +96,11 @@ describe("snapshot binary round-trip", () => {
   });
 
   it("golden: encoded byte layout is stable (bump PROTOCOL_VERSION if this changes)", () => {
-    // A fully deterministic snapshot (no RNG / zombies): newState() + fixed scalars + 2 players.
-    // The encoded bytes are hashed; if the wire layout changes the hash drifts and this test fails
-    // — a forcing function so a `snapshot.ts` format change is paired with a conscious
-    // PROTOCOL_VERSION bump in net.ts (silent desync is the failure mode we're guarding against).
+    // A fully deterministic snapshot (no RNG / zombies): newState() + fixed scalars + 2 players +
+    // one deployable (so the per-deployable byte layout is hashed too — without it a per-deployable
+    // format change like `ammoFrac` slips past this guard). If the wire layout changes the hash
+    // drifts and this test fails — a forcing function so a `snapshot.ts` format change is paired
+    // with a conscious PROTOCOL_VERSION bump in net.ts (silent desync is the failure mode we guard).
     const s = newState();
     s.phase = "night";
     s.day = 3;
@@ -109,6 +110,16 @@ describe("snapshot binary round-trip", () => {
     const p1 = s.players[1] as State["players"][number];
     p1.hp = 50;
     p1.absent = true;
+    s.deployables.push({
+      id: 42,
+      defId: "drone",
+      x: 64,
+      y: -32,
+      aim: 1,
+      hpFrac: 0.5,
+      reloading: true,
+      ammoFrac: 0.5,
+    });
     const bytes = new Uint8Array(encode(captureSnapshot(s, 100)));
     let h = 0x811c9dc5; // FNV-1a over the bytes
     for (const b of bytes) {
@@ -116,7 +127,7 @@ describe("snapshot binary round-trip", () => {
       h = Math.imul(h, 0x01000193);
     }
     expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
-      `"len=281 fnv=1f81b5f2"`,
+      `"len=293 fnv=84d55a05"`,
     );
   });
 
@@ -140,8 +151,18 @@ describe("snapshot binary round-trip", () => {
       hpFrac: 1,
       reloading: false,
     });
+    s.deployables.push({
+      id: 79,
+      defId: "drone",
+      x: 0,
+      y: 0,
+      aim: 0,
+      hpFrac: 1,
+      reloading: false,
+      ammoFrac: 0.5,
+    });
     const back = decode(encode(captureSnapshot(s, 9)));
-    expect(back.deployables).toHaveLength(2);
+    expect(back.deployables).toHaveLength(3);
     const sentry = back.deployables.find((d) => d.id === 77);
     expect(sentry?.defId).toBe("sentry");
     expect(Math.abs((sentry?.x ?? 0) - 120)).toBeLessThanOrEqual(POS_TOL);
@@ -153,6 +174,8 @@ describe("snapshot binary round-trip", () => {
     expect(station?.defId).toBe("ammostation");
     expect(station?.hpFrac).toBeCloseTo(1, 2);
     expect(station?.reloading).toBe(false);
+    const drone = back.deployables.find((d) => d.id === 79);
+    expect(drone?.ammoFrac ?? 0).toBeCloseTo(0.5, 2); // 1-byte quantized
   });
 
   it("stays under the 16KB SCTP message limit for a heavy night", () => {

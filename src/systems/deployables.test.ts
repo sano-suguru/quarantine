@@ -7,11 +7,12 @@ import {
   placeDeployable,
   placeSpot,
 } from "../data/deployables";
+import { waveDef } from "../data/waves";
 import { len } from "../engine/math";
 import { addPlayer } from "../engine/players";
 import { newState } from "../state";
 import type { Deployable, DeployableDef, State } from "../types";
-import { sysDeployables } from "./deployables";
+import { deployDmgScale, deployRetired, reloadRefill, sysDeployables } from "./deployables";
 import { spawnZombie } from "./wave";
 
 /** Spawn a zombie and force it to an exact position (spawnZombie itself uses RNG placement). */
@@ -42,7 +43,7 @@ describe("placeDeployable / deployableCount", () => {
   it("initialises capability state (weapon magazine / destructible hp / display defaults)", () => {
     const s = newState();
     const sentry = place(s, "sentry");
-    expect(sentry.ammoLeft).toBe(DEPLOYABLE_TYPES.sentry?.weapon?.magSize);
+    expect(sentry.ammoLeft).toBe(DEPLOYABLE_TYPES.sentry?.weapon?.mag?.size);
     expect(sentry.hp).toBe(DEPLOYABLE_TYPES.sentry?.destructible?.maxHp);
     expect(sentry.hpFrac).toBe(1);
     expect(sentry.reloading).toBe(false);
@@ -143,7 +144,7 @@ describe("sysDeployables — weapon (refactor equivalence + magazine)", () => {
     const s = newState();
     const d = place(s, "sentry");
     zombieAt(s, d.x + 50, d.y, 1e9); // huge hp so it survives (sysBullets isn't run here)
-    const reload = DEPLOYABLE_TYPES.sentry?.weapon?.reloadTime ?? 0;
+    const reload = DEPLOYABLE_TYPES.sentry?.weapon?.mag?.reloadTime ?? 0;
     d.ammoLeft = 1;
     d.weaponCd = 0;
     s.bullets = [];
@@ -160,7 +161,7 @@ describe("sysDeployables — weapon (refactor equivalence + magazine)", () => {
     sysDeployables(s, reload); // reload completes → immediate fire on the same tick
     expect(s.bullets.length).toBe(2);
     expect(d.reloading).toBe(false);
-    expect(d.ammoLeft).toBe((DEPLOYABLE_TYPES.sentry?.weapon?.magSize ?? 0) - 1);
+    expect(d.ammoLeft).toBe((DEPLOYABLE_TYPES.sentry?.weapon?.mag?.size ?? 0) - 1);
   });
 });
 
@@ -356,5 +357,42 @@ describe("sysDeployables — drone orbit-on-watch", () => {
     z.x = 5000; // alive but far outside weapon range
     sysDeployables(s, 0.016); // tickWeapon must clear the stale target
     expect(d.targetId).toBeUndefined();
+  });
+});
+
+describe("deployDmgScale", () => {
+  it("at night IS the enemy hpScale for that night (single source of truth)", () => {
+    // the production caller passes waveDef(state.day).hpScale, so shots-to-kill stays constant
+    for (const n of [1, 5, 10]) {
+      expect(deployDmgScale("night", waveDef(n).hpScale)).toBe(waveDef(n).hpScale);
+    }
+  });
+  it("does NOT scale during the day (roamers are base HP)", () => {
+    expect(deployDmgScale("day", waveDef(1).hpScale)).toBe(1);
+    expect(deployDmgScale("day", waveDef(10).hpScale)).toBe(1);
+  });
+});
+
+describe("reloadRefill", () => {
+  it("refills a full magazine when the reserve covers it", () => {
+    expect(reloadRefill(90, 24)).toBe(24);
+  });
+  it("refills only the remaining reserve on the last (partial) magazine", () => {
+    expect(reloadRefill(10, 24)).toBe(10);
+  });
+  it("refills nothing when the reserve is empty", () => {
+    expect(reloadRefill(0, 24)).toBe(0);
+    expect(reloadRefill(-5, 24)).toBe(0);
+  });
+});
+
+describe("deployRetired", () => {
+  it("retires a budgeted unit only when reserve AND magazine are empty", () => {
+    expect(deployRetired(true, 0, 0)).toBe(true);
+    expect(deployRetired(true, 0, 3)).toBe(false); // still has rounds in the mag
+    expect(deployRetired(true, 5, 0)).toBe(false); // still has reserve to reload
+  });
+  it("never retires an infinite-reserve unit (the sentry)", () => {
+    expect(deployRetired(false, 0, 0)).toBe(false);
   });
 });

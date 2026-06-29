@@ -296,15 +296,18 @@ export interface DeployableDef {
   /** how many of this type may exist at once this run */
   cap: number;
   color: [number, number, number];
-  /** auto-fire at the nearest zombie. `interval` = seconds between shots; `magSize`/`reloadTime`
-   *  add a self-recharging magazine (caps sustained DPS via a reload gap; no ammo purchase). */
+  /** auto-fire at the nearest zombie. `interval` = seconds between shots. An optional `mag`
+   *  adds a magazine (caps sustained DPS via a reload gap; no ammo purchase); omit it for a
+   *  no-reload continuous weapon. */
   weapon?: {
     range: number;
     dmg: number;
     bulletSpeed: number;
     interval: number;
-    magSize?: number;
-    reloadTime?: number;
+    /** magazine: `size` rounds fire before a `reloadTime`-second reload. `ammoBudget` (nested
+     *  here so it can't exist without a magazine) is the total rounds the unit will ever fire
+     *  before retiring (RTB); omitted = infinite reserve (self-recharging, e.g. the sentry). */
+    mag?: { size: number; reloadTime: number; ammoBudget?: number };
   };
   /** periodically drop a pickup (`emit` = pickup defId) every `interval` seconds */
   emitter?: { emit: string; interval: number };
@@ -313,8 +316,13 @@ export interface DeployableDef {
     speed: number;
     leashMax: number;
     hoverDist: number;
+    /** radius of the strafing ring the unit orbits around a target while engaging */
+    engageDist: number;
     switchMargin: number;
     orbitSpeed: number;
+    /** idle barrel scan: a slow sinusoidal aim wobble — `scanFreq` rad/s, `scanAmp` radians */
+    scanFreq: number;
+    scanAmp: number;
   };
   /** takes contact damage from adjacent zombies; removed at hp<=0 */
   destructible?: { maxHp: number; contactRadius: number; contactDps: number };
@@ -357,6 +365,11 @@ export interface Deployable {
   anchorId?: number;
   /** weapon: current target zombie (for target hysteresis) */
   targetId?: number;
+  /** host-only: rounds left before RTB (ammoBudget types) */
+  reserveLeft?: number;
+  // ---- synced display state ----
+  /** synced 0..1: remaining ammo for the ring (1 if infinite-reserve) */
+  ammoFrac?: number;
 }
 
 /** Day = lit scavenge/repair window; night = the dark horde siege. */

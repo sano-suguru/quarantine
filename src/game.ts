@@ -12,6 +12,7 @@ import { PICKUP_TYPES } from "./data/pickups";
 import { PLAYER_COLORS } from "./data/players";
 import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "./data/weapons";
 import { Audio } from "./engine/audio";
+import { type LightCandidate, selectLights } from "./engine/lights";
 import { anyAlive, localPlayer, nearestPlayer, revivePlayer } from "./engine/players";
 import { Renderer, SHAPE } from "./engine/renderer";
 import { addSalvage, buyUnlock, loadMeta } from "./meta";
@@ -395,8 +396,11 @@ export function draw(): void {
     flc.personalMax,
     flc.emissiveFloor,
   );
-  // one aimed flashlight per living player — teammates' cones light the dark too
+  // one aimed flashlight per living player + weapon-bearing deployables, culled to viewport
   R.beginLights();
+  const dcfg = CONFIG.deployables;
+  const { x: hx, y: hy } = R.worldToScreenHalf();
+  const cands: LightCandidate[] = [];
   for (const pl of state.players) {
     if (pl.hp <= 0 || pl.absent) continue;
     const intensity = flashlightIntensity(
@@ -407,7 +411,32 @@ export function draw(): void {
       flc.baseFlickerDepth,
       flickerNoise(state.time, pl.id),
     );
-    R.addLight(pl.x, pl.y, Math.cos(pl.aim), Math.sin(pl.aim), intensity);
+    cands.push({
+      x: pl.x,
+      y: pl.y,
+      ax: Math.cos(pl.aim),
+      ay: Math.sin(pl.aim),
+      intens: intensity,
+      range: flc.range,
+      cosHalf: Math.cos(flc.halfAngle),
+      priority: 1,
+    });
+  }
+  for (const d of state.deployables) {
+    if (!DEPLOYABLE_TYPES[d.defId]?.weapon) continue;
+    cands.push({
+      x: d.x,
+      y: d.y,
+      ax: Math.cos(d.aim),
+      ay: Math.sin(d.aim),
+      intens: dcfg.lightIntensity * (d.reloading ? 0.6 : 1),
+      range: flc.range * dcfg.lightRangeMul,
+      cosHalf: Math.cos(dcfg.lightHalfAngle),
+      priority: 0,
+    });
+  }
+  for (const c of selectLights(cands, camX, camY, hx, hy, R.maxLights())) {
+    R.addLight(c.x, c.y, c.ax, c.ay, c.intens, c.cosHalf, c.range);
   }
   R.begin();
 
@@ -720,10 +749,16 @@ function drawDeployables(R: typeof Renderer): void {
     const [r, g, b] = def.color;
     const visual = def.visual ?? (def.movement ? "drone" : def.emitter ? "crate" : "turret");
     if (visual === "drone") {
-      // an airborne quad: a ground shadow stays put while the body bobs above it
-      const by = d.y + Math.sin(state.time * 4 + d.x * 0.05) * 3;
+      // an airborne quad: a ground shadow stays put while the body bobs above it. The bob is
+      // purely time-based with a per-id phase offset to desync multiple drones — folding d.x
+      // into the phase (as before) coupled the vertical bob to the horizontal orbit, so it
+      // hitched as the drone swept around the ring.
+      const by = d.y + Math.sin(state.time * 4 + d.id * 2.399) * 3;
       R.circle(d.x, d.y, 8, 0, 0, 0, 0.28); // shadow (no bob)
-      R.glow(d.x, by, 18, r, g, b, d.reloading ? 0.2 : 0.45); // under-body scanner; dims on reload
+      const af = d.ammoFrac ?? 1;
+      const lowBlink = af < 0.2 ? 0.4 + 0.6 * Math.abs(Math.sin(state.time * 8)) : 1;
+      R.glow(d.x, by, 18, r, g, b, (d.reloading ? 0.2 : 0.4) * lowBlink); // dimmed scanner
+      R.ring(d.x, by, 13 * af + 3, r, g, b, 0.5 * lowBlink); // shrinks as ammo depletes
       // chassis: two arms crossing in an X (oriented to aim) + a small core
       const arm = 11;
       R.rect(d.x, by, arm * 2, 2.5, d.aim + Math.PI / 4, r, g, b, 0.85);

@@ -1,9 +1,30 @@
 import { DEPLOYABLE_TYPES } from "../data/deployables";
+import { waveDef } from "../data/waves";
 import { clamp, len } from "../engine/math";
 import { nearestPlayer } from "../engine/players";
 import { allocId } from "../state";
-import type { Deployable, DeployableDef, State, Zombie } from "../types";
+import type { Deployable, DeployableDef, SiegePhase, State, Zombie } from "../types";
+import { fxImpact, fxKill } from "./fx";
 import { spawnPickup } from "./pickups";
+
+/** Deployable damage multiplier. At night it IS the enemy `hpScale` for that night (the caller
+ *  passes `waveDef(state.day).hpScale`), so a deployable's shots-to-kill ratio is preserved all
+ *  run from a single source of truth; during the day, roamers are base HP (hpScale 1) AND
+ *  `state.day` already holds the upcoming night's number, so we return 1. */
+export function deployDmgScale(phase: SiegePhase, nightHpScale: number): number {
+  return phase === "night" ? nightHpScale : 1;
+}
+
+/** Rounds to load into the magazine on reload, drawn from the finite reserve (clamped ≥ 0). */
+export function reloadRefill(reserveLeft: number, magSize: number): number {
+  return Math.min(magSize, Math.max(0, reserveLeft));
+}
+
+/** A budgeted unit retires (RTB) once it can neither fire nor reload: reserve and magazine empty.
+ *  Infinite-reserve units (no ammoBudget) never retire this way. */
+export function deployRetired(hasBudget: boolean, reserveLeft: number, ammoLeft: number): boolean {
+  return hasBudget && reserveLeft <= 0 && ammoLeft <= 0;
+}
 
 /**
  * Tick placed fortifications (host sim only — clients see them via the snapshot, and the
@@ -21,9 +42,25 @@ export function sysDeployables(state: State, dt: number): void {
     if (def.movement) tickMovement(state, d, def, dt);
     if (def.weapon) tickWeapon(state, d, def, dt);
     if (def.emitter) tickEmitter(state, d, def);
-    if (def.destructible) {
-      tickDamage(state, d, def, dt);
-      if ((d.hp ?? 0) <= 0) dead.push(i);
+    if (def.destructible) tickDamage(state, d, def, dt);
+    // remaining-ammo fraction for the client ring (reserve + current mag over full load; 1 if infinite)
+    const mag = def.weapon?.mag;
+    d.ammoFrac =
+      mag?.ammoBudget !== undefined
+        ? clamp(((d.reserveLeft ?? 0) + (d.ammoLeft ?? 0)) / (mag.ammoBudget + mag.size), 0, 1)
+        : 1;
+    // removal: destroyed (hp<=0) OR retired (ammo budget spent)
+    const destroyed = !!def.destructible && (d.hp ?? 0) <= 0;
+    const retired = deployRetired(
+      mag?.ammoBudget !== undefined,
+      d.reserveLeft ?? 0,
+      d.ammoLeft ?? 0,
+    );
+    if (destroyed || retired) {
+      dead.push(i);
+      if (destroyed)
+        fxKill(state, d.x, d.y, def.color, def.color, true); // loud destruction burst
+      else fxImpact(state, d.x, d.y, 0, def.color); // soft power-down on RTB
     }
   }
   for (let k = dead.length - 1; k >= 0; k--) {
@@ -59,13 +96,20 @@ function tickMovement(state: State, d: Deployable, def: DeployableDef, dt: numbe
   let gy: number;
   const target = d.targetId != null ? state.zombies.find((z) => z.id === d.targetId) : undefined;
   if (target) {
-    const range = def.weapon?.range ?? 320;
-    const standoff = Math.min(range * 0.7, m.leashMax);
-    const a = Math.atan2(target.y - anchor.y, target.x - anchor.x);
-    const dist = len(target.x - anchor.x, target.y - anchor.y);
-    const reach = Math.min(Math.max(dist - standoff, 0), m.leashMax);
-    gx = anchor.x + Math.cos(a) * reach;
-    gy = anchor.y + Math.sin(a) * reach;
+    // engage: strafe a ring around the target rather than parking between it and the player —
+    // same time-driven sweep as the idle orbit below, so the angle carries over without a pop.
+    // Then leash the goal to the anchor so the drone circles its prey without abandoning the
+    // player to chase a distant zombie. Aim is set toward the target in tickWeapon.
+    const a = ((d.id * 1.618) % (Math.PI * 2)) + state.time * m.orbitSpeed;
+    gx = target.x + Math.cos(a) * m.engageDist;
+    gy = target.y + Math.sin(a) * m.engageDist;
+    const lx = gx - anchor.x;
+    const ly = gy - anchor.y;
+    const ld = len(lx, ly);
+    if (ld > m.leashMax) {
+      gx = anchor.x + (lx / ld) * m.leashMax;
+      gy = anchor.y + (ly / ld) * m.leashMax;
+    }
   } else {
     // idle: orbit the anchor on watch. the per-id golden-angle phase spreads multiple drones
     // around the ring; state.time drives the sweep so it's deterministic (host & client agree).
@@ -73,21 +117,25 @@ function tickMovement(state: State, d: Deployable, def: DeployableDef, dt: numbe
     gx = anchor.x + Math.cos(a) * m.hoverDist;
     gy = anchor.y + Math.sin(a) * m.hoverDist;
     // face the direction of travel (orbit tangent) + a slow scan wobble
-    d.aim = a + Math.PI / 2 + Math.sin(state.time * 1.3) * 0.25;
+    d.aim = a + Math.PI / 2 + Math.sin(state.time * m.scanFreq) * m.scanAmp;
   }
 
   const dx = gx - d.x;
   const dy = gy - d.y;
   const dist = len(dx, dy);
-  if (dist < 4) return; // deadzone: avoid jitter / overshoot around a moving goal
+  if (dist < 1e-4) return; // already on the goal — skip the 0/0 normalize
+  // Seek the goal every frame; min() lands exactly on it, so there's no overshoot to damp.
+  // (No stop-band here: the idle orbit goal sweeps slowly — ~orbitSpeed*hoverDist u/s — while
+  // speed is far higher, so a deadzone made the drone overshoot in, freeze, then snap forward,
+  // a visible stop-go judder that the d.x-coupled hover bob amplified.)
   const step = Math.min(m.speed * dt, dist);
   d.x += (dx / dist) * step;
   d.y += (dy / dist) * step;
 }
 
 /** Acquire (with target hysteresis) the nearest zombie in range, aim, and fire on the weapon
- *  cooldown. A magazine (magSize/reloadTime) caps sustained DPS with a reload gap — interval
- *  is the per-shot cooldown, reloadTime is the magazine refill. No ammo purchase. */
+ *  cooldown. An optional `mag` (size/reloadTime) caps sustained DPS with a reload gap — interval
+ *  is the per-shot cooldown, mag.reloadTime is the magazine refill. No ammo purchase. */
 function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number): void {
   const w = def.weapon as NonNullable<DeployableDef["weapon"]>;
   if ((d.weaponCd ?? 0) > 0) d.weaponCd = (d.weaponCd ?? 0) - dt;
@@ -119,11 +167,17 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
 
   // magazine: while reloading, hold fire; when it completes, refill and reset the shot cd so
   // the unit fires immediately rather than waiting another interval on top of the reload.
-  if (w.magSize !== undefined && (d.reloadT ?? 0) > 0) {
+  if (w.mag && (d.reloadT ?? 0) > 0) {
     d.reloadT = (d.reloadT ?? 0) - dt;
     if ((d.reloadT ?? 0) <= 0) {
       d.reloadT = 0;
-      d.ammoLeft = w.magSize;
+      if (w.mag.ammoBudget !== undefined) {
+        const refill = reloadRefill(d.reserveLeft ?? 0, w.mag.size);
+        d.ammoLeft = refill;
+        d.reserveLeft = (d.reserveLeft ?? 0) - refill;
+      } else {
+        d.ammoLeft = w.mag.size;
+      }
       d.weaponCd = 0;
     }
   }
@@ -131,11 +185,10 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
   if (target) {
     d.aim = Math.atan2(target.y - d.y, target.x - d.x);
     const canFire =
-      (d.reloadT ?? 0) <= 0 &&
-      (d.weaponCd ?? 0) <= 0 &&
-      (w.magSize === undefined || (d.ammoLeft ?? 0) > 0);
+      (d.reloadT ?? 0) <= 0 && (d.weaponCd ?? 0) <= 0 && (!w.mag || (d.ammoLeft ?? 0) > 0);
     if (canFire) {
       const speed = w.bulletSpeed;
+      const dmg = w.dmg * deployDmgScale(state.phase, waveDef(state.day).hpScale);
       state.bullets.push({
         id: allocId(state),
         x: d.x,
@@ -145,16 +198,16 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
         vx: Math.cos(d.aim) * speed,
         vy: Math.sin(d.aim) * speed,
         r: 4,
-        dmg: w.dmg,
+        dmg,
         life: w.range / speed,
         pierce: 0,
         knockback: 4,
         color: def.color,
       });
       d.weaponCd = w.interval;
-      if (w.magSize !== undefined) {
+      if (w.mag) {
         d.ammoLeft = (d.ammoLeft ?? 0) - 1;
-        if ((d.ammoLeft ?? 0) <= 0) d.reloadT = w.reloadTime ?? 0;
+        if ((d.ammoLeft ?? 0) <= 0) d.reloadT = w.mag.reloadTime;
       }
     }
   }
