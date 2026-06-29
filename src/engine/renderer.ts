@@ -22,6 +22,7 @@ let u_lightPos: WebGLUniformLocation | null;
 let u_lightAim: WebGLUniformLocation | null;
 let u_lightInt: WebGLUniformLocation | null;
 let u_cone: WebGLUniformLocation | null;
+let u_lightCone: WebGLUniformLocation | null;
 let u_personal: WebGLUniformLocation | null;
 let u_emissive: WebGLUniformLocation | null;
 let g_cam: WebGLUniformLocation | null;
@@ -31,16 +32,18 @@ let g_lightPos: WebGLUniformLocation | null;
 let g_lightAim: WebGLUniformLocation | null;
 let g_lightInt: WebGLUniformLocation | null;
 let g_cone: WebGLUniformLocation | null;
+let g_lightCone: WebGLUniformLocation | null;
 let g_personal: WebGLUniformLocation | null;
 let viewHalfX = 400;
 let viewHalfY = 300;
 // flashlight state — up to MAX_LIGHTS aimed cones (one per player), set each frame via
 // setLightParams (shared) + beginLights()/addLight() (per player). MAX_LIGHTS mirrors the shaders.
-const MAX_LIGHTS = 4;
+const MAX_LIGHTS = 8;
 let lightCount = 0;
 const lightPos = new Float32Array(MAX_LIGHTS * 2);
 const lightAim = new Float32Array(MAX_LIGHTS * 2);
 const lightInt = new Float32Array(MAX_LIGHTS);
+const lightCone = new Float32Array(MAX_LIGHTS * 2); // [cosHalf, range] per light
 // shared cone/pool params (every player uses the same flashlight config)
 let coneCos = 0.85;
 let coneRange = 620;
@@ -118,6 +121,7 @@ function init(cv: HTMLCanvasElement): void {
   u_lightAim = gl.getUniformLocation(instProg, "u_lightAim");
   u_lightInt = gl.getUniformLocation(instProg, "u_lightInt");
   u_cone = gl.getUniformLocation(instProg, "u_cone");
+  u_lightCone = gl.getUniformLocation(instProg, "u_lightCone");
   u_personal = gl.getUniformLocation(instProg, "u_personal");
   u_emissive = gl.getUniformLocation(instProg, "u_emissive");
 
@@ -136,6 +140,7 @@ function init(cv: HTMLCanvasElement): void {
   g_lightAim = gl.getUniformLocation(gridProg, "u_lightAim");
   g_lightInt = gl.getUniformLocation(gridProg, "u_lightInt");
   g_cone = gl.getUniformLocation(gridProg, "u_cone");
+  g_lightCone = gl.getUniformLocation(gridProg, "u_lightCone");
   g_personal = gl.getUniformLocation(gridProg, "u_personal");
   gridVAO = gl.createVertexArray() as WebGLVertexArrayObject;
   gl.bindVertexArray(gridVAO);
@@ -187,13 +192,23 @@ function beginLights(): void {
 }
 
 /** add one aimed flashlight (one per player); silently ignored past MAX_LIGHTS */
-function addLight(x: number, y: number, ax: number, ay: number, intens: number): void {
+function addLight(
+  x: number,
+  y: number,
+  ax: number,
+  ay: number,
+  intens: number,
+  cosHalf = coneCos,
+  range = coneRange,
+): void {
   if (lightCount >= MAX_LIGHTS) return;
   lightPos[lightCount * 2] = x;
   lightPos[lightCount * 2 + 1] = y;
   lightAim[lightCount * 2] = ax;
   lightAim[lightCount * 2 + 1] = ay;
   lightInt[lightCount] = intens;
+  lightCone[lightCount * 2] = cosHalf;
+  lightCone[lightCount * 2 + 1] = range;
   lightCount++;
 }
 
@@ -403,6 +418,7 @@ function flush(camX: number, camY: number): void {
   gl.uniform2fv(g_lightPos, lightPos);
   gl.uniform2fv(g_lightAim, lightAim);
   gl.uniform1fv(g_lightInt, lightInt);
+  gl.uniform2fv(g_lightCone, lightCone);
   gl.uniform3f(g_cone, coneCos, coneRange, coneAmbient);
   gl.uniform2f(g_personal, personalRadius, personalMax);
   gl.bindVertexArray(gridVAO);
@@ -415,6 +431,7 @@ function flush(camX: number, camY: number): void {
   gl.uniform2fv(u_lightPos, lightPos);
   gl.uniform2fv(u_lightAim, lightAim);
   gl.uniform1fv(u_lightInt, lightInt);
+  gl.uniform2fv(u_lightCone, lightCone);
   gl.uniform3f(u_cone, coneCos, coneRange, coneAmbient);
   gl.uniform2f(u_personal, personalRadius, personalMax);
 
