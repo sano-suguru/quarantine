@@ -21,10 +21,14 @@ export type CoopEvent =
   | { t: "rejoin"; pid: number; nonce: string };
 
 /** Host → client notifications. */
-export type HostEvent = {
-  t: "gameover";
-  salvage: number; // this player's banked share
-  day: number;
-  kills: number;
-  money: number;
-};
+export type HostEvent =
+  | {
+      t: "gameover";
+      salvage: number; // this player's banked share
+      day: number;
+      kills: number;
+      money: number;
+    }
+  // Room is at capacity (host + 3). The host sends this instead of assigning a slot; the client
+  // tears its own link down on receipt (host doesn't close immediately — see host.ts reject()).
+  | { t: "roomfull" };
