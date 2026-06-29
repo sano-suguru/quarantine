@@ -910,6 +910,14 @@ function wireCoop(): void {
           /* sessionStorage unavailable */
         }
       },
+      onRoomFull: () => {
+        clearTimeout(t); // defensive — normally already cleared on open
+        Net.client = null;
+        Net.mode = "single";
+        coopRoomCode = null;
+        openHostLobby(true);
+        setStatus("This raid is full — hosting a public one instead.");
+      },
     });
     let opened = false;
     const t = window.setTimeout(() => {
