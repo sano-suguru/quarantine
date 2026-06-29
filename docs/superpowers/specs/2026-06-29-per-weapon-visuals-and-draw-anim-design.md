@@ -31,7 +31,9 @@ for guns is used only on bullets/muzzle, never the held weapon.
 2. **Animation:** a dedicated `switchT` timer drives a lower→raise pose.
 3. **Draw time:** per-weapon (`WeaponDef.drawTime`), not a single CONFIG constant —
    heavy guns are slower to ready, integrating with `moveMul` weight.
-4. **Co-op:** `switchT` is synced exactly like `reloadT` (host-authoritative, f32).
+4. **Co-op:** `switchT` is synced host-authoritatively, **u8-quantized** (1 byte/player;
+   it's an animation coefficient, not a value needing f32). Adding it to the wire format
+   requires a `PROTOCOL_VERSION` bump + golden-test update (see §4).
 
 ## Principles
 
@@ -110,7 +112,7 @@ is unconditional for all players; the replacement is too — every player draws
 `effWeapon(pl, pl.weapon).viz`.
 
 ```
-const wd = effWeapon(pl, pl.weapon);
+const wd = WEAPONS[pl.weapon];   // viz/drawTime are wlevel-independent → no effWeapon needed
 const raise = pl.switchT > 0 ? 1 - pl.switchT / wd.drawTime : 1;   // 0 = just switched, 1 = ready
 // draw-anim pose applied once to the whole rig (see §3), then:
 for (const part of wd.viz) {
@@ -119,9 +121,27 @@ for (const part of wd.viz) {
 }
 ```
 
+Read `WEAPONS[pl.weapon]` directly, **not** `effWeapon` — `viz`/`drawTime` don't scale
+with `wlevel` (only `dmg`/`mag` do, `arsenal.ts:38-43`), so the level layer is dead
+weight here. (The reload bar at `game.ts:654` still needs `effWeapon` for `wd.reload`
+scaling — leave that call.)
+
+**`drawTime > 0` is an invariant** (raise divides by it; a `0` yields `NaN`). Every
+weapon must set `drawTime > 0` (min is knife 0.30) — note this where `GunPart`/`drawTime`
+are defined so a future weapon can't silently break it.
+
+**Y-flip caveat:** clip space flips Y (`-clip.y` in the vert shader), so a world-space
+`+dy` and a `+rot` read mirrored vs. intuition on screen. The "+0.6 rad down" pose and
+any lateral `dy` (hanging mag) signs must be **confirmed visually in dev** — they may
+need flipping. (Absorbed by "tune in dev", but flagged so it isn't a surprise.)
+
 The melee `slash`/`glow` swing block (`game.ts:630-646`) is unchanged — it draws on
 `pl.muzzle` during a swing, on top of the knife's idle blade `viz`. The non-melee
 muzzle glow (`game.ts:648-650`) stays.
+
+**Start small:** initial `viz` should be ~2 parts (body rect + one accent/hanging
+element), not a detailed rig — at ~6px, extra parts blur into the outline. Add parts
+only if a weapon doesn't read; this is feel-first tuning, not an upfront target.
 
 ## 3. Draw animation — `switchT` timer
 
@@ -131,8 +151,9 @@ muzzle glow (`game.ts:648-650`) stays.
 ~line 38) and reset in `revivePlayer` (next to `p.reloadT = 0`, ~line 99).
 
 `game/systems/player.ts` — in the switch block (`120-134`):
-- set `p.switchT = wd.drawTime` for the **new** weapon (compute `effWeapon` for the
-  new id, or read `WEAPONS[id].drawTime`),
+- read `const drawTime = WEAPONS[id].drawTime` for the **new** weapon (direct, since the
+  switch isn't confirmed at this point and `drawTime` is wlevel-independent anyway),
+- set `p.switchT = drawTime`,
 - replace `p.fireCd = Math.max(p.fireCd, CONFIG.player.switchRaise)` with
   `p.fireCd = Math.max(p.fireCd, drawTime)` (lockout = draw time),
 - decrement each frame alongside the existing timers: `if (p.switchT > 0) p.switchT -= dt;`
@@ -140,6 +161,12 @@ muzzle glow (`game.ts:648-650`) stays.
 
 `game/config.ts` — **remove** `switchRaise` from `CONFIG.player` and its `79-81`
 comment (kept short: note `drawTime` lives per-weapon now).
+
+`game/systems/player.test.ts:163-164` — this test reads `CONFIG.player.switchRaise`
+(`expect(p.fireCd).toBeGreaterThan(CONFIG.player.switchRaise - 0.02)`). Removing the
+constant breaks it (tsc **and** runtime). **Update it** to the new weapon's `drawTime`
+— the test switches to slot 1, so assert against `WEAPONS.smg.drawTime` (confirm which
+weapon slot 1 maps to via `WEAPON_ORDER` when implementing).
 
 **Pose** (in `drawPlayer`, applied to the whole rig before the parts loop): with
 `raise` from §2,
@@ -153,23 +180,39 @@ comment (kept short: note `drawTime` lives per-weapon now).
 This is purely cosmetic — the fire-lockout is the `fireCd` set above; `switchT`
 never gates the sim except via the client fire-feel guard in §4.
 
-## 4. Co-op sync — mirror `reloadT`
+## 4. Co-op sync — like `reloadT`, but u8-quantized
 
 `switchT` is host-authoritative and host-decremented (it lives in `sysPlayer`, which
-only the host runs). Clients receive it via snapshots, exactly like `reloadT`. There
-is **no separate client prediction** of `switchT` — `reloadT` isn't predicted either
-(the reload bar already updates at snapshot rate); weapon switching is itself
-host-authoritative (`lp.weapon` arrives via snapshot), so `switchT` arriving with the
-new weapon in the same snapshot is consistent. The own-player draw anim updates at
-snapshot rate — the same accepted limitation as the reload bar and remote muzzle.
+only the host runs). Clients receive it via snapshots. Encoded as a **u8** via the
+existing `q01`/`dq01` helpers (`snapshot.ts:426-428`) over a `MAX_DRAWTIME` constant
+(= the largest `drawTime`, e.g. `0.7`+headroom → `0.8`) — 1 byte/player. switchT is
+only an animation coefficient (`raise`), so u8 precision is ample; f32 would waste 3
+bytes/player. (This matches how `hitFlash`/`flash` are already quantized; it does *not*
+match `reloadT`, which is f32 — a pre-existing choice we're not bound to.)
+
+**Prediction — start snapshot-only, with a feel escape hatch.** Initially `switchT` is
+*not* client-predicted: it arrives via snapshot (host clobbers it on apply, like
+`reloadT`), and since the weapon switch itself is host-authoritative (`lp.weapon`
+arrives in the same snapshot), it's consistent. **But** the draw anim is the gun's
+*posture* — more salient than the reload progress bar — so if the own-player draw feels
+steppy at snapshot rate in dev, add a local frame-rate decrement + reconcile, exactly
+like `predMuzzle`/`predRecoil` already do (`client.ts:411-417`). Decide this **by feel
+in dev**, don't pre-commit to "no prediction."
 
 Touch-points (`game/net/snapshot.ts`), each next to the existing `reloadT` line:
 
 1. `SnapshotPlayer.switchT: number` (interface, ~line 58)
 2. capture: `switchT: p.switchT` (~line 167)
 3. apply: `p.switchT = sp.switchT` (~line 310)
-4. encode: `w.f32(p.switchT)` (~line 535)
-5. decode: `const switchT = r.f32()` (~line 652) + include in the built object (~line 685)
+4. encode: `w.u8(q01(p.switchT, MAX_DRAWTIME))` (~line 535)
+5. decode: `const switchT = dq01(r.u8(), MAX_DRAWTIME)` (~line 652) + include in the built object (~line 685)
+
+**Wire-format bump (required — the byte layout changes):**
+
+6. `game/net/net.ts:19` — bump `PROTOCOL_VERSION` 9 → 10 (the golden test exists to force
+   this; a silent desync is the failure mode it guards).
+7. `game/net/snapshot.test.ts:98-131` — update the golden inline snapshot
+   (`len=293 fnv=84d55a05` → the new length/hash after adding 1 byte/player).
 
 `game/net/client.ts` — add `lp.switchT <= 0` to the local fire-feel gate
 (`~line 434`, next to `lp.reloadT <= 0`), so the client doesn't predict a muzzle
@@ -184,8 +227,11 @@ flash during the draw window (the host's `fireCd` lockout would reject the shot)
 
 ## Verification
 
-1. `bun run typecheck` + `bun run test` (pure-function tests; `waveDef`/arsenal/math
-   unaffected — expect green).
+1. `bun run typecheck` + `bun run test`. **Two tests must be updated as part of this
+   work** (they are not "unaffected"): `player.test.ts:163-164` (switchRaise → drawTime,
+   §3) and `snapshot.test.ts:98-131` (golden byte-layout, §4). After those edits the
+   suite should be green; `waveDef`/arsenal/math/geometry/spatialHash/ammo/flashlight
+   are genuinely untouched.
 2. **`bun run dev`** — switch through every owned weapon and **look**: each reads as a
    distinct silhouette; the lower→raise draw plays; heavy guns visibly slower to ready;
    fire is locked until the gun is up. This is the done-bar (feel-first).
