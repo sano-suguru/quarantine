@@ -76,7 +76,10 @@ export const CONFIG = {
       maxAlpha: 0.6, // fresh-pool peak alpha (drawn fade is life/maxLife * maxAlpha)
     },
   },
-  player: { radius: 16, speed: 200, maxHp: 100, moveRampRate: 1.5, switchRaise: 0.25 },
+  // switchRaise = fire-lockout after a weapon swap: the "drawing your weapon" beat (paired with
+  // the weapon_switch SFX + move ramp). Becomes the draw-time for a switchT/holster anim once
+  // per-weapon visuals exist. ~0.5s by ear; tune by playtest, not by matching the clip length.
+  player: { radius: 16, speed: 200, maxHp: 100, moveRampRate: 1.5, switchRaise: 0.5 },
   cam: { lerp: 8, shakeDecay: 8 },
   feel: {
     hitstop: 0.05, // seconds of slow-mo on a kill

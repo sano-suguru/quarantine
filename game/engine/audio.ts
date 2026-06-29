@@ -108,6 +108,12 @@ function reloadDone(): void {
   playSample("reload_done");
 }
 
+/** weapon swap: holster the old gun, ready the new one. One universal sound (the switch logic
+ *  is weapon-agnostic); a future per-weapon draw could move to `switch_<weapon>` like shots. */
+function switchWeapon(): void {
+  playSample("weapon_switch");
+}
+
 function hurt(): void {
   playSample("hurt");
 }
@@ -246,6 +252,7 @@ export const Audio = {
   kill,
   reload,
   reloadDone,
+  switchWeapon,
   hurt,
   dryFire,
   pickup,
