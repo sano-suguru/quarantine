@@ -313,6 +313,8 @@ export interface DeployableDef {
     speed: number;
     leashMax: number;
     hoverDist: number;
+    /** radius of the strafing ring the unit orbits around a target while engaging */
+    engageDist: number;
     switchMargin: number;
     orbitSpeed: number;
   };

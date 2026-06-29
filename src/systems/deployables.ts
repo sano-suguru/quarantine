@@ -59,13 +59,20 @@ function tickMovement(state: State, d: Deployable, def: DeployableDef, dt: numbe
   let gy: number;
   const target = d.targetId != null ? state.zombies.find((z) => z.id === d.targetId) : undefined;
   if (target) {
-    const range = def.weapon?.range ?? 320;
-    const standoff = Math.min(range * 0.7, m.leashMax);
-    const a = Math.atan2(target.y - anchor.y, target.x - anchor.x);
-    const dist = len(target.x - anchor.x, target.y - anchor.y);
-    const reach = Math.min(Math.max(dist - standoff, 0), m.leashMax);
-    gx = anchor.x + Math.cos(a) * reach;
-    gy = anchor.y + Math.sin(a) * reach;
+    // engage: strafe a ring around the target rather than parking between it and the player —
+    // same time-driven sweep as the idle orbit below, so the angle carries over without a pop.
+    // Then leash the goal to the anchor so the drone circles its prey without abandoning the
+    // player to chase a distant zombie. Aim is set toward the target in tickWeapon.
+    const a = ((d.id * 1.618) % (Math.PI * 2)) + state.time * m.orbitSpeed;
+    gx = target.x + Math.cos(a) * m.engageDist;
+    gy = target.y + Math.sin(a) * m.engageDist;
+    const lx = gx - anchor.x;
+    const ly = gy - anchor.y;
+    const ld = len(lx, ly);
+    if (ld > m.leashMax) {
+      gx = anchor.x + (lx / ld) * m.leashMax;
+      gy = anchor.y + (ly / ld) * m.leashMax;
+    }
   } else {
     // idle: orbit the anchor on watch. the per-id golden-angle phase spreads multiple drones
     // around the ring; state.time drives the sweep so it's deterministic (host & client agree).
@@ -79,7 +86,11 @@ function tickMovement(state: State, d: Deployable, def: DeployableDef, dt: numbe
   const dx = gx - d.x;
   const dy = gy - d.y;
   const dist = len(dx, dy);
-  if (dist < 4) return; // deadzone: avoid jitter / overshoot around a moving goal
+  if (dist < 1e-4) return; // already on the goal — skip the 0/0 normalize
+  // Seek the goal every frame; min() lands exactly on it, so there's no overshoot to damp.
+  // (No stop-band here: the idle orbit goal sweeps slowly — ~orbitSpeed*hoverDist u/s — while
+  // speed is far higher, so a deadzone made the drone overshoot in, freeze, then snap forward,
+  // a visible stop-go judder that the d.x-coupled hover bob amplified.)
   const step = Math.min(m.speed * dt, dist);
   d.x += (dx / dist) * step;
   d.y += (dy / dist) * step;

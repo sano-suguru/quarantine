@@ -720,8 +720,11 @@ function drawDeployables(R: typeof Renderer): void {
     const [r, g, b] = def.color;
     const visual = def.visual ?? (def.movement ? "drone" : def.emitter ? "crate" : "turret");
     if (visual === "drone") {
-      // an airborne quad: a ground shadow stays put while the body bobs above it
-      const by = d.y + Math.sin(state.time * 4 + d.x * 0.05) * 3;
+      // an airborne quad: a ground shadow stays put while the body bobs above it. The bob is
+      // purely time-based with a per-id phase offset to desync multiple drones — folding d.x
+      // into the phase (as before) coupled the vertical bob to the horizontal orbit, so it
+      // hitched as the drone swept around the ring.
+      const by = d.y + Math.sin(state.time * 4 + d.id * 2.399) * 3;
       R.circle(d.x, d.y, 8, 0, 0, 0, 0.28); // shadow (no bob)
       R.glow(d.x, by, 18, r, g, b, d.reloading ? 0.2 : 0.45); // under-body scanner; dims on reload
       // chassis: two arms crossing in an X (oriented to aim) + a small core
