@@ -1,9 +1,17 @@
+import { CONFIG } from "../config";
 import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { clamp, len } from "../engine/math";
 import { nearestPlayer } from "../engine/players";
 import { allocId } from "../state";
-import type { Deployable, DeployableDef, State, Zombie } from "../types";
+import type { Deployable, DeployableDef, SiegePhase, State, Zombie } from "../types";
 import { spawnPickup } from "./pickups";
+
+/** Deployable damage multiplier. At night it tracks the enemy `hpScale` (= 1 + day*perNight) so a
+ *  deployable's shots-to-kill ratio is preserved all run; during the day, roamers are base HP
+ *  (hpScale 1) AND `state.day` already holds the upcoming night's number, so we return 1. */
+export function deployDmgScale(phase: SiegePhase, day: number, perNight: number): number {
+  return phase === "night" ? 1 + day * perNight : 1;
+}
 
 /**
  * Tick placed fortifications (host sim only — clients see them via the snapshot, and the
@@ -147,6 +155,8 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
       (w.magSize === undefined || (d.ammoLeft ?? 0) > 0);
     if (canFire) {
       const speed = w.bulletSpeed;
+      const dmg =
+        w.dmg * deployDmgScale(state.phase, state.day, CONFIG.deployables.dmgScalePerNight);
       state.bullets.push({
         id: allocId(state),
         x: d.x,
@@ -156,7 +166,7 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
         vx: Math.cos(d.aim) * speed,
         vy: Math.sin(d.aim) * speed,
         r: 4,
-        dmg: w.dmg,
+        dmg,
         life: w.range / speed,
         pierce: 0,
         knockback: 4,

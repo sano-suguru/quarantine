@@ -218,4 +218,10 @@ export const CONFIG = {
     salvagePerDay: 8, // SALVAGE banked per day survived
     salvagePerKill: 0.15, // SALVAGE banked per kill
   },
+  deployables: {
+    dmgScalePerNight: 0.1, // deployable dmg *(1 + day*this) at night — matches enemy hpScale
+    lightIntensity: 0.45, // deployable searchlight brightness (player flashlight is ~1)
+    lightRangeMul: 0.6, // deployable cone range as a fraction of the player flashlight range
+    lightHalfAngle: 0.5, // deployable cone half-angle (rad); narrower than the player cone
+  },
 };

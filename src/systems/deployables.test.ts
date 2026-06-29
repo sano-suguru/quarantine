@@ -11,7 +11,7 @@ import { len } from "../engine/math";
 import { addPlayer } from "../engine/players";
 import { newState } from "../state";
 import type { Deployable, DeployableDef, State } from "../types";
-import { sysDeployables } from "./deployables";
+import { deployDmgScale, sysDeployables } from "./deployables";
 import { spawnZombie } from "./wave";
 
 /** Spawn a zombie and force it to an exact position (spawnZombie itself uses RNG placement). */
@@ -356,5 +356,17 @@ describe("sysDeployables — drone orbit-on-watch", () => {
     z.x = 5000; // alive but far outside weapon range
     sysDeployables(s, 0.016); // tickWeapon must clear the stale target
     expect(d.targetId).toBeUndefined();
+  });
+});
+
+describe("deployDmgScale", () => {
+  it("scales with the night number at night (matches enemy hpScale)", () => {
+    expect(deployDmgScale("night", 1, 0.1)).toBeCloseTo(1.1);
+    expect(deployDmgScale("night", 5, 0.1)).toBeCloseTo(1.5);
+    expect(deployDmgScale("night", 10, 0.1)).toBeCloseTo(2.0);
+  });
+  it("does NOT scale during the day (roamers are base HP)", () => {
+    expect(deployDmgScale("day", 1, 0.1)).toBe(1);
+    expect(deployDmgScale("day", 10, 0.1)).toBe(1);
   });
 });
