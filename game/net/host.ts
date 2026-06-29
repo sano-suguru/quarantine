@@ -20,6 +20,23 @@ interface HostPeer {
   claimTimer: ReturnType<typeof setTimeout> | null;
 }
 
+/** Max simultaneous clients (host is pid 0; clients claim pids 1..MAX_CLIENTS). */
+export const MAX_CLIENTS = 3;
+
+export type SlotDecision = { kind: "assign"; pid: number } | { kind: "full" };
+
+/**
+ * Pure slot picker — the single source of truth for the room cap. Returns the lowest free client
+ * slot (1..MAX_CLIENTS), or `full` when every slot is taken. A slot counts as occupied by ANY
+ * decided peer, whether currently `open` or held `absent` for reconnect — a held body's slot is
+ * reserved for its owner (we do NOT evict it; see the design doc, feel-first).
+ */
+export function pickSlot(decidedPids: Iterable<number>): SlotDecision {
+  const used = new Set(decidedPids);
+  for (let n = 1; n <= MAX_CLIENTS; n++) if (!used.has(n)) return { kind: "assign", pid: n };
+  return { kind: "full" };
+}
+
 let nonceSeq = 0;
 function makeNonce(): string {
   // cooperative (not adversarial) — just needs to be unique enough to not collide across a session

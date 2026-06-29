@@ -3,7 +3,7 @@ import { CONFIG } from "../config";
 import { makePlayer } from "../engine/players";
 import { getState } from "../game";
 import type { State } from "../types";
-import { Host } from "./host";
+import { Host, pickSlot } from "./host";
 import type { NetMsg } from "./net";
 import { emptyInput } from "./playerInput";
 import type { PeerLink } from "./transport";
@@ -209,5 +209,26 @@ describe("Host grace + reconnect", () => {
     link2.fireOpen();
     link2.recv({ t: "rejoin", pid, nonce });
     expect(s.players.some((p) => p.id === link2.hello()?.localId)).toBe(true);
+  });
+});
+
+describe("pickSlot", () => {
+  it("assigns the lowest free client slot starting at 1", () => {
+    expect(pickSlot([])).toEqual({ kind: "assign", pid: 1 });
+    expect(pickSlot([1])).toEqual({ kind: "assign", pid: 2 });
+    expect(pickSlot([1, 2])).toEqual({ kind: "assign", pid: 3 });
+  });
+
+  it("fills the lowest gap, not the next-highest", () => {
+    expect(pickSlot([1, 3])).toEqual({ kind: "assign", pid: 2 });
+    expect(pickSlot([2, 3])).toEqual({ kind: "assign", pid: 1 });
+  });
+
+  it("is full when all three client slots are occupied (held/absent peers still count)", () => {
+    expect(pickSlot([1, 2, 3])).toEqual({ kind: "full" });
+  });
+
+  it("ignores the host slot (0) and never returns it", () => {
+    expect(pickSlot([0])).toEqual({ kind: "assign", pid: 1 });
   });
 });
