@@ -2,7 +2,7 @@ import { CONFIG } from "../config";
 import type { DeployableDef, Player, State, WeaponDef } from "../types";
 import { DEPLOYABLE_TYPES, deployableCount } from "./deployables";
 import { UPGRADES } from "./upgrades";
-import { WEAPON_ORDER, WEAPONS } from "./weapons";
+import { isUpgradeableWeapon, WEAPON_ORDER, WEAPONS } from "./weapons";
 
 /* ---- pure stat scaling (unit-tested) ---- */
 export function scaledDmg(base: number, level: number): number {
@@ -131,8 +131,7 @@ export function draftPool(state: State, buyer: Player): StoreItem[] {
     if (it) items.push(it);
   }
   for (const id of WEAPON_ORDER) {
-    const w = WEAPONS[id];
-    if (!w || w.melee || !state.owned[id]) continue;
+    if (!isUpgradeableWeapon(id) || !state.owned[id]) continue;
     const it = cardItem(state, buyer, `lvl:${id}`); // undefined if maxed → skipped
     if (it) items.push(it);
   }
@@ -174,5 +173,5 @@ export function rerollCost(rerolls: number): number {
  */
 export const CARD_ORDER: string[] = [
   ...UPGRADES.map((u) => `perk:${u.id}`),
-  ...WEAPON_ORDER.filter((id) => !WEAPONS[id]?.melee).map((id) => `lvl:${id}`),
+  ...WEAPON_ORDER.filter(isUpgradeableWeapon).map((id) => `lvl:${id}`),
 ];

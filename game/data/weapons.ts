@@ -248,6 +248,15 @@ export const WEAPONS: Record<string, WeaponDef> = {
 // slot in next; knife is always last. Only OWNED weapons are switchable.
 export const WEAPON_ORDER = ["pistol", "smg", "shotgun", "rifle", "lmg", "magnum", "knife"];
 
+/** A weapon id that can receive upgrade (`lvl:`) draft cards: exists in WEAPONS and is not melee.
+ *  Shared by CARD_ORDER (the snapshot wire index) and draftPool so the two never diverge on the
+ *  membership test — a WEAPON_ORDER id missing from WEAPONS is excluded from both, not silently
+ *  injected into CARD_ORDER. */
+export const isUpgradeableWeapon = (id: string): boolean => {
+  const w = WEAPONS[id];
+  return w != null && !w.melee;
+};
+
 // Guns the player always starts a run with (the rest are unlocked via SALVAGE).
 export const STARTER_WEAPONS = ["pistol", "smg", "shotgun", "knife"];
 

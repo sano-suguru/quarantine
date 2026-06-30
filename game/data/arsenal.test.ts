@@ -19,7 +19,7 @@ import {
   scaledMag,
   storeItems,
 } from "./arsenal";
-import { WEAPONS } from "./weapons";
+import { isUpgradeableWeapon, WEAPONS } from "./weapons";
 
 const fake = (id: string): StoreItem => ({
   id,
@@ -194,5 +194,17 @@ describe("storeItems is fortify-only", () => {
     const ids = storeItems(s, localPlayer(s)).map((it) => it.id);
     expect(ids.length).toBeGreaterThan(0);
     expect(ids.every((id) => id.startsWith("deploy:"))).toBe(true);
+  });
+});
+
+describe("isUpgradeableWeapon", () => {
+  it("includes a ranged weapon defined in WEAPONS", () => {
+    expect(isUpgradeableWeapon("pistol")).toBe(true);
+  });
+  it("excludes the melee weapon", () => {
+    expect(isUpgradeableWeapon("knife")).toBe(false);
+  });
+  it("excludes an id with no WEAPONS entry", () => {
+    expect(isUpgradeableWeapon("nonexistent")).toBe(false);
   });
 });
