@@ -175,6 +175,34 @@ export function draftPool(state: State, buyer: Player): StoreItem[] {
 }
 
 /**
+ * Pick up to `n` DISTINCT cards from `pool` (minus `exclude` ids) using a partial Fisher–Yates.
+ * `rng` is injected (default Math.random) so tests are deterministic — this is the one place we
+ * break the project's "Math.random direct-call" habit, because the test方針 requires it.
+ */
+export function rollOffer(
+  pool: StoreItem[],
+  n: number,
+  exclude: string[] = [],
+  rng: () => number = Math.random,
+): StoreItem[] {
+  const avail = pool.filter((it) => !exclude.includes(it.id));
+  const picked: StoreItem[] = [];
+  for (let i = 0; i < avail.length && picked.length < n; i++) {
+    const j = i + Math.floor(rng() * (avail.length - i));
+    const tmp = avail[i] as StoreItem;
+    avail[i] = avail[j] as StoreItem;
+    avail[j] = tmp;
+    picked.push(avail[i] as StoreItem);
+  }
+  return picked;
+}
+
+/** SCRAP cost of the next reroll given how many rerolls were already done this night. */
+export function rerollCost(rerolls: number): number {
+  return CONFIG.arsenal.rerollBase + rerolls * CONFIG.arsenal.rerollStep;
+}
+
+/**
  * Stable wire order of every possible draft card id (perk cards then weapon-upgrade cards).
  * APPEND-ONLY — this is the snapshot index for Player.draftOffer (see snapshot.ts). Adding a perk
  * or weapon appends; never reorder.

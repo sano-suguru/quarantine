@@ -3,6 +3,7 @@ import { CONFIG } from "../config";
 import { localPlayer } from "../engine/players";
 import { newState } from "../state";
 import type { State, WeaponDef } from "../types";
+import type { StoreItem } from "./arsenal";
 import {
   CARD_ORDER,
   cardItem,
@@ -11,11 +12,22 @@ import {
   levelCost,
   meleeArc,
   meleeReach,
+  rerollCost,
+  rollOffer,
   salvageEarned,
   scaledDmg,
   scaledMag,
 } from "./arsenal";
 import { WEAPONS } from "./weapons";
+
+const fake = (id: string): StoreItem => ({
+  id,
+  name: id,
+  desc: "",
+  price: 0,
+  canBuy: () => true,
+  buy: () => {},
+});
 
 describe("melee accessors", () => {
   const knife = WEAPONS.knife as WeaponDef; // explicit meleeArc 0.95, meleeRange 30
@@ -140,5 +152,37 @@ describe("draftPool", () => {
   it("knife (melee) never appears", () => {
     const s = newState();
     expect(draftPool(s, localPlayer(s)).map((it) => it.id)).not.toContain("lvl:knife");
+  });
+});
+
+describe("rollOffer", () => {
+  it("returns n distinct items", () => {
+    const pool = ["a", "b", "c", "d", "e"].map(fake);
+    const seq = [0, 0, 0];
+    let i = 0;
+    const out = rollOffer(pool, 3, [], () => seq[i++] ?? 0);
+    expect(out).toHaveLength(3);
+    expect(new Set(out.map((x) => x.id)).size).toBe(3);
+  });
+  it("clamps to pool size when pool < n", () => {
+    expect(rollOffer(["a", "b"].map(fake), 3, [], () => 0)).toHaveLength(2);
+  });
+  it("honors exclude", () => {
+    const out = rollOffer(["a", "b", "c"].map(fake), 3, ["b"], () => 0);
+    expect(out.map((x) => x.id)).not.toContain("b");
+  });
+  it("is deterministic under a fixed rng", () => {
+    const pool = ["a", "b", "c", "d"].map(fake);
+    const r1 = rollOffer(pool.slice(), 2, [], () => 0.5).map((x) => x.id);
+    const r2 = rollOffer(pool.slice(), 2, [], () => 0.5).map((x) => x.id);
+    expect(r1).toEqual(r2);
+  });
+});
+
+describe("rerollCost", () => {
+  it("monotonically increases with reroll count", () => {
+    expect(rerollCost(0)).toBe(30);
+    expect(rerollCost(1)).toBe(55);
+    expect(rerollCost(2)).toBe(80);
   });
 });
