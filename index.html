@@ -88,12 +88,8 @@
       <span><b>Esc/P</b> pause</span><span><b>M</b> mute</span>
       <span>auto: revive downed ally &middot; search</span><span><b>O</b> options &middot; aim assist</span>
     </div>
-    <div id="arsenal">
-      <div class="ars-head">Arsenal &middot; Salvage <b id="salvage-bal">0</b> &#9670;</div>
-      <div id="arsenal-list"></div>
-    </div>
-
     <div class="btn-row">
+      <button type="button" class="btn coop-cta" id="arsenalBtn">&#9670; Arsenal</button>
       <button type="button" class="btn" id="startBtn">Enter the Quarantine</button>
       <button type="button" class="btn coop-cta" id="mpCoopBtn">Co-op</button>
       <button type="button" class="btn coop-cta" id="optionsBtn">Options</button>
@@ -101,6 +97,17 @@
   </div>
 
   <div class="startfoot"><div class="tape"></div><div class="build">Build Sector-7 &middot; v0.4</div></div>
+</div>
+
+<div id="arsenal-screen" class="overlay hidden">
+  <div class="eyebrow"><span class="dot"></span>Arsenal &middot; between runs</div>
+  <h1 style="font-size:clamp(26px,5vw,44px)">Arsenal</h1>
+  <p>Salvage <b id="ars-bal" style="color:var(--toxic)">0</b> &#9670; &middot; unlock weapons &amp; cards &mdash; they enter your runs, they don't make you stronger</p>
+  <div class="ars-groups">
+    <div class="ars-col"><div class="ars-head">Weapons</div><div id="ars-weapons"></div></div>
+    <div class="ars-col"><div class="ars-head">Cards</div><div id="ars-cards"></div></div>
+  </div>
+  <button type="button" class="btn" id="arsenalBackBtn">Back</button>
 </div>
 
 <div id="shop" class="overlay hidden">

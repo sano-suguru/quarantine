@@ -1261,6 +1261,26 @@ body {
   color: var(--dim);
 }
 
+/* arsenal-screen overlay two-column layout */
+.ars-groups {
+  display: flex;
+  gap: 22px;
+  width: min(620px, 92vw);
+  margin-top: 14px;
+  text-align: left;
+}
+.ars-col {
+  flex: 1;
+  min-width: 0;
+}
+.ars-col > div[id] {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
 /* ---- title screen: fit short viewports without scrolling ---- */
 /* step 1: compact spacing + lower arsenal cap + smaller wordmark                  */
 @media (max-height: 820px) {

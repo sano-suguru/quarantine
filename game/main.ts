@@ -7,11 +7,13 @@ import { Renderer } from "./engine/renderer";
 import {
   audioLoops,
   clientAmbience,
+  closeArsenal,
   deployPlace,
   draftReroll,
   draftTake,
   draw,
   getState,
+  openArsenal,
   renderArsenal,
   shopDeploy,
   startGame,
@@ -137,7 +139,9 @@ function main(): void {
   };
   el("restartBtn").onclick = toTitle;
   el("deployBtn").onclick = shopDeploy;
-  renderArsenal(); // populate the title-screen arsenal panel on first load
+  el("arsenalBtn").onclick = openArsenal;
+  el("arsenalBackBtn").onclick = closeArsenal;
+  renderArsenal(); // populate the ARSENAL overlay on first load
   wireCoop();
 
   const cross = el("cross");

@@ -14,6 +14,7 @@ import {
 import { DEPLOYABLE_TYPES, deployableCount, placeDeployable, placeSpot } from "./data/deployables";
 import { PICKUP_TYPES } from "./data/pickups";
 import { PLAYER_COLORS } from "./data/players";
+import { UNLOCKABLE_CARDS, UPGRADES } from "./data/upgrades";
 import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "./data/weapons";
 import { Audio } from "./engine/audio";
 import { type LightCandidate, selectLights } from "./engine/lights";
@@ -1343,39 +1344,66 @@ export function toTitle(): void {
   show("start");
 }
 
-/** Render the title-screen ARSENAL panel: SALVAGE balance + weapon unlocks. */
+/** Render the dedicated ARSENAL overlay: SALVAGE balance + WEAPONS and CARDS unlock groups. */
 export function renderArsenal(): void {
   const meta = loadMeta();
-  el("salvage-bal").textContent = String(meta.salvage);
-  const rows = UNLOCKABLE.flatMap((u) => {
+  el("ars-bal").textContent = String(meta.salvage);
+
+  const weaponRows = UNLOCKABLE.flatMap((u) => {
     const w = WEAPONS[u.id];
     if (!w) return [];
     const owned = !!meta.unlocked[u.id];
-    return [{ u, w, owned, able: !owned && meta.salvage >= u.price }];
+    return [
+      { id: u.id, price: u.price, name: w.name, owned, able: !owned && meta.salvage >= u.price },
+    ];
   });
-  renderList(
-    el("arsenal-list"),
-    rows,
-    ({ u, owned, able }) => `${u.id}:${owned}:${able}`,
-    ({ u, w, owned, able }) => {
-      const d = document.createElement("div");
-      d.className = `arow${owned ? " owned" : able ? "" : " off"}`;
-      d.innerHTML = owned
-        ? `<div class='cname'>${w.name}</div><div class='atag'>UNLOCKED</div>`
-        : `<div class='cname'>${w.name}</div><div class='aprice'>${u.price} ◆</div>`;
-      if (!owned && able) d.onclick = () => unlockWeapon(u.id, u.price);
-      return d;
-    },
-  );
+  const cardRows = UNLOCKABLE_CARDS.flatMap((c) => {
+    const perkId = c.id.slice("card:".length);
+    const u = UPGRADES.find((x) => x.id === perkId);
+    if (!u) return [];
+    const owned = !!meta.unlocked[c.id];
+    return [
+      { id: c.id, price: c.price, name: u.name, owned, able: !owned && meta.salvage >= c.price },
+    ];
+  });
+
+  const draw = (boxId: string, rows: typeof weaponRows) =>
+    renderList(
+      el(boxId),
+      rows,
+      (r) => `${r.id}:${r.owned}:${r.able}`,
+      (r) => {
+        const d = document.createElement("div");
+        d.className = `arow${r.owned ? " owned" : r.able ? "" : " off"}`;
+        d.innerHTML = r.owned
+          ? `<div class='cname'>${r.name}</div><div class='atag'>UNLOCKED</div>`
+          : `<div class='cname'>${r.name}</div><div class='aprice'>${r.price} &#9670;</div>`;
+        if (!r.owned && r.able) d.onclick = () => unlockNode(r.id, r.price);
+        return d;
+      },
+    );
+  draw("ars-weapons", weaponRows);
+  draw("ars-cards", cardRows);
 }
 
-function unlockWeapon(id: string, price: number): void {
+function unlockNode(id: string, price: number): void {
   if (buyUnlock(id, price)) {
     Audio.ui(true);
     renderArsenal();
   } else {
     Audio.ui(false);
   }
+}
+
+/** Open the dedicated arsenal overlay from the title screen. */
+export function openArsenal(): void {
+  renderArsenal();
+  show("arsenal-screen");
+}
+
+/** Close the dedicated arsenal overlay and return to the title screen. */
+export function closeArsenal(): void {
+  hide("arsenal-screen");
 }
 
 export function togglePause(): void {
