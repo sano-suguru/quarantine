@@ -276,6 +276,15 @@ describe("deployable wire contract & interpolation", () => {
     expect(order[2]).toBe("drone");
   });
 
+  it("CARD_ORDER index is append-only stable (perks first, then weapon upgrades)", () => {
+    // CARD_ORDER IS the draftOffer wire index. Reordering UPGRADES or WEAPON_ORDER desyncs
+    // silently (the golden uses an empty offer, so it can't catch this) — pin the layout here.
+    expect(CARD_ORDER[0]).toBe("perk:fieldMedic"); // UPGRADES[0]
+    expect(CARD_ORDER[6]).toBe("perk:scavenger"); // last perk (UPGRADES has 7)
+    expect(CARD_ORDER[7]).toBe("lvl:pistol"); // first upgradeable weapon (knife is melee → excluded)
+    expect(CARD_ORDER.filter((id) => id.startsWith("lvl:"))).not.toContain("lvl:knife");
+  });
+
   it("lerpSnapshots interpolates a moving deployable's position + aim", () => {
     const s = newState();
     s.deployables.push({ id: 9, defId: "drone", x: 0, y: 0, aim: 0, hpFrac: 0.5, reloading: true });

@@ -41,6 +41,17 @@ describe("draft apply (host-authoritative)", () => {
     expect(p.money).toBe(0);
   });
 
+  it("a paid take removes the card from the offer", () => {
+    const s = newState();
+    s.inShop = true;
+    const p = localPlayer(s);
+    p.draftOffer = ["perk:fieldMedic", "perk:hollowPoints"];
+    p.draftFreePicksUsed = CONFIG.arsenal.freePicks; // free picks spent → next take is paid
+    p.money = 1000;
+    expect(applyDraftTake(s, p, "perk:fieldMedic")).toBe(true);
+    expect(p.draftOffer).not.toContain("perk:fieldMedic");
+  });
+
   it("take is rejected for a card not in the offer", () => {
     const s = newState();
     s.inShop = true;
@@ -59,6 +70,18 @@ describe("draft apply (host-authoritative)", () => {
     expect(p.money).toBe(70);
     expect(p.draftRerolls).toBe(1);
     expect(p.draftOffer.length).toBe(2);
+  });
+
+  it("reroll cost escalates across consecutive rerolls (counter drives the price)", () => {
+    const s = newState();
+    s.inShop = true;
+    const p = localPlayer(s);
+    rollDraft(s, p);
+    p.money = 200;
+    expect(applyDraftReroll(s, p)).toBe(true); // 1st reroll: rerollBase (30)
+    expect(applyDraftReroll(s, p)).toBe(true); // 2nd reroll: rerollBase + rerollStep (55)
+    expect(p.draftRerolls).toBe(2);
+    expect(p.money).toBe(200 - 30 - 55); // 115 — proves the 2nd read the incremented counter
   });
 
   it("reroll blocked when broke", () => {
@@ -138,5 +161,29 @@ describe("draft apply (host-authoritative)", () => {
     expect(mate.dmgMul).toBe(mateDmg); // teammate untouched
     expect(mate.maxHp).toBe(mateHp);
     expect(mate.money).toBe(mateMoney);
+  });
+
+  it("a free pick cannot push a weapon past maxLevel (cardItem gates it)", () => {
+    const s = newState();
+    s.inShop = true;
+    const p = localPlayer(s);
+    p.wlevel.pistol = CONFIG.arsenal.maxLevel; // already maxed
+    p.draftOffer = ["lvl:pistol"];
+    p.draftFreePicksUsed = 0; // a free pick is available
+    expect(applyDraftTake(s, p, "lvl:pistol")).toBe(false); // rejected before the free branch
+    expect(p.wlevel.pistol).toBe(CONFIG.arsenal.maxLevel); // unchanged
+  });
+
+  it("a taken weapon card is NOT recorded in draftTaken (may resurface on reroll)", () => {
+    const s = newState();
+    s.inShop = true;
+    const p = localPlayer(s);
+    s.owned.pistol = true;
+    rollDraft(s, p);
+    p.draftOffer = ["lvl:pistol"];
+    p.draftFreePicksUsed = 0; // take it free
+    expect(applyDraftTake(s, p, "lvl:pistol")).toBe(true);
+    expect(p.draftTaken).not.toContain("lvl:pistol"); // weapon cards are intentionally not excluded
+    expect(p.wlevel.pistol).toBe(1); // the upgrade applied
   });
 });
