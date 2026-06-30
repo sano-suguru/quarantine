@@ -80,6 +80,10 @@ export interface EnemyType {
 }
 
 export interface Upgrade {
+  /** stable id for the draft card (`perk:<id>`) and meta unlock flag (`card:<id>`) */
+  id: string;
+  /** in the starter draft pool from a fresh save (false = unlocked via SALVAGE) */
+  starter: boolean;
   name: string;
   desc: string;
   /** mutate run-wide multipliers and/or the buying player `p` */
