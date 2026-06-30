@@ -30,6 +30,13 @@ export function salvageEarned(day: number, kills: number): number {
   return Math.round(day * CONFIG.arsenal.salvagePerDay + kills * CONFIG.arsenal.salvagePerKill);
 }
 
+/** A single player's banked share of a run's SALVAGE pot, split evenly across the `recipients`
+ *  that actually bank it (the non-absent players == host + connected clients). Floored so co-op
+ *  never over-banks; `Math.max(1, …)` guards the impossible zero-recipient case. */
+export function salvageShare(total: number, recipients: number): number {
+  return Math.floor(total / Math.max(1, recipients));
+}
+
 /**
  * The weapon's effective stats this run: base table plus the player's run-scoped upgrade
  * level (damage and magazine only). Upgrades are per-player now, so this reads the player's

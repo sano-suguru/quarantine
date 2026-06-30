@@ -9,6 +9,7 @@ import {
   rollOffer,
   type StoreItem,
   salvageEarned,
+  salvageShare,
   storeItems,
 } from "./data/arsenal";
 import { DEPLOYABLE_TYPES, deployableCount, placeDeployable, placeSpot } from "./data/deployables";
@@ -1329,8 +1330,16 @@ function endRun(salvage: number, day: number, kills: number, money: number): voi
 function gameOver(): void {
   // the run's SALVAGE is a party pot, split evenly (floor so co-op never over-banks);
   // each player banks their own share to their own localStorage via the gameover event.
+  // INVARIANT: the players that actually bank == the non-absent set == {host (pid 0, never
+  // absent)} ∪ {open client links}. Host.onClose marks a dropped client `absent` AND splices
+  // its link out of the broadcast set in one synchronous handler, so the two stay in lockstep —
+  // a teammate held `absent` mid-reconnect has no link, receives no gameover event, and must
+  // therefore be excluded from the divisor or it dilutes the present players and leaks its share.
+  // (Not unit-tested at this level — gameOver is DOM/Audio/Net-bound and net code is out of the
+  // pure-test scope per CLAUDE.md; salvageShare carries the split's pure logic + its test.)
   const total = salvageEarned(state.day, state.kills);
-  const share = Math.floor(total / state.players.length);
+  const recipients = state.players.reduce((n, p) => (p.absent ? n : n + 1), 0);
+  const share = salvageShare(total, recipients);
   // money is per-player now; the debrief shows the squad's combined leftover credits
   // (in single-player that's just the one wallet → identical to before).
   const money = state.players.reduce((sum, p) => sum + p.money, 0);

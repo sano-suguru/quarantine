@@ -15,6 +15,7 @@ import {
   rerollCost,
   rollOffer,
   salvageEarned,
+  salvageShare,
   scaledDmg,
   scaledMag,
   storeItems,
@@ -90,6 +91,15 @@ describe("salvage earned per run", () => {
   });
   it("sums day + kill contributions, rounded", () => {
     expect(salvageEarned(3, 20)).toBe(Math.round(3 * a.salvagePerDay + 20 * a.salvagePerKill));
+  });
+});
+
+describe("salvageShare", () => {
+  it("salvageShare floors the pot across recipients (single-player == total)", () => {
+    expect(salvageShare(100, 1)).toBe(100); // single-player: identical to the old total
+    expect(salvageShare(100, 3)).toBe(33); // floored, never over-banks
+    expect(salvageShare(7, 3)).toBe(2);
+    expect(salvageShare(100, 0)).toBe(100); // guard: never divide by zero
   });
 });
 
