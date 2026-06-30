@@ -193,11 +193,9 @@ Claude-Session: https://claude.ai/code/session_01ABfRoiJaCaefkQ5BbRbLdj"
 - Consumes: nothing from earlier tasks.
 - Produces: `gibsToSpawn(intensity: number, fillRatio: number, threshold: number, countMin: number, countMax: number, fillCap: number): number` — integer count of flesh chunks to emit this hit.
 
-- [ ] **Step 1: Write the failing test.** Append to `game/systems/fx.test.ts`:
+- [ ] **Step 1: Write the failing test.** First extend the existing import at the top of `game/systems/fx.test.ts` from `import { goreIntensity } from "./fx";` to `import { goreIntensity, gibsToSpawn } from "./fx";` (one import per module — don't add a second `from "./fx"` line). Then append the suite:
 
 ```ts
-import { gibsToSpawn } from "./fx";
-
 describe("gibsToSpawn", () => {
   // signature: (intensity, fillRatio, threshold=0.5, min=2, max=7, fillCap=0.85)
   it("emits nothing below the intensity threshold", () => {
