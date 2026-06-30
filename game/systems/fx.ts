@@ -1,10 +1,30 @@
 import { CONFIG } from "../config";
-import { mixRGB, rand } from "../engine/math";
+import { clamp, mixRGB, rand } from "../engine/math";
 import type { ParticleKind, State } from "../types";
 
 const MAX_TEXTS = 160;
 
 type RGB = [number, number, number];
+
+/**
+ * Pure gore intensity (0..1) for one hit, split out for unit testing (mirrors
+ * flashlightIntensity's scalar style). The base is the weapon's ABSOLUTE damage, so a
+ * heavy gun always sprays more; the fraction-of-hp contributes only as a near-lethal
+ * "finisher" bonus, so a light tap on a low-hp mob does NOT over-gore.
+ */
+export function goreIntensity(
+  dmgDealt: number,
+  hpAfter: number,
+  maxHp: number,
+  dmgRef: number,
+  lowHpBand: number,
+  finisherBonus: number,
+): number {
+  const absScale = clamp(dmgDealt / dmgRef, 0, 1);
+  const fracAfter = Math.max(0, hpAfter) / maxHp;
+  const finisher = hpAfter <= 0 ? 1 : fracAfter <= lowHpBand ? 1 - fracAfter / lowHpBand : 0;
+  return clamp(absScale + finisherBonus * finisher, 0, 1);
+}
 
 function spawn(
   state: State,

@@ -74,6 +74,19 @@ export const CONFIG = {
       life: [26, 40] as [number, number], // seconds before the decal fades out
       maxAlpha: 0.6, // fresh-pool peak alpha (drawn fade is life/maxLife * maxAlpha)
     },
+    gore: {
+      dmgRef: 90, // damage that saturates the "weapon weight" base intensity
+      lowHpBand: 0.33, // hp fraction below which the finisher bonus ramps in
+      finisherBonus: 0.6, // extra intensity for a near-lethal / killing hit
+      sparks: [6, 16] as [number, number], // impact spark count, lerped by intensity (min = today's 6)
+      specks: [3, 10] as [number, number], // blood-speck count, lerped by intensity (min = today's 3)
+      poolBigAt: 0.6, // intensity at/above which the impact leaves a big blood pool
+      gibThreshold: 0.5, // intensity below which no flesh chunks fly
+      gibCount: [2, 7] as [number, number], // flesh-chunk count, lerped by intensity
+      gibFillCap: 0.85, // skip gibs once the particle buffer is this full (reserve muzzle/spark headroom)
+      woundTint: [0.5, 0.04, 0.05] as [number, number, number], // blood color the body bleeds toward as hp → 0
+      woundDarken: 0.18, // max darkening at 0 hp (small, so finisher targets stay visible in-cone)
+    },
   },
   // drawTime (per-weapon, in WeaponDef) is the fire-lockout + lower→raise draw beat after a swap,
   // paired with the weapon_switch SFX + move ramp. Tune per weapon by playtest, not clip length.
