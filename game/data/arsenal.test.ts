@@ -6,6 +6,7 @@ import type { State, WeaponDef } from "../types";
 import {
   CARD_ORDER,
   cardItem,
+  draftPool,
   effWeapon,
   levelCost,
   meleeArc,
@@ -107,5 +108,37 @@ describe("cardItem", () => {
     expect(CARD_ORDER).toContain("perk:fieldMedic");
     expect(CARD_ORDER).toContain("lvl:shotgun");
     expect(CARD_ORDER).not.toContain("lvl:knife");
+  });
+});
+
+describe("draftPool", () => {
+  it("fresh save: 3 starter perks + 3 starter weapon upgrades", () => {
+    const s = newState(); // owned = pistol/smg/shotgun/knife; unlockedCards = {}
+    const ids = draftPool(s, localPlayer(s))
+      .map((it) => it.id)
+      .sort();
+    expect(ids).toEqual([
+      "lvl:pistol",
+      "lvl:shotgun",
+      "lvl:smg",
+      "perk:adrenaline",
+      "perk:fieldMedic",
+      "perk:hollowPoints",
+    ]);
+  });
+  it("unlocked perk card enters the pool", () => {
+    const s = newState();
+    (s as { unlockedCards?: Record<string, boolean> }).unlockedCards = { "card:scavenger": true };
+    expect(draftPool(s, localPlayer(s)).map((it) => it.id)).toContain("perk:scavenger");
+  });
+  it("maxed weapon drops out of the pool", () => {
+    const s = newState();
+    const p = localPlayer(s);
+    p.wlevel.pistol = 3;
+    expect(draftPool(s, p).map((it) => it.id)).not.toContain("lvl:pistol");
+  });
+  it("knife (melee) never appears", () => {
+    const s = newState();
+    expect(draftPool(s, localPlayer(s)).map((it) => it.id)).not.toContain("lvl:knife");
   });
 });

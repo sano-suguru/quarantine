@@ -153,6 +153,28 @@ export function cardItem(_state: State, buyer: Player, id: string): StoreItem | 
 }
 
 /**
+ * The eligible draft cards for `buyer` this run: unlocked perk cards (starter perks + SALVAGE-
+ * unlocked) plus every owned, non-maxed weapon's upgrade card. Host/single only (the roll source);
+ * clients render from the synced offer ids via cardItem. Pure — no RNG here.
+ */
+export function draftPool(state: State, buyer: Player): StoreItem[] {
+  const items: StoreItem[] = [];
+  const unlocked = (state as { unlockedCards?: Record<string, boolean> }).unlockedCards ?? {};
+  for (const u of UPGRADES) {
+    if (!u.starter && !unlocked[`card:${u.id}`]) continue;
+    const it = cardItem(state, buyer, `perk:${u.id}`);
+    if (it) items.push(it);
+  }
+  for (const id of WEAPON_ORDER) {
+    const w = WEAPONS[id];
+    if (!w || w.melee || !state.owned[id]) continue;
+    const it = cardItem(state, buyer, `lvl:${id}`); // undefined if maxed → skipped
+    if (it) items.push(it);
+  }
+  return items;
+}
+
+/**
  * Stable wire order of every possible draft card id (perk cards then weapon-upgrade cards).
  * APPEND-ONLY — this is the snapshot index for Player.draftOffer (see snapshot.ts). Adding a perk
  * or weapon appends; never reorder.
