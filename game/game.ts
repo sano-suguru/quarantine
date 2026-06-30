@@ -1169,16 +1169,16 @@ function renderShop(): void {
     .map((id) => cardItem(state, me, id))
     .filter((it): it is StoreItem => it !== undefined);
   const cardKey = (it: StoreItem) => `${it.id}:${it.price}:${me.draftFreeUsed ? 1 : 0}`;
-  renderList(el("draft-cards"), cards, cardKey, (it) => {
+  renderList(el("draft-cards"), cards, cardKey, (it, i) => {
     const free = !me.draftFreeUsed;
     const able = free || it.canBuy(state, me);
     const d = document.createElement("div");
     d.className = `dcard${able ? "" : " off"}`;
     const kind = it.id.startsWith("lvl:") ? "Weapon" : "Perk";
     const cost = free
-      ? `<span class='dpick'>pick free</span>`
+      ? `<span class='dpick'>FREE</span>`
       : `<span class='sprice'>${it.price}</span>`;
-    d.innerHTML = `<div class='dkind'>${kind}</div><div class='cname'>${it.name}</div><div class='desc'>${it.desc}</div><div class='dfoot'><span class='dpick'>${free ? "pick free" : ""}</span>${free ? "" : cost}</div>`;
+    d.innerHTML = `<div class='dtop'><span class='dnum'>${i + 1}</span><span class='dkind'>${kind}</span></div><div class='cname'>${it.name}</div><div class='desc'>${it.desc}</div><div class='dfoot'>${cost}</div>`;
     d.onclick = () => draftTake(it.id);
     return d;
   });

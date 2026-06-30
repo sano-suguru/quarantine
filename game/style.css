@@ -872,15 +872,23 @@ body {
   align-items: center;
   gap: 12px;
   padding: 10px 13px;
-  border: 1px solid var(--line);
+  /* dimmed-toxic at rest so a buyable fortify row reads as clickable */
+  border: 1px solid rgba(125, 255, 79, 0.28);
   background: rgba(0, 0, 0, 0.4);
   text-align: left;
   transition:
     border-color 0.1s,
-    background 0.1s;
+    background 0.1s,
+    box-shadow 0.1s;
+}
+.srow:not(.off):hover {
+  border-color: var(--toxic);
+  background: rgba(20, 40, 18, 0.5);
+  box-shadow: 0 0 14px rgba(125, 255, 79, 0.2);
 }
 .srow.off {
   opacity: 0.42;
+  border-color: var(--line);
 }
 .srow .snum {
   font-family: var(--display);
@@ -931,19 +939,34 @@ body {
   text-align: left;
   min-height: 132px;
   padding: 11px 12px;
-  border: 1px solid var(--line);
+  /* dimmed-toxic at rest so the card reads as interactive (not a passive panel); full toxic on hover */
+  border: 1px solid rgba(125, 255, 79, 0.32);
   background: rgba(0, 0, 0, 0.4);
   border-radius: 2px;
   transition:
     border-color 0.1s,
-    background 0.1s;
+    background 0.1s,
+    box-shadow 0.1s;
 }
 .dcard:hover {
   border-color: var(--toxic);
   background: rgba(20, 40, 18, 0.5);
+  box-shadow: 0 0 16px rgba(125, 255, 79, 0.22);
 }
 .dcard.off {
   opacity: 0.42;
+}
+.dtop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dcard .dnum {
+  font-family: var(--display);
+  font-size: 16px;
+  line-height: 1;
+  color: var(--toxic);
+  min-width: 14px;
 }
 .dcard .dkind {
   font-size: 10px;
@@ -990,14 +1013,17 @@ body {
   margin-top: 0;
   background: transparent;
   color: var(--ink);
-  box-shadow: 0 0 0 1px var(--line);
+  /* toxic outline at rest so it reads as a button, not faint text */
+  box-shadow: 0 0 0 1px rgba(125, 255, 79, 0.45);
   font-family: var(--display);
   font-size: clamp(13px, 1.6vw, 16px);
   letter-spacing: 0.16em;
   padding: 8px 18px;
 }
 .btn.ghost:hover {
-  box-shadow: 0 0 0 1px var(--toxic);
+  box-shadow:
+    0 0 0 1px var(--toxic),
+    0 0 18px rgba(125, 255, 79, 0.3);
   background: rgba(125, 255, 79, 0.12);
 }
 .btn.ghost b {
@@ -1208,11 +1234,13 @@ body {
 .arow:not(.owned):not(.off) {
   pointer-events: auto;
   cursor: pointer;
-  border-color: var(--line);
+  /* dimmed-toxic at rest so a buyable node reads as clickable */
+  border-color: rgba(125, 255, 79, 0.32);
 }
 .arow:not(.owned):not(.off):hover {
   border-color: var(--toxic);
   background: rgba(20, 40, 18, 0.45);
+  box-shadow: 0 0 14px rgba(125, 255, 79, 0.2);
 }
 .arow .cname {
   color: var(--ink);
