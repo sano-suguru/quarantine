@@ -10,3 +10,6 @@ coverage
 !.env.example
 .dev.vars
 .dev.vars.*
+
+# brainstorming visual-companion mockups
+.superpowers/
