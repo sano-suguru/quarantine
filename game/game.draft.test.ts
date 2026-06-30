@@ -14,7 +14,7 @@ describe("draft apply (host-authoritative)", () => {
     expect(p.draftRerolls).toBe(0);
   });
 
-  it("first take is free and sets draftFreeUsed; card leaves the offer", () => {
+  it("first take is free (increments draftFreePicksUsed); card leaves the offer", () => {
     const s = newState();
     s.inShop = true;
     const p = localPlayer(s);

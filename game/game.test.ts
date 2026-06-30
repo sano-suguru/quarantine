@@ -50,6 +50,7 @@ describe("applyBuy (Fortify purchase, host-authoritative)", () => {
     buyer.money = 100;
     expect(applyBuy(s, fortId, buyer)).toBe(true);
     expect(buyer.deployQueue).toContain("ammostation");
+    expect(buyer.money).toBe(30); // buyer's own wallet charged (100 - 70)
     expect(mate.deployQueue).not.toContain("ammostation");
     expect(mate.money).toBe(mateMoney); // teammate wallet untouched
   });
