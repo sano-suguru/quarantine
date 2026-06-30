@@ -124,7 +124,7 @@ export function cardItem(_state: State, buyer: Player, id: string): StoreItem | 
  */
 export function draftPool(state: State, buyer: Player): StoreItem[] {
   const items: StoreItem[] = [];
-  const unlocked = (state as { unlockedCards?: Record<string, boolean> }).unlockedCards ?? {};
+  const unlocked = state.unlockedCards;
   for (const u of UPGRADES) {
     if (!u.starter && !unlocked[`card:${u.id}`]) continue;
     const it = cardItem(state, buyer, `perk:${u.id}`);

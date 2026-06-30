@@ -141,7 +141,7 @@ describe("draftPool", () => {
   });
   it("unlocked perk card enters the pool", () => {
     const s = newState();
-    (s as { unlockedCards?: Record<string, boolean> }).unlockedCards = { "card:scavenger": true };
+    s.unlockedCards = { "card:scavenger": true };
     expect(draftPool(s, localPlayer(s)).map((it) => it.id)).toContain("perk:scavenger");
   });
   it("maxed weapon drops out of the pool", () => {

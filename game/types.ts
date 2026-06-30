@@ -167,6 +167,12 @@ export interface Player {
    *  "noise"). sysPlayer sets it each tick, sysAI reads it to surge nearby zombies (the lure).
    *  Host-derived, NOT synced — clients never run sysPlayer/sysAI so it stays false there. */
   searching: boolean;
+  /** between-nights draft: card ids currently offered to this player (host-rolled, snapshot-synced) */
+  draftOffer: string[];
+  /** this player's free pick this night has been spent (remaining cards then cost SCRAP) */
+  draftFreeUsed: boolean;
+  /** rerolls this player has done this night — drives escalating rerollCost; reset at openShop */
+  draftRerolls: number;
 }
 
 export interface Zombie {
@@ -471,6 +477,9 @@ export interface State {
   /** which weapons are available this run (starters + meta-unlocked). Shared = account-level
    *  unlock axis; per-player power (wlevel/muls/money) lives on Player. */
   owned: Record<string, boolean>;
+  /** which perk cards are unlocked this run (id = `card:<perkId>`); from meta, host-authoritative.
+   *  Read by draftPool. Separate from `owned` (weapons) so the two namespaces don't collide. */
+  unlockedCards: Record<string, boolean>;
   hash: SpatialHashLike;
   hitstopT: number;
   flashT: number;
