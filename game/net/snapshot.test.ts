@@ -196,7 +196,8 @@ describe("snapshot binary round-trip", () => {
     p.draftFreePicksUsed = CONFIG.arsenal.freePicks;
     p.draftRerolls = 2;
     const back = decode(encode(captureSnapshot(s, 1)));
-    const bp = back.players[0]!;
+    const bp = back.players[0];
+    if (!bp) throw new Error("decoded snapshot is missing player 0");
     expect(bp.draftOffer.map((i) => CARD_ORDER[i])).toEqual(["perk:hollowPoints", "lvl:pistol"]);
     expect(bp.draftFreeUsed).toBe(true);
     expect(bp.draftRerolls).toBe(2);
