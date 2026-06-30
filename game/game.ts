@@ -1066,20 +1066,11 @@ export function startGame(): void {
   announce("DAY", state.day);
 }
 
-let shopItems: StoreItem[] = [];
-let shopSel = 0;
-let shopEls: HTMLElement[] = [];
-let shopSig = ""; // store-list signature; a change means the DOM must be rebuilt
-
 /**
  * Full per-row signature: index + id + price + desc — every mutable thing `create` renders into a
- * row (but NOT `.sel`/`.off`, which are view-state re-applied each frame by highlightShop /
- * syncShopUI). It drives BOTH the rebuild gate (shopSig) and the renderList key, so the two can't
- * disagree: a deploy row's live built/queued count lives in `desc`, so a buy flips both the sig
- * and the key, rebuilding just that row with fresh text on host and client alike.
+ * row. Used as the renderList key for Fortify rows.
  */
 const shopRowSig = (it: StoreItem, i: number): string => `${i}:${it.id}:${it.price}:${it.desc}`;
-const shopSigOf = (items: StoreItem[]): string => items.map(shopRowSig).join("|");
 
 /** Authoritative: open the arsenal between nights (host/single sim). The overlay itself
  *  is shown by syncShopUI from `state.inShop`, so clients open it from the snapshot. */
@@ -1170,62 +1161,56 @@ export function applyDraftReroll(s: State, buyer: Player | undefined): boolean {
 function renderShop(): void {
   const me = localPlayer(state);
   el("shop-credits").textContent = String(me.money);
-  const box = el("choices");
-  // Key (shopRowSig) carries index + id + price + desc — the full rendered content — so a reused
-  // row always has correct text AND a correct captured `i`. `.sel`/`.off` are NOT in the key:
-  // they're view-state re-applied each frame (highlightShop / syncShopUI), so only a genuine
-  // content change rebuilds a row while the rest keep their hover.
-  renderList(box, shopItems, shopRowSig, (it, i) => {
+  el("shop-free").textContent = me.draftFreeUsed ? "free pick used" : "1 free pick";
+
+  // draft cards (from this player's offer)
+  const cards = me.draftOffer
+    .map((id) => cardItem(state, me, id))
+    .filter((it): it is StoreItem => it !== undefined);
+  const cardKey = (it: StoreItem) => `${it.id}:${it.price}:${me.draftFreeUsed ? 1 : 0}`;
+  renderList(el("draft-cards"), cards, cardKey, (it) => {
+    const free = !me.draftFreeUsed;
+    const able = free || it.canBuy(state, me);
+    const d = document.createElement("div");
+    d.className = `dcard${able ? "" : " off"}`;
+    const kind = it.id.startsWith("lvl:") ? "Weapon" : "Perk";
+    const cost = free
+      ? `<span class='dpick'>pick free</span>`
+      : `<span class='sprice'>${it.price}</span>`;
+    d.innerHTML = `<div class='dkind'>${kind}</div><div class='cname'>${it.name}</div><div class='desc'>${it.desc}</div><div class='dfoot'><span class='dpick'>${free ? "pick free" : ""}</span>${free ? "" : cost}</div>`;
+    d.onclick = () => draftTake(it.id);
+    return d;
+  });
+
+  // reroll button state
+  const rc = rerollCost(me.draftRerolls);
+  el("reroll-cost").textContent = String(rc);
+  const rbtn = el<HTMLButtonElement>("rerollBtn");
+  rbtn.onclick = () => draftReroll();
+  rbtn.classList.toggle("off", me.money < rc || me.draftOffer.length === 0);
+
+  // fortify list (deployables) — existing .srow look
+  const forts = storeItems(state, me);
+  renderList(el("choices"), forts, shopRowSig, (it) => {
     const able = it.canBuy(state, me);
     const d = document.createElement("div");
     d.className = `srow${able ? "" : " off"}`;
-    d.innerHTML = `<div class='snum'>${i + 1}</div><div class='sinfo'><div class='cname'>${it.name}</div><div class='desc'>${it.desc}</div></div><div class='sprice'>${it.price}c</div>`;
-    d.onclick = () => buyItem(i);
-    d.onmouseenter = () => {
-      shopSel = i;
-      highlightShop();
-    };
+    d.innerHTML = `<div class='sinfo'><div class='cname'>${it.name}</div><div class='desc'>${it.desc}</div></div><div class='sprice'>${it.price}</div>`;
+    d.onclick = () => buyItem(it.id);
     return d;
   });
-  // Re-grab node refs, then let highlightShop own `.sel`: a reused row keeps its old node, so the
-  // selection class must be (re)applied after every reconcile rather than baked into create.
-  shopEls = Array.from(box.children) as HTMLElement[];
-  highlightShop();
 }
 
-/** Update only the selection highlight — no DOM teardown, so clicks survive. */
-function highlightShop(): void {
-  shopEls.forEach((d, i) => {
-    d.classList.toggle("sel", i === shopSel);
-  });
-}
-
-export function shopMove(dir: number): void {
-  if (!state.inShop || shopItems.length === 0) return;
-  shopSel = (shopSel + dir + shopItems.length) % shopItems.length;
-  Audio.ui(false);
-  highlightShop();
-}
-
-/**
- * Buy the item at index `i`. On a client this just ships a request to the host (money,
- * levels and re-render arrive via the snapshot); on host/single it applies authoritatively
- * and rebuilds the list locally (prices/levels can change).
- */
-export function buyItem(i: number): void {
+/** Buy a Fortify (deployable) item by id. Client → request; host/single → apply + re-render. */
+export function buyItem(itemId: string): void {
   if (!state.inShop) return;
-  const it = shopItems[i];
-  if (!it) return;
   if (Net.mode === "client") {
-    Net.client?.requestBuy(it.id);
+    Net.client?.requestBuy(itemId);
     Audio.ui(true);
     return;
   }
-  if (applyBuy(state, it.id, localPlayer(state))) {
+  if (applyBuy(state, itemId, localPlayer(state))) {
     Audio.ui(true);
-    shopItems = storeItems(state, localPlayer(state));
-    shopSig = shopSigOf(shopItems);
-    if (shopSel >= shopItems.length) shopSel = Math.max(0, shopItems.length - 1);
     renderShop();
   } else {
     Audio.ui(false);
@@ -1245,10 +1230,6 @@ export function deployPlace(): void {
     return;
   }
   Audio.ui(applyPlace(state, localPlayer(state)));
-}
-
-export function shopBuySelected(): void {
-  if (state.inShop) buyItem(shopSel);
 }
 
 /** Take a draft card. Client → request to host; host/single → apply authoritatively + re-render. */
@@ -1303,42 +1284,20 @@ export function shopDeploy(): void {
 
 /**
  * Reconcile the shop overlay with `state.inShop` every frame (all modes). Clients open it
- * straight from the snapshot. While open we avoid tearing down the DOM each frame: only a
- * change in the item id-list triggers a full re-render; otherwise we cheaply refresh the
- * credits text and per-row affordance so hover/selection survive.
+ * straight from the snapshot. renderShop is called each frame while open — renderList diffs
+ * so only changed cards rebuild.
  */
 export function syncShopUI(): void {
-  const me = localPlayer(state);
   const open = state.inShop;
   const shown = shopVisible();
   if (open && !shown) {
-    shopItems = storeItems(state, me);
-    shopSig = shopSigOf(shopItems);
-    shopSel = 0;
     el("shop-wave").textContent = String(state.day);
-    renderShop();
     show("shop");
+  } else if (!open && shown) {
+    hide("shop");
     return;
   }
-  if (!open) {
-    if (shown) hide("shop");
-    return;
-  }
-  // open && shown: rebuild only if the item set changed, else a light refresh
-  const items = storeItems(state, me);
-  const sig = shopSigOf(items);
-  if (sig !== shopSig) {
-    shopItems = items;
-    shopSig = sig;
-    if (shopSel >= shopItems.length) shopSel = Math.max(0, shopItems.length - 1);
-    renderShop();
-  } else {
-    el("shop-credits").textContent = String(me.money);
-    shopEls.forEach((d, i) => {
-      const it = shopItems[i];
-      if (it) d.classList.toggle("off", !it.canBuy(state, me));
-    });
-  }
+  if (open) renderShop();
 }
 
 /** End the run on this machine: bank our salvage share and show the debrief. Shared by
@@ -1454,8 +1413,7 @@ function interactPrompt(): string | null {
   }
   // E targets the nearest of the two (matches interact())
   if (mateD < reach && mateD <= barD) return "[E] heal teammate";
-  if (barD < reach)
-    return p.money >= CONFIG.siege.repairCost ? "[E] repair" : "[E] repair — no credits";
+  if (barD < reach) return "[E] repair";
 
   for (const c of state.caches) {
     if (c.looted) continue;

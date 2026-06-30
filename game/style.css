@@ -920,6 +920,113 @@ body {
 #shop .btn {
   margin-top: 18px;
 }
+/* nightly draft */
+.draft {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: min(620px, 90vw);
+  margin-top: 14px;
+}
+.dcard {
+  pointer-events: auto;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  min-height: 132px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 2px;
+  transition:
+    border-color 0.1s,
+    background 0.1s;
+}
+.dcard:hover,
+.dcard.sel {
+  border-color: var(--toxic);
+  background: rgba(20, 40, 18, 0.5);
+}
+.dcard.off {
+  opacity: 0.42;
+}
+.dcard .dkind {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--dim);
+  text-transform: uppercase;
+}
+.dcard .dico {
+  height: 24px;
+  margin: 8px 0 6px;
+  display: flex;
+  align-items: center;
+}
+.dcard .cname {
+  font-size: 14px;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+.dcard .desc {
+  font-size: 10.5px;
+  color: var(--dim);
+  line-height: 1.4;
+  margin-top: 3px;
+  flex: 1;
+}
+.dcard .dfoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+.dcard .dpick {
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--toxic);
+}
+.dcard .sprice {
+  font-size: 14px;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+.dcard.off .sprice {
+  color: var(--blood);
+}
+.draft-ctl {
+  margin-top: 12px;
+}
+.btn.ghost {
+  margin-top: 0;
+  background: transparent;
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--line);
+  font-family: var(--display);
+  font-size: clamp(13px, 1.6vw, 16px);
+  letter-spacing: 0.16em;
+  padding: 8px 18px;
+}
+.btn.ghost:hover {
+  box-shadow: 0 0 0 1px var(--toxic);
+  background: rgba(125, 255, 79, 0.12);
+}
+.btn.ghost b {
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+.fort-label {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--dim);
+  text-transform: uppercase;
+  margin-top: 16px;
+}
+.store.fort {
+  max-height: 22vh;
+  margin-top: 8px;
+}
 .big {
   font-size: clamp(40px, 9vw, 90px);
   color: var(--blood);
