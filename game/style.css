@@ -192,47 +192,6 @@ body {
 #battery {
   margin-top: 9px;
 }
-#batbar-wrap {
-  width: 180px;
-  height: 7px;
-  border: 1px solid var(--dim);
-  position: relative;
-  background: rgba(0, 0, 0, 0.4);
-  margin-top: 3px;
-}
-#batbar {
-  height: 100%;
-  width: 100%;
-  background: #7fd4ff;
-  box-shadow: 0 0 8px rgba(127, 212, 255, 0.5);
-  transition:
-    width 0.1s linear,
-    background 0.2s;
-}
-#battery.low #batbar {
-  background: var(--amber);
-  animation: batpulse 0.7s ease-in-out infinite;
-}
-#battery.low #bat-state {
-  color: var(--amber);
-}
-#battery.off #batbar {
-  background: var(--dim);
-  box-shadow: none;
-}
-#battery.off #bat-state {
-  color: var(--blood);
-}
-@keyframes batpulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.45;
-  }
-}
-
 /* medkits */
 #medkit {
   margin-bottom: 8px;
@@ -1345,8 +1304,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   #start,
   .eyebrow .dot,
-  #hud.low #hpbar-wrap,
-  #battery.low #batbar {
+  #hud.low #hpbar-wrap {
     animation: none;
   }
   #start .torch {

@@ -938,18 +938,6 @@ export function updateHUD(): void {
   const lowAmmo = !wd.melee && wd.mag > 0 && (p.ammo === 0 || totalAmmo < wd.mag);
   el("ammo").classList.toggle("low", lowAmmo);
 
-  // flashlight battery
-  const batf = p.battery / CONFIG.flashlight.batteryMax;
-  el("batbar").style.width = `${100 * batf}%`;
-  const batBlock = el("battery");
-  batBlock.classList.toggle("low", p.lightOn && batf < CONFIG.flashlight.lowThreshold);
-  batBlock.classList.toggle("off", !p.lightOn || p.battery <= 0);
-  el("bat-state").textContent = !p.lightOn
-    ? "OFF"
-    : p.battery <= 0
-      ? "DEAD"
-      : `${Math.ceil(batf * 100)}%`;
-
   // medkits
   el("medkit-val").textContent = String(p.medkits);
   el("medkit").classList.toggle("empty", p.medkits <= 0);
