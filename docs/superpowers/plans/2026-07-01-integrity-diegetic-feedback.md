@@ -222,11 +222,13 @@ Replace those three lines with (leave `const hpf = …` on `:920` intact — it 
 
 - [ ] **Step 6: Add the integrityGrade import**
 
-At the top of `game/game.ts`, add the import alongside the other `./systems/*` imports (e.g. near `sysCamera` on `:30`):
+At the top of `game/game.ts`, add the import alongside the other `./systems/*` imports:
 
 ```ts
 import { integrityGrade } from "./systems/integrity";
 ```
+
+(Exact placement doesn't matter — Biome's import sort runs in the pre-commit hook and will move it into alphabetical order, between `./systems/fx` and `./systems/pickups`, then re-stage. Don't be surprised if its final position differs from where you typed it.)
 
 - [ ] **Step 7: Remove the dead `#hud.low` toggle**
 
