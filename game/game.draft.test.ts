@@ -90,4 +90,36 @@ describe("draft apply (host-authoritative)", () => {
       CONFIG.arsenal.freePicks = orig; // assertion throw でも必ず復元（同ファイル後続の汚染防止）
     }
   });
+
+  it("rollDraft clears draftTaken from the prior night", () => {
+    const s = newState();
+    const p = localPlayer(s);
+    p.draftTaken = ["perk:hollowPoints"];
+    rollDraft(s, p);
+    expect(p.draftTaken).toEqual([]);
+  });
+
+  it("reroll never re-offers a perk taken this night (free path)", () => {
+    const s = newState();
+    s.inShop = true;
+    const p = localPlayer(s);
+    p.money = 1000;
+    rollDraft(s, p); // resets draftTaken + free counter
+    p.draftOffer = ["perk:hollowPoints", "perk:fieldMedic", "perk:adrenaline"];
+    expect(applyDraftTake(s, p, "perk:hollowPoints")).toBe(true); // free
+    expect(applyDraftReroll(s, p)).toBe(true);
+    expect(p.draftOffer).not.toContain("perk:hollowPoints");
+  });
+
+  it("reroll never re-offers a perk taken this night (paid path)", () => {
+    const s = newState();
+    s.inShop = true;
+    const p = localPlayer(s);
+    p.draftFreePicksUsed = CONFIG.arsenal.freePicks; // force the paid branch
+    p.money = 1000;
+    p.draftOffer = ["perk:hollowPoints", "perk:fieldMedic", "perk:adrenaline"];
+    expect(applyDraftTake(s, p, "perk:fieldMedic")).toBe(true); // paid
+    expect(applyDraftReroll(s, p)).toBe(true);
+    expect(p.draftOffer).not.toContain("perk:fieldMedic");
+  });
 });

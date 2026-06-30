@@ -60,6 +60,7 @@ export function makePlayer(id: number, x: number, y: number, name = `P${id + 1}`
     draftOffer: [],
     draftFreePicksUsed: 0,
     draftRerolls: 0,
+    draftTaken: [],
   };
 }
 

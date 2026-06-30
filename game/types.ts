@@ -174,6 +174,12 @@ export interface Player {
   draftFreePicksUsed: number;
   /** rerolls this player has done this night — drives escalating rerollCost; reset at openShop */
   draftRerolls: number;
+  /** card ids this player has TAKEN this night (PERK ids only). Host-only roll state, NOT
+   *  snapshot-synced: only the host rolls/rerolls so clients never read it (makePlayer inits it to
+   *  []). Reset each night by rollDraft; passed as `exclude` to rollOffer on reroll so a taken perk
+   *  cannot resurface and stack within one night. Weapon (`lvl:`) cards are intentionally excluded
+   *  from this list — they are maxLevel-capped by canBuy and may be re-upgraded the same night. */
+  draftTaken: string[];
 }
 
 export interface Zombie {

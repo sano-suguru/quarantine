@@ -1124,6 +1124,7 @@ export function rollDraft(state: State, p: Player): void {
   p.draftOffer = rollOffer(draftPool(state, p), CONFIG.arsenal.offerSize).map((it) => it.id);
   p.draftFreePicksUsed = 0;
   p.draftRerolls = 0;
+  p.draftTaken = [];
 }
 
 /**
@@ -1143,6 +1144,10 @@ export function applyDraftTake(s: State, buyer: Player | undefined, cardId: stri
     buyer.money -= it.price;
     it.buy(s, buyer);
   }
+  // Record perk takes so a reroll can't resurface them (perks have no per-night cap, so a
+  // re-offered perk could be taken again and stack). Weapon (`lvl:`) cards are intentionally NOT
+  // recorded — canBuy caps them at maxLevel and they may be upgraded again the same night.
+  if (cardId.startsWith("perk:")) buyer.draftTaken.push(cardId);
   buyer.draftOffer = buyer.draftOffer.filter((id) => id !== cardId);
   return true;
 }
@@ -1155,7 +1160,9 @@ export function applyDraftReroll(s: State, buyer: Player | undefined): boolean {
   if (buyer.money < cost) return false;
   buyer.money -= cost;
   buyer.draftRerolls += 1;
-  buyer.draftOffer = rollOffer(draftPool(s, buyer), buyer.draftOffer.length).map((it) => it.id);
+  buyer.draftOffer = rollOffer(draftPool(s, buyer), buyer.draftOffer.length, buyer.draftTaken).map(
+    (it) => it.id,
+  );
   return true;
 }
 
