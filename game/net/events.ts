@@ -13,6 +13,8 @@ export type CoopEvent =
   // spot from the player's synced pos/aim — no coords cross the wire). Reliable (not a sampled
   // input field) because it moves inventory and must not be dropped/reordered, like `buy`.
   | { t: "deploy" } // leave the shop, start the next day
+  | { t: "draftTake"; cardId: string } // take a draft card from the local player's offer
+  | { t: "draftReroll" } // reroll the local player's draft offer
   // First message a client sends on every P2P open, so the host can decide this peer's
   // identity before spawning: `join` = fresh peer (host assigns a free slot); `rejoin` =
   // reconnect — host matches pid+nonce to the dropped player's still-held body and re-attaches

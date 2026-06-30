@@ -1251,6 +1251,38 @@ export function shopBuySelected(): void {
   if (state.inShop) buyItem(shopSel);
 }
 
+/** Take a draft card. Client → request to host; host/single → apply authoritatively + re-render. */
+export function draftTake(cardId: string): void {
+  if (!state.inShop) return;
+  if (Net.mode === "client") {
+    Net.client?.requestDraftTake(cardId);
+    Audio.ui(true);
+    return;
+  }
+  if (applyDraftTake(state, localPlayer(state), cardId)) {
+    Audio.ui(true);
+    renderShop();
+  } else {
+    Audio.ui(false);
+  }
+}
+
+/** Reroll the local player's draft offer. Client → request; host/single → apply + re-render. */
+export function draftReroll(): void {
+  if (!state.inShop) return;
+  if (Net.mode === "client") {
+    Net.client?.requestDraftReroll();
+    Audio.ui(true);
+    return;
+  }
+  if (applyDraftReroll(state, localPlayer(state))) {
+    Audio.ui(true);
+    renderShop();
+  } else {
+    Audio.ui(false);
+  }
+}
+
 /**
  * Leave the arsenal and start the next day. Client → request to the host (idempotent);
  * host/single → authoritative transition. The overlay is hidden by syncShopUI.

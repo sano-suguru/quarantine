@@ -281,6 +281,12 @@ export class Client {
   requestDeploy(): void {
     this.link.sendRel({ t: "deploy" });
   }
+  requestDraftTake(cardId: string): void {
+    this.link.sendRel({ t: "draftTake", cardId });
+  }
+  requestDraftReroll(): void {
+    this.link.sendRel({ t: "draftReroll" });
+  }
 
   /**
    * Net diagnostics for the ?netlog HUD. RTT (rel ping/pong EWMA), snapshot interval + jitter,
