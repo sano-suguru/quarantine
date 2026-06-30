@@ -76,11 +76,9 @@ interface SnapPlayer {
   absent: boolean;
   /** between-nights draft offer, as CARD_ORDER indices */
   draftOffer: number[];
-  /** WIRE PROJECTION of draftFreePicksUsed: true ⇔ no free picks remain this night. Host derives it
-   *  at encode; client decodes it back to draftFreePicksUsed (0 or freePicks). This keeps the wire a
-   *  single flag bit. NOTE: assumes CONFIG.arsenal.freePicks === 1. To support freePicks >= 2, promote
-   *  this to a raw u8 counter (PROTOCOL_VERSION bump) and show remaining count in renderShop. */
-  draftFreeUsed: boolean;
+  /** free picks spent this night (raw u8; clients read it directly for the remaining-free count).
+   *  Carried as its own byte so CONFIG.arsenal.freePicks is freely tunable — no single-bit assumption. */
+  draftFreePicksUsed: number;
   draftRerolls: number;
 }
 
@@ -190,7 +188,7 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
       assistT: p.assistT,
       absent: p.absent,
       draftOffer: p.draftOffer.map((id) => CARD_ORDER.indexOf(id)).filter((i) => i >= 0),
-      draftFreeUsed: p.draftFreePicksUsed >= CONFIG.arsenal.freePicks,
+      draftFreePicksUsed: p.draftFreePicksUsed,
       draftRerolls: p.draftRerolls,
     })),
     zombies: state.zombies.map((z) => ({
@@ -341,7 +339,7 @@ export function applySnapshot(
     p.draftOffer = sp.draftOffer
       .map((i) => CARD_ORDER[i])
       .filter((id): id is string => id !== undefined);
-    p.draftFreePicksUsed = sp.draftFreeUsed ? CONFIG.arsenal.freePicks : 0;
+    p.draftFreePicksUsed = sp.draftFreePicksUsed;
     p.draftRerolls = sp.draftRerolls;
     next.push(p);
   }
@@ -571,7 +569,8 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.u8(p.draftOffer.length);
     for (const ci of p.draftOffer) w.u8(ci);
     w.u8(Math.min(255, p.draftRerolls));
-    w.u8((p.lightOn ? 1 : 0) | (p.absent ? 2 : 0) | (p.draftFreeUsed ? 4 : 0)); // flag byte: bit0 lightOn, bit1 absent, bit2 = free picks exhausted (projection of draftFreePicksUsed)
+    w.u8(Math.min(255, p.draftFreePicksUsed));
+    w.u8((p.lightOn ? 1 : 0) | (p.absent ? 2 : 0)); // flag byte: bit0 lightOn, bit1 absent
   }
 
   // zombies (quantized)
@@ -694,10 +693,10 @@ export function decode(buf: ArrayBuffer): Snapshot {
     const doc = r.u8();
     for (let j = 0; j < doc; j++) draftOffer.push(r.u8());
     const draftRerolls = r.u8();
+    const draftFreePicksUsed = r.u8();
     const pflags = r.u8();
     const lightOn = (pflags & 1) === 1;
     const absent = (pflags & 2) !== 0;
-    const draftFreeUsed = (pflags & 4) !== 0;
     players.push({
       id,
       x,
@@ -730,7 +729,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
       deployQueue,
       absent,
       draftOffer,
-      draftFreeUsed,
+      draftFreePicksUsed,
       draftRerolls,
     });
   }

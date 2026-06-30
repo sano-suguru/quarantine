@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { CONFIG } from "../config";
 import { CARD_ORDER } from "../data/arsenal";
 import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { addPlayer } from "../engine/players";
@@ -129,7 +128,7 @@ describe("snapshot binary round-trip", () => {
       h = Math.imul(h, 0x01000193);
     }
     expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
-      `"len=299 fnv=dbe2968b"`,
+      `"len=301 fnv=ad84b711"`,
     );
   });
 
@@ -189,17 +188,17 @@ describe("snapshot binary round-trip", () => {
     expect(snap.players[0]?.switchT).toBeCloseTo(0.4, 2);
   });
 
-  it("round-trips draft offer fields", () => {
+  it("round-trips draft offer fields incl. partial free-pick count", () => {
     const s = newState();
     const p = s.players[0] as State["players"][number];
     p.draftOffer = ["perk:hollowPoints", "lvl:pistol"];
-    p.draftFreePicksUsed = CONFIG.arsenal.freePicks;
+    p.draftFreePicksUsed = 2; // a value the old 1-bit projection could not carry
     p.draftRerolls = 2;
     const back = decode(encode(captureSnapshot(s, 1)));
     const bp = back.players[0];
     if (!bp) throw new Error("decoded snapshot is missing player 0");
     expect(bp.draftOffer.map((i) => CARD_ORDER[i])).toEqual(["perk:hollowPoints", "lvl:pistol"]);
-    expect(bp.draftFreeUsed).toBe(true);
+    expect(bp.draftFreePicksUsed).toBe(2);
     expect(bp.draftRerolls).toBe(2);
   });
 
