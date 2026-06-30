@@ -58,7 +58,7 @@ export function makePlayer(id: number, x: number, y: number, name = `P${id + 1}`
     absent: false,
     searching: false,
     draftOffer: [],
-    draftFreeUsed: false,
+    draftFreePicksUsed: 0,
     draftRerolls: 0,
   };
 }

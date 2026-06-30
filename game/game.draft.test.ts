@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CONFIG } from "./config";
 import { localPlayer } from "./engine/players";
 import { applyDraftReroll, applyDraftTake, rollDraft } from "./game";
 import { newState } from "./state";
@@ -9,7 +10,7 @@ describe("draft apply (host-authoritative)", () => {
     const p = localPlayer(s);
     rollDraft(s, p);
     expect(p.draftOffer.length).toBe(3);
-    expect(p.draftFreeUsed).toBe(false);
+    expect(p.draftFreePicksUsed).toBe(0);
     expect(p.draftRerolls).toBe(0);
   });
 
@@ -21,7 +22,7 @@ describe("draft apply (host-authoritative)", () => {
     p.draftOffer = ["perk:hollowPoints", "perk:fieldMedic", "lvl:pistol"];
     const before = p.dmgMul;
     expect(applyDraftTake(s, p, "perk:hollowPoints")).toBe(true);
-    expect(p.draftFreeUsed).toBe(true);
+    expect(p.draftFreePicksUsed).toBe(1);
     expect(p.dmgMul).toBeCloseTo(before * 1.25);
     expect(p.money).toBe(0); // free
     expect(p.draftOffer).not.toContain("perk:hollowPoints");
@@ -31,7 +32,7 @@ describe("draft apply (host-authoritative)", () => {
     const s = newState();
     s.inShop = true;
     const p = localPlayer(s);
-    p.draftFreeUsed = true;
+    p.draftFreePicksUsed = CONFIG.arsenal.freePicks;
     p.money = 50; // perkCost is 80
     p.draftOffer = ["perk:fieldMedic"];
     expect(applyDraftTake(s, p, "perk:fieldMedic")).toBe(false);
@@ -67,5 +68,26 @@ describe("draft apply (host-authoritative)", () => {
     p.money = 10;
     p.draftOffer = ["perk:fieldMedic"];
     expect(applyDraftReroll(s, p)).toBe(false);
+  });
+
+  it("honors CONFIG.arsenal.freePicks for the number of free picks", () => {
+    const orig = CONFIG.arsenal.freePicks;
+    CONFIG.arsenal.freePicks = 2;
+    try {
+      const s = newState();
+      s.inShop = true;
+      const p = localPlayer(s);
+      p.money = 0;
+      p.draftOffer = ["perk:hollowPoints", "perk:fieldMedic", "perk:adrenaline"];
+      expect(applyDraftTake(s, p, "perk:hollowPoints")).toBe(true); // free 1
+      expect(applyDraftTake(s, p, "perk:fieldMedic")).toBe(true); // free 2
+      expect(p.money).toBe(0);
+      expect(applyDraftTake(s, p, "perk:adrenaline")).toBe(false); // 3rd costs SCRAP, broke
+      p.money = 80;
+      expect(applyDraftTake(s, p, "perk:adrenaline")).toBe(true); // paid
+      expect(p.money).toBe(0);
+    } finally {
+      CONFIG.arsenal.freePicks = orig; // assertion throw でも必ず復元（同ファイル後続の汚染防止）
+    }
   });
 });

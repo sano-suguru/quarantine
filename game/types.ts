@@ -169,8 +169,9 @@ export interface Player {
   searching: boolean;
   /** between-nights draft: card ids currently offered to this player (host-rolled, snapshot-synced) */
   draftOffer: string[];
-  /** this player's free pick this night has been spent (remaining cards then cost SCRAP) */
-  draftFreeUsed: boolean;
+  /** how many free picks this player has spent this night (free while < CONFIG.arsenal.freePicks,
+   *  then cards cost SCRAP). Reset each night by rollDraft. */
+  draftFreePicksUsed: number;
   /** rerolls this player has done this night — drives escalating rerollCost; reset at openShop */
   draftRerolls: number;
 }

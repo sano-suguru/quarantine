@@ -1122,22 +1122,22 @@ export function applyPlace(s: State, player: Player | undefined): boolean {
 /** Host/single: roll a fresh nightly offer for player `p` and reset their free pick + reroll count. */
 export function rollDraft(state: State, p: Player): void {
   p.draftOffer = rollOffer(draftPool(state, p), CONFIG.arsenal.offerSize).map((it) => it.id);
-  p.draftFreeUsed = false;
+  p.draftFreePicksUsed = 0;
   p.draftRerolls = 0;
 }
 
 /**
- * Apply a draft "take" host-authoritatively. The first take of the night is FREE (sets
- * draftFreeUsed); subsequent takes cost SCRAP (canBuy-gated). The card must be in the buyer's
- * current offer. Returns false (changing nothing) on any guard miss.
+ * Apply a draft "take" host-authoritatively. The first CONFIG.arsenal.freePicks takes of the night
+ * are FREE (counted by draftFreePicksUsed); further takes cost SCRAP (canBuy-gated). The card must
+ * be in the buyer's current offer. Returns false (changing nothing) on any guard miss.
  */
 export function applyDraftTake(s: State, buyer: Player | undefined, cardId: string): boolean {
   if (!s.inShop || !buyer?.draftOffer.includes(cardId)) return false;
   const it = cardItem(s, buyer, cardId);
   if (!it) return false;
-  if (!buyer.draftFreeUsed) {
+  if (buyer.draftFreePicksUsed < CONFIG.arsenal.freePicks) {
     it.buy(s, buyer);
-    buyer.draftFreeUsed = true;
+    buyer.draftFreePicksUsed += 1;
   } else {
     if (!it.canBuy(s, buyer)) return false;
     buyer.money -= it.price;
@@ -1162,15 +1162,18 @@ export function applyDraftReroll(s: State, buyer: Player | undefined): boolean {
 function renderShop(): void {
   const me = localPlayer(state);
   el("shop-credits").textContent = String(me.money);
-  el("shop-free").textContent = me.draftFreeUsed ? "free pick used" : "1 free pick";
+  const freeLeft = Math.max(0, CONFIG.arsenal.freePicks - me.draftFreePicksUsed);
+  el("shop-free").textContent =
+    freeLeft > 0 ? `${freeLeft} free pick${freeLeft > 1 ? "s" : ""}` : "free picks used";
 
   // draft cards (from this player's offer)
   const cards = me.draftOffer
     .map((id) => cardItem(state, me, id))
     .filter((it): it is StoreItem => it !== undefined);
-  const cardKey = (it: StoreItem) => `${it.id}:${it.price}:${me.draftFreeUsed ? 1 : 0}`;
+  const cardKey = (it: StoreItem) =>
+    `${it.id}:${it.price}:${me.draftFreePicksUsed < CONFIG.arsenal.freePicks ? 1 : 0}`;
   renderList(el("draft-cards"), cards, cardKey, (it, i) => {
-    const free = !me.draftFreeUsed;
+    const free = me.draftFreePicksUsed < CONFIG.arsenal.freePicks;
     const able = free || it.canBuy(state, me);
     const d = document.createElement("div");
     d.className = `dcard${able ? "" : " off"}`;

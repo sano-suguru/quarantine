@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CONFIG } from "../config";
 import { CARD_ORDER } from "../data/arsenal";
 import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { addPlayer } from "../engine/players";
@@ -192,7 +193,7 @@ describe("snapshot binary round-trip", () => {
     const s = newState();
     const p = s.players[0] as State["players"][number];
     p.draftOffer = ["perk:hollowPoints", "lvl:pistol"];
-    p.draftFreeUsed = true;
+    p.draftFreePicksUsed = CONFIG.arsenal.freePicks;
     p.draftRerolls = 2;
     const back = decode(encode(captureSnapshot(s, 1)));
     const bp = back.players[0]!;
