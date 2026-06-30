@@ -1154,7 +1154,13 @@ export function applyDraftTake(s: State, buyer: Player | undefined, cardId: stri
 }
 
 /** Apply a draft reroll host-authoritatively: charge escalating SCRAP, bump the reroll counter,
- *  and redraw the same number of cards the buyer currently has shown. */
+ *  and redraw the cards the buyer currently has SHOWN (`draftOffer.length`). CONSEQUENCE: taking a
+ *  card before rerolling permanently shrinks the hand (3 → 2), and the pool/exclude rules can shrink
+ *  it further on repeated rerolls. This is host-authoritative and consistent (no correctness issue),
+ *  but it is order-dependent: rerolling before a pick sees a fuller hand than rerolling after. Whether
+ *  that asymmetry is a fair timing choice or an optimization trap is an OPEN design decision pending
+ *  playtest (see the economy spec). The alternative is to always redraw a full hand:
+ *  `rollOffer(draftPool(s, buyer), CONFIG.arsenal.offerSize, buyer.draftTaken)`. */
 export function applyDraftReroll(s: State, buyer: Player | undefined): boolean {
   if (!s.inShop || !buyer || buyer.draftOffer.length === 0) return false;
   const cost = rerollCost(buyer.draftRerolls);
