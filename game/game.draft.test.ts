@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG } from "./config";
-import { localPlayer } from "./engine/players";
+import { addPlayer, localPlayer } from "./engine/players";
 import { applyDraftReroll, applyDraftTake, rollDraft } from "./game";
 import { newState } from "./state";
 
@@ -121,5 +121,22 @@ describe("draft apply (host-authoritative)", () => {
     expect(applyDraftTake(s, p, "perk:fieldMedic")).toBe(true); // paid
     expect(applyDraftReroll(s, p)).toBe(true);
     expect(p.draftOffer).not.toContain("perk:fieldMedic");
+  });
+
+  it("a perk take applies to the buyer only, not a teammate", () => {
+    const s = newState();
+    s.inShop = true;
+    const buyer = localPlayer(s);
+    const mate = addPlayer(s, 1, 0, 0);
+    const mateDmg = mate.dmgMul;
+    const mateHp = mate.maxHp;
+    const mateMoney = mate.money;
+    buyer.money = 0;
+    buyer.draftOffer = ["perk:hollowPoints"]; // +25% dmg, free
+    expect(applyDraftTake(s, buyer, "perk:hollowPoints")).toBe(true);
+    expect(buyer.dmgMul).toBeCloseTo(1.25);
+    expect(mate.dmgMul).toBe(mateDmg); // teammate untouched
+    expect(mate.maxHp).toBe(mateHp);
+    expect(mate.money).toBe(mateMoney);
   });
 });

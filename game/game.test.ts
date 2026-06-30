@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { localPlayer } from "./engine/players";
+import { addPlayer, localPlayer } from "./engine/players";
 import { applyBuy } from "./game";
 import { newState } from "./state";
 
@@ -39,5 +39,18 @@ describe("applyBuy (Fortify purchase, host-authoritative)", () => {
     const buyer = localPlayer(s);
     buyer.money = 100;
     expect(applyBuy(s, "deploy:nope", buyer)).toBe(false);
+  });
+
+  it("a fortification buy queues for the buyer only, not a teammate", () => {
+    const s = newState();
+    s.inShop = true;
+    const buyer = localPlayer(s);
+    const mate = addPlayer(s, 1, 0, 0);
+    const mateMoney = mate.money;
+    buyer.money = 100;
+    expect(applyBuy(s, fortId, buyer)).toBe(true);
+    expect(buyer.deployQueue).toContain("ammostation");
+    expect(mate.deployQueue).not.toContain("ammostation");
+    expect(mate.money).toBe(mateMoney); // teammate wallet untouched
   });
 });
