@@ -36,9 +36,9 @@ describe("co-op cache search", () => {
   });
 });
 
-/** Phase 3: repairing the shared barricade is near-free support labor (refund < cost,
- *  scaled by hp actually restored) — viable for a support role, never a money fountain. */
-describe("repair labor reward", () => {
+/** Repair is free labor now (off SCRAP): it restores barricade hp, costs no SCRAP, and never
+ *  profits — see CONFIG.siege.repairCost=0 / econ.repairReward=0 (economy redesign). */
+describe("repair is free (off SCRAP)", () => {
   function repairSetup(barHp: number): { s: State; p: State["players"][number] } {
     const s = newState();
     s.phase = "day";
@@ -53,22 +53,21 @@ describe("repair labor reward", () => {
     return { s, p };
   }
 
-  it("refunds most of the cost when the wall takes a full repair's worth of damage", () => {
+  it("restores wall hp without spending SCRAP", () => {
     const { s, p } = repairSetup(10); // far below max → a full repairAmount is restored
+    const bar = s.barricades[0] as State["barricades"][number];
+    const hp0 = bar.hp;
     sysPlayer(s, 0.05);
-    // net = -repairCost + repairReward (full effect), always negative (no profit)
-    const net = p.money - 100;
-    expect(net).toBe(-(CONFIG.siege.repairCost - CONFIG.econ.repairReward));
-    expect(net).toBeLessThan(0); // anti-fountain: repairing never profits
+    expect(bar.hp).toBeGreaterThan(hp0); // repair still works
+    expect(p.money).toBe(100); // free — no SCRAP spent or earned
   });
 
-  it("scales the refund down with hp actually restored (effect-linked)", () => {
+  it("never profits from repair (no money fountain)", () => {
     const bar0 = newState().barricades[0] as State["barricades"][number];
     const max = bar0.maxHp;
     const { s, p } = repairSetup(max - 10); // only 10 hp of room → small restore
     sysPlayer(s, 0.05);
-    const reward = Math.round(CONFIG.econ.repairReward * (10 / CONFIG.siege.repairAmount));
-    expect(p.money).toBe(100 - CONFIG.siege.repairCost + reward);
+    expect(p.money).toBe(100); // unchanged regardless of hp restored
   });
 });
 
