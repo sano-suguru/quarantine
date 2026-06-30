@@ -2,8 +2,6 @@ import { CONFIG } from "../config";
 import { clamp, lerp, mixRGB, rand } from "../engine/math";
 import type { ParticleKind, State } from "../types";
 
-const MAX_TEXTS = 160;
-
 type RGB = [number, number, number];
 
 /**
@@ -321,26 +319,7 @@ function pushDecal(state: State, x: number, y: number, r: number, color: RGB): v
   });
 }
 
-export function fxDamageText(
-  state: State,
-  x: number,
-  y: number,
-  value: number,
-  crit: boolean,
-): void {
-  if (state.texts.length >= MAX_TEXTS) state.texts.shift();
-  state.texts.push({
-    x: x + rand(-6, 6),
-    y,
-    vy: -rand(60, 90),
-    life: crit ? 0.85 : 0.6,
-    maxLife: crit ? 0.85 : 0.6,
-    value: Math.round(value),
-    crit,
-  });
-}
-
-/** advance all visual-only state: particles, floating text, blood decals */
+/** advance all visual-only state: particles, blood decals */
 export function sysFx(state: State, dt: number): void {
   const P = state.particles;
   for (let i = P.length - 1; i >= 0; i--) {
@@ -360,19 +339,6 @@ export function sysFx(state: State, dt: number): void {
       p.vx *= k;
       p.vy *= k;
     }
-  }
-
-  const T = state.texts;
-  for (let i = T.length - 1; i >= 0; i--) {
-    const t = T[i] as (typeof T)[number];
-    t.life -= dt;
-    if (t.life <= 0) {
-      T[i] = T[T.length - 1] as (typeof T)[number];
-      T.pop();
-      continue;
-    }
-    t.y += t.vy * dt;
-    t.vy *= Math.exp(-3 * dt);
   }
 
   const D = state.decals;

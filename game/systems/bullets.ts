@@ -4,7 +4,7 @@ import { segmentHitsSegment } from "../engine/geometry";
 import { len } from "../engine/math";
 import type { State } from "../types";
 import { awardBounty } from "./economy";
-import { fxDamageText, fxImpact, fxKill } from "./fx";
+import { fxImpact, fxKill, goreIntensity } from "./fx";
 import { dropFromKill } from "./pickups";
 
 const STONE: [number, number, number] = [0.5, 0.52, 0.5];
@@ -42,8 +42,15 @@ export function sysBullets(state: State, dt: number): void {
           z.flash = 0.12;
           z.vx += b.vx * inv * b.knockback;
           z.vy += b.vy * inv * b.knockback;
-          fxImpact(state, b.x, b.y, dir, b.color);
-          fxDamageText(state, z.x, z.y - z.r, b.dmg, b.dmg >= 30);
+          const g = CONFIG.fx.gore;
+          fxImpact(
+            state,
+            b.x,
+            b.y,
+            dir,
+            b.color,
+            goreIntensity(b.dmg, z.hp, z.maxHp, g.dmgRef, g.lowHpBand, g.finisherBonus),
+          );
           Audio.hit();
           if (b.pierce > 0) {
             b.pierce--;

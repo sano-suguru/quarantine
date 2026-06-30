@@ -607,13 +607,6 @@ export function draw(): void {
   // --- atmosphere: dust motes + darting shadows in the local cone ---
   drawAtmosphere(R, lp, ddt);
 
-  // --- floating damage numbers ---
-  for (const t of state.texts) {
-    const a = Math.min(1, t.life / t.maxLife);
-    if (t.crit) R.number(t.x, t.y, t.value, 20, 1, 0.75, 0.2, a);
-    else R.number(t.x, t.y, t.value, 13, 1, 1, 0.85, a * 0.9);
-  }
-
   R.flush(camX, camY);
 }
 

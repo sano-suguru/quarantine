@@ -45,7 +45,7 @@ import { ammoTransfer } from "./ammo";
 import { killZombie } from "./bullets";
 import { lootCache } from "./caches";
 import { applyFireFeel, decayFeelTimers } from "./feel";
-import { fxDamageText, fxImpact } from "./fx";
+import { fxImpact, goreIntensity } from "./fx";
 
 /** Seconds of standing-still searching needed to loot a cache. Night searches take longer
  *  (CONFIG.cache.nightSearchMul) — the extra exposure is the risk of looting during the horde. */
@@ -233,8 +233,15 @@ function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
     z.flash = 0.12;
     z.vx += (dx / d) * wd.knockback;
     z.vy += (dy / d) * wd.knockback;
-    fxImpact(state, z.x, z.y, p.aim, wd.color);
-    fxDamageText(state, z.x, z.y - z.r, wd.dmg * p.dmgMul, true);
+    const g = CONFIG.fx.gore;
+    fxImpact(
+      state,
+      z.x,
+      z.y,
+      p.aim,
+      wd.color,
+      goreIntensity(wd.dmg * p.dmgMul, z.hp, z.maxHp, g.dmgRef, g.lowHpBand, g.finisherBonus),
+    );
     if (z.hp <= 0) dead.push(zi);
   });
   // swap-and-pop removal is index-based, so kill from the highest index down
