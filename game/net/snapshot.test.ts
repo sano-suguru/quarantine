@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CARD_ORDER } from "../data/arsenal";
 import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { addPlayer } from "../engine/players";
 import { allocId, newState } from "../state";
@@ -127,7 +128,7 @@ describe("snapshot binary round-trip", () => {
       h = Math.imul(h, 0x01000193);
     }
     expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
-      `"len=295 fnv=b7e42223"`,
+      `"len=299 fnv=dbe2968b"`,
     );
   });
 
@@ -185,6 +186,19 @@ describe("snapshot binary round-trip", () => {
     const snap = decode(encode(captureSnapshot(s, 100)));
     // u8 over MAX_DRAWTIME (0.8): step ≈ 0.003, so 2-dp closeness is comfortable
     expect(snap.players[0]?.switchT).toBeCloseTo(0.4, 2);
+  });
+
+  it("round-trips draft offer fields", () => {
+    const s = newState();
+    const p = s.players[0] as State["players"][number];
+    p.draftOffer = ["perk:hollowPoints", "lvl:pistol"];
+    p.draftFreeUsed = true;
+    p.draftRerolls = 2;
+    const back = decode(encode(captureSnapshot(s, 1)));
+    const bp = back.players[0]!;
+    expect(bp.draftOffer.map((i) => CARD_ORDER[i])).toEqual(["perk:hollowPoints", "lvl:pistol"]);
+    expect(bp.draftFreeUsed).toBe(true);
+    expect(bp.draftRerolls).toBe(2);
   });
 
   it("stays under the 16KB SCTP message limit for a heavy night", () => {

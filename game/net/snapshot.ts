@@ -1,4 +1,5 @@
 import { CONFIG } from "../config";
+import { CARD_ORDER } from "../data/arsenal";
 import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { ENEMY_TYPES } from "../data/enemies";
 import { PICKUP_TYPES } from "../data/pickups";
@@ -73,6 +74,10 @@ interface SnapPlayer {
   assistT: number;
   /** disconnected, body held for reconnect (P4) — drawn as a faded ghost on other clients */
   absent: boolean;
+  /** between-nights draft offer, as CARD_ORDER indices */
+  draftOffer: number[];
+  draftFreeUsed: boolean;
+  draftRerolls: number;
 }
 
 interface SnapZombie {
@@ -180,6 +185,9 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
       deployQueue: p.deployQueue.map((id) => DEPLOYABLE_ORDER.indexOf(id)).filter((i) => i >= 0),
       assistT: p.assistT,
       absent: p.absent,
+      draftOffer: p.draftOffer.map((id) => CARD_ORDER.indexOf(id)).filter((i) => i >= 0),
+      draftFreeUsed: p.draftFreeUsed,
+      draftRerolls: p.draftRerolls,
     })),
     zombies: state.zombies.map((z) => ({
       id: z.id,
@@ -326,6 +334,11 @@ export function applySnapshot(
       .filter((id): id is string => id !== undefined);
     p.assistT = sp.assistT;
     p.absent = sp.absent;
+    p.draftOffer = sp.draftOffer
+      .map((i) => CARD_ORDER[i])
+      .filter((id): id is string => id !== undefined);
+    p.draftFreeUsed = sp.draftFreeUsed;
+    p.draftRerolls = sp.draftRerolls;
     next.push(p);
   }
   state.players = next;
@@ -551,7 +564,10 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.u8(p.medkits);
     w.u8(p.deployQueue.length);
     for (const di of p.deployQueue) w.u8(di);
-    w.u8((p.lightOn ? 1 : 0) | (p.absent ? 2 : 0)); // flag byte: bit0 lightOn, bit1 absent
+    w.u8(p.draftOffer.length);
+    for (const ci of p.draftOffer) w.u8(ci);
+    w.u8(Math.min(255, p.draftRerolls));
+    w.u8((p.lightOn ? 1 : 0) | (p.absent ? 2 : 0) | (p.draftFreeUsed ? 4 : 0)); // flag byte: bit0 lightOn, bit1 absent, bit2 draftFreeUsed
   }
 
   // zombies (quantized)
@@ -670,9 +686,14 @@ export function decode(buf: ArrayBuffer): Snapshot {
     const deployQueue: number[] = [];
     const dqc = r.u8();
     for (let j = 0; j < dqc; j++) deployQueue.push(r.u8());
+    const draftOffer: number[] = [];
+    const doc = r.u8();
+    for (let j = 0; j < doc; j++) draftOffer.push(r.u8());
+    const draftRerolls = r.u8();
     const pflags = r.u8();
     const lightOn = (pflags & 1) === 1;
     const absent = (pflags & 2) !== 0;
+    const draftFreeUsed = (pflags & 4) !== 0;
     players.push({
       id,
       x,
@@ -704,6 +725,9 @@ export function decode(buf: ArrayBuffer): Snapshot {
       medkits,
       deployQueue,
       absent,
+      draftOffer,
+      draftFreeUsed,
+      draftRerolls,
     });
   }
 
