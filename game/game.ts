@@ -475,10 +475,19 @@ export function draw(): void {
     const ft = nearestPlayer(state, z.x, z.y) ?? lp;
     const face = Math.atan2(ft.y - z.y, ft.x - z.x);
     const fl = z.flash > 0 ? z.flash / 0.12 : 0;
+    // wound: bleed the body toward blood color + darken slightly as hp drops (persistent),
+    // then layer the transient white hit-flash on top. The body is non-additive, so this
+    // still goes black outside the flashlight cone — no leak of lurkers in the dark.
+    const wound = 1 - z.hp / z.maxHp;
+    const gg = CONFIG.fx.gore;
+    const dk = 1 - gg.woundDarken * wound;
+    const wr = (z.color[0] + (gg.woundTint[0] - z.color[0]) * wound) * dk;
+    const wg = (z.color[1] + (gg.woundTint[1] - z.color[1]) * wound) * dk;
+    const wb = (z.color[2] + (gg.woundTint[2] - z.color[2]) * wound) * dk;
     const col: [number, number, number] = [
-      z.color[0] + (1 - z.color[0]) * fl,
-      z.color[1] + (1 - z.color[1]) * fl,
-      z.color[2] + (1 - z.color[2]) * fl,
+      wr + (1 - wr) * fl,
+      wg + (1 - wg) * fl,
+      wb + (1 - wb) * fl,
     ];
     const pulse = z.type === "brute" ? 0.5 + 0.3 * Math.sin(state.time * 4) : 0.4;
     R.glow(
@@ -518,15 +527,6 @@ export function draw(): void {
         0.9,
         SHAPE.glow,
       );
-    }
-
-    // hp bar
-    const f = z.hp / z.maxHp;
-    if (f < 1 && z.spawnT <= 0) {
-      const w = z.r * 1.6;
-      const by = z.y - z.r - 7;
-      R.rect(z.x, by, w, 3, 0, 0, 0, 0, 0.5);
-      R.rect(z.x - (w * (1 - f)) / 2, by, w * f, 3, 0, 0.9 - 0.6 * f, 0.2 + 0.6 * f, 0.15, 0.95);
     }
   }
 
