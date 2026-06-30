@@ -118,9 +118,19 @@ export function fxMuzzle(state: State, x: number, y: number, aim: number, color:
   // the firing player's muzzle-flash timer is set in fireWeapon (per-player)
 }
 
-/** sparks where a bullet bites a zombie */
-export function fxImpact(state: State, x: number, y: number, dir: number, color: RGB): void {
-  for (let i = 0; i < 6; i++) {
+/** sparks + blood where a hit bites flesh; richer the harder/closer-to-lethal the hit (intensity 0..1).
+ *  intensity defaults to 0 so non-combat callers (wall/barricade/RTB sparks) render exactly as before. */
+export function fxImpact(
+  state: State,
+  x: number,
+  y: number,
+  dir: number,
+  color: RGB,
+  intensity = 0,
+): void {
+  const g = CONFIG.fx.gore;
+  const sparks = Math.round(lerp(g.sparks[0], g.sparks[1], intensity));
+  for (let i = 0; i < sparks; i++) {
     const a = dir + rand(-1.0, 1.0);
     const sp = rand(120, 360);
     spawn(
@@ -136,8 +146,34 @@ export function fxImpact(state: State, x: number, y: number, dir: number, color:
       7,
     );
   }
-  bloodSpeck(state, x, y, color, 3);
-  bloodPool(state, x, y, false, dir);
+  bloodSpeck(state, x, y, color, Math.round(lerp(g.specks[0], g.specks[1], intensity)));
+  bloodPool(state, x, y, intensity >= g.poolBigAt, dir);
+  // flesh chunks on heavy / finishing hits — throttled so they never starve muzzle/spark FX
+  const fill = state.particles.length / CONFIG.fx.maxParticles;
+  const gibs = gibsToSpawn(
+    intensity,
+    fill,
+    g.gibThreshold,
+    g.gibCount[0],
+    g.gibCount[1],
+    g.gibFillCap,
+  );
+  for (let i = 0; i < gibs; i++) {
+    const a = dir + rand(-0.7, 0.7);
+    const sp = rand(80, 260);
+    spawn(
+      state,
+      x,
+      y,
+      Math.cos(a) * sp,
+      Math.sin(a) * sp,
+      rand(0.25, 0.5),
+      rand(2, 4.5),
+      color,
+      "shard",
+      4,
+    );
+  }
 }
 
 /** death burst — shockwave ring, viscera shards, glowing embers */
