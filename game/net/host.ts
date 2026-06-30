@@ -1,7 +1,15 @@
 import { CONFIG } from "../config";
 import { HOME_SPAWN } from "../data/map";
 import { addPlayer, removePlayer } from "../engine/players";
-import { applyBuy, applyPlace, getState, shopDeploy } from "../game";
+import {
+  applyBuy,
+  applyDraftReroll,
+  applyDraftTake,
+  applyPlace,
+  getState,
+  rollDraft,
+  shopDeploy,
+} from "../game";
 import { type NetMsg, PROTOCOL_VERSION } from "./net";
 import { encodeSnapshot } from "./snapshot";
 import type { PeerLink } from "./transport";
@@ -123,6 +131,17 @@ export class Host {
         ); // host drops the requester's queued deployable at their feet (validated, idempotent-safe)
       } else if (msg.t === "deploy") {
         shopDeploy(); // idempotent (no-op unless the shop is open)
+      } else if (msg.t === "draftTake") {
+        applyDraftTake(
+          st,
+          st.players.find((pl) => pl.id === peer.pid),
+          msg.cardId,
+        );
+      } else if (msg.t === "draftReroll") {
+        applyDraftReroll(
+          st,
+          st.players.find((pl) => pl.id === peer.pid),
+        );
       } else if (msg.t === "ping") {
         link.sendRel({ t: "pong", id: msg.id }); // RTT probe echo (see client netStats)
       }
@@ -249,6 +268,7 @@ export class Host {
     const x = HOME_SPAWN.x + ((pid % 4) - 1.5) * 36;
     const p = addPlayer(st, pid, x, HOME_SPAWN.y, `P${pid + 1}`);
     if (st.phase === "night" && !st.inShop) p.hp = 0;
+    if (st.inShop) rollDraft(st, p); // entering mid-shop → roll an offer so their draft UI isn't empty
   }
 
   /** Deploy: the host's fresh game state exists now — spawn a player for each connected peer. */
