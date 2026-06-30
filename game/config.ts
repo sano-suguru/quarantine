@@ -162,7 +162,7 @@ export const CONFIG = {
     nightAmbient: 0.04, // near-black; the flashlight cone is essential
     boardMaxHp: 120, // a fresh barricade's hp
     repairAmount: 40, // hp restored per repair press
-    repairCost: 15, // credits per repair
+    repairCost: 0, // repair is free labor (time/repairCd-gated); SCRAP is reserved for the draft + fortify
     repairCd: 0.35, // seconds between repair presses
     interactRadius: 70, // how close you must be to interact (repair / search)
     roamersPerDay: 5, // wandering zombies seeded across the map each day
@@ -197,11 +197,7 @@ export const CONFIG = {
     // night horde scales with squad size: each extra player adds this fraction to every
     // spawn count (HP/speed unchanged). 0 in single-player → identical waves.
     waveCountPerPlayer: 0.5,
-    // support-labor reward: repairing the shared barricade refunds this many credits at full
-    // effect (scaled by hp actually restored). MUST stay < siege.repairCost so repair is
-    // near-free labor (a support role stays solvent) but never turns a profit — no money
-    // fountain from repair-spamming a wall you let the horde chew on.
-    repairReward: 12,
+    repairReward: 0, // no SCRAP fountain from repair (repair is free now — see siege.repairCost=0)
   },
   // co-op peer support (reviving downed teammates). Uses siege.interactRadius for reach so
   // all context interactions share one distance. Single-player never triggers it (no allies).
@@ -218,6 +214,11 @@ export const CONFIG = {
     perkCost: 80, // credits for a field-upgrade perk
     salvagePerDay: 8, // SALVAGE banked per day survived
     salvagePerKill: 0.15, // SALVAGE banked per kill
+    // --- nightly draft (between-nights) ---
+    offerSize: 3, // cards drawn each night
+    freePicks: 1, // free picks per night before SCRAP is charged
+    rerollBase: 30, // SCRAP for the first reroll of a night
+    rerollStep: 25, // each further reroll this night costs this much more (resets next night)
   },
   deployables: {
     lightIntensity: 0.6, // deployable searchlight brightness (player flashlight is ~1); high enough

@@ -8,6 +8,8 @@ const pct = (m: number): string => `${Math.round(m * 100)}%`;
 // `p` only. The `s` arg is kept for signature symmetry and any future run-wide table lookups.
 export const UPGRADES: Upgrade[] = [
   {
+    id: "fieldMedic",
+    starter: true,
     name: "Field Medic",
     desc: "+20 max integrity, +1 medkit",
     apply: (_s, p) => {
@@ -17,6 +19,8 @@ export const UPGRADES: Upgrade[] = [
     preview: (_s, p) => `integrity ${p.maxHp} → ${p.maxHp + 20}`,
   },
   {
+    id: "hollowPoints",
+    starter: true,
     name: "Hollow Points",
     desc: "+25% weapon damage",
     apply: (_s, p) => {
@@ -25,6 +29,8 @@ export const UPGRADES: Upgrade[] = [
     preview: (_s, p) => `damage ${pct(p.dmgMul)} → ${pct(p.dmgMul * 1.25)}`,
   },
   {
+    id: "adrenaline",
+    starter: true,
     name: "Adrenaline",
     desc: "+12% movement speed",
     apply: (_s, p) => {
@@ -33,6 +39,8 @@ export const UPGRADES: Upgrade[] = [
     preview: (_s, p) => `speed ${Math.round(p.speed)} → ${Math.round(p.speed * 1.12)}`,
   },
   {
+    id: "quickHands",
+    starter: false,
     name: "Quick Hands",
     desc: "+30% fire rate",
     apply: (_s, p) => {
@@ -41,6 +49,8 @@ export const UPGRADES: Upgrade[] = [
     preview: (_s, p) => `fire rate ${pct(p.fireRateMul)} → ${pct(p.fireRateMul * 1.3)}`,
   },
   {
+    id: "firstAid",
+    starter: false,
     name: "First Aid Cache",
     desc: "+2 medkits",
     apply: (_s, p) => {
@@ -49,6 +59,8 @@ export const UPGRADES: Upgrade[] = [
     preview: (_s, p) => `medkits ${p.medkits} → ${Math.min(CONFIG.heal.maxMedkits, p.medkits + 2)}`,
   },
   {
+    id: "bandolier",
+    starter: false,
     name: "Bandolier",
     desc: "+50% spare ammo capacity, top off now",
     apply: (_s, p) => {
@@ -62,6 +74,8 @@ export const UPGRADES: Upgrade[] = [
     preview: (_s, p) => `spare capacity ${pct(p.reserveMul)} → ${pct(p.reserveMul * 1.5)}`,
   },
   {
+    id: "scavenger",
+    starter: false,
     name: "Scavenger",
     desc: "Full resupply — all magazines and spare ammo",
     apply: (_s, p) => {
@@ -75,4 +89,12 @@ export const UPGRADES: Upgrade[] = [
     },
     preview: () => "all ammo → full",
   },
+];
+
+/** Perk cards unlocked via SALVAGE (id = `card:<perkId>`). Append-only for save compatibility. */
+export const UNLOCKABLE_CARDS: { id: string; price: number }[] = [
+  { id: "card:quickHands", price: 60 },
+  { id: "card:firstAid", price: 60 },
+  { id: "card:bandolier", price: 80 },
+  { id: "card:scavenger", price: 100 },
 ];

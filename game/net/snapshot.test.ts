@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CARD_ORDER } from "../data/arsenal";
 import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { addPlayer } from "../engine/players";
 import { allocId, newState } from "../state";
@@ -127,7 +128,7 @@ describe("snapshot binary round-trip", () => {
       h = Math.imul(h, 0x01000193);
     }
     expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
-      `"len=295 fnv=b7e42223"`,
+      `"len=301 fnv=ad84b711"`,
     );
   });
 
@@ -185,6 +186,20 @@ describe("snapshot binary round-trip", () => {
     const snap = decode(encode(captureSnapshot(s, 100)));
     // u8 over MAX_DRAWTIME (0.8): step ≈ 0.003, so 2-dp closeness is comfortable
     expect(snap.players[0]?.switchT).toBeCloseTo(0.4, 2);
+  });
+
+  it("round-trips draft offer fields incl. partial free-pick count", () => {
+    const s = newState();
+    const p = s.players[0] as State["players"][number];
+    p.draftOffer = ["perk:hollowPoints", "lvl:pistol"];
+    p.draftFreePicksUsed = 2; // a value the old 1-bit projection could not carry
+    p.draftRerolls = 2;
+    const back = decode(encode(captureSnapshot(s, 1)));
+    const bp = back.players[0];
+    if (!bp) throw new Error("decoded snapshot is missing player 0");
+    expect(bp.draftOffer.map((i) => CARD_ORDER[i])).toEqual(["perk:hollowPoints", "lvl:pistol"]);
+    expect(bp.draftFreePicksUsed).toBe(2);
+    expect(bp.draftRerolls).toBe(2);
   });
 
   it("stays under the 16KB SCTP message limit for a heavy night", () => {
@@ -259,6 +274,15 @@ describe("deployable wire contract & interpolation", () => {
     expect(order[0]).toBe("ammostation");
     expect(order[1]).toBe("sentry");
     expect(order[2]).toBe("drone");
+  });
+
+  it("CARD_ORDER index is append-only stable (perks first, then weapon upgrades)", () => {
+    // CARD_ORDER IS the draftOffer wire index. Reordering UPGRADES or WEAPON_ORDER desyncs
+    // silently (the golden uses an empty offer, so it can't catch this) — pin the layout here.
+    expect(CARD_ORDER[0]).toBe("perk:fieldMedic"); // UPGRADES[0]
+    expect(CARD_ORDER[6]).toBe("perk:scavenger"); // last perk (UPGRADES has 7)
+    expect(CARD_ORDER[7]).toBe("lvl:pistol"); // first upgradeable weapon (knife is melee → excluded)
+    expect(CARD_ORDER.filter((id) => id.startsWith("lvl:"))).not.toContain("lvl:knife");
   });
 
   it("lerpSnapshots interpolates a moving deployable's position + aim", () => {

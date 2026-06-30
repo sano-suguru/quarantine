@@ -1,17 +1,35 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG } from "../config";
+import { localPlayer } from "../engine/players";
 import { newState } from "../state";
 import type { State, WeaponDef } from "../types";
+import type { StoreItem } from "./arsenal";
 import {
+  CARD_ORDER,
+  cardItem,
+  draftPool,
   effWeapon,
   levelCost,
   meleeArc,
   meleeReach,
+  rerollCost,
+  rollOffer,
   salvageEarned,
+  salvageShare,
   scaledDmg,
   scaledMag,
+  storeItems,
 } from "./arsenal";
-import { WEAPONS } from "./weapons";
+import { isUpgradeableWeapon, WEAPONS } from "./weapons";
+
+const fake = (id: string): StoreItem => ({
+  id,
+  name: id,
+  desc: "",
+  price: 0,
+  canBuy: () => true,
+  buy: () => {},
+});
 
 describe("melee accessors", () => {
   const knife = WEAPONS.knife as WeaponDef; // explicit meleeArc 0.95, meleeRange 30
@@ -73,5 +91,130 @@ describe("salvage earned per run", () => {
   });
   it("sums day + kill contributions, rounded", () => {
     expect(salvageEarned(3, 20)).toBe(Math.round(3 * a.salvagePerDay + 20 * a.salvagePerKill));
+  });
+});
+
+describe("salvageShare", () => {
+  it("salvageShare floors the pot across recipients (single-player == total)", () => {
+    expect(salvageShare(100, 1)).toBe(100); // single-player: identical to the old total
+    expect(salvageShare(100, 3)).toBe(33); // floored, never over-banks
+    expect(salvageShare(7, 3)).toBe(2);
+    expect(salvageShare(100, 0)).toBe(100); // guard: never divide by zero
+  });
+});
+
+describe("cardItem", () => {
+  it("resolves a starter perk card", () => {
+    const s = newState();
+    const item = cardItem(s, localPlayer(s), "perk:hollowPoints");
+    expect(item?.name).toBe("Hollow Points");
+    expect(item?.price).toBe(80);
+  });
+  it("resolves a weapon upgrade card with the right Mk label and price", () => {
+    const s = newState();
+    const p = localPlayer(s);
+    const item = cardItem(s, p, "lvl:pistol");
+    expect(item?.name).toBe("PISTOL ▸ Mk 2");
+    expect(item?.price).toBe(60); // levelBaseCost at level 0
+  });
+  it("returns undefined for a maxed weapon", () => {
+    const s = newState();
+    const p = localPlayer(s);
+    p.wlevel.pistol = 3; // maxLevel
+    expect(cardItem(s, p, "lvl:pistol")).toBeUndefined();
+  });
+  it("returns undefined for an unknown id", () => {
+    const s = newState();
+    expect(cardItem(s, localPlayer(s), "bogus:x")).toBeUndefined();
+  });
+  it("CARD_ORDER lists perk then weapon cards, no melee", () => {
+    expect(CARD_ORDER).toContain("perk:fieldMedic");
+    expect(CARD_ORDER).toContain("lvl:shotgun");
+    expect(CARD_ORDER).not.toContain("lvl:knife");
+  });
+});
+
+describe("draftPool", () => {
+  it("fresh save: 3 starter perks + 3 starter weapon upgrades", () => {
+    const s = newState(); // owned = pistol/smg/shotgun/knife; unlockedCards = {}
+    const ids = draftPool(s, localPlayer(s))
+      .map((it) => it.id)
+      .sort();
+    expect(ids).toEqual([
+      "lvl:pistol",
+      "lvl:shotgun",
+      "lvl:smg",
+      "perk:adrenaline",
+      "perk:fieldMedic",
+      "perk:hollowPoints",
+    ]);
+  });
+  it("unlocked perk card enters the pool", () => {
+    const s = newState();
+    s.unlockedCards = { "card:scavenger": true };
+    expect(draftPool(s, localPlayer(s)).map((it) => it.id)).toContain("perk:scavenger");
+  });
+  it("maxed weapon drops out of the pool", () => {
+    const s = newState();
+    const p = localPlayer(s);
+    p.wlevel.pistol = 3;
+    expect(draftPool(s, p).map((it) => it.id)).not.toContain("lvl:pistol");
+  });
+  it("knife (melee) never appears", () => {
+    const s = newState();
+    expect(draftPool(s, localPlayer(s)).map((it) => it.id)).not.toContain("lvl:knife");
+  });
+});
+
+describe("rollOffer", () => {
+  it("returns n distinct items", () => {
+    const pool = ["a", "b", "c", "d", "e"].map(fake);
+    const seq = [0, 0, 0];
+    let i = 0;
+    const out = rollOffer(pool, 3, [], () => seq[i++] ?? 0);
+    expect(out).toHaveLength(3);
+    expect(new Set(out.map((x) => x.id)).size).toBe(3);
+  });
+  it("clamps to pool size when pool < n", () => {
+    expect(rollOffer(["a", "b"].map(fake), 3, [], () => 0)).toHaveLength(2);
+  });
+  it("honors exclude", () => {
+    const out = rollOffer(["a", "b", "c"].map(fake), 3, ["b"], () => 0);
+    expect(out.map((x) => x.id)).not.toContain("b");
+  });
+  it("is deterministic under a fixed rng", () => {
+    const pool = ["a", "b", "c", "d"].map(fake);
+    const r1 = rollOffer(pool.slice(), 2, [], () => 0.5).map((x) => x.id);
+    const r2 = rollOffer(pool.slice(), 2, [], () => 0.5).map((x) => x.id);
+    expect(r1).toEqual(r2);
+  });
+});
+
+describe("rerollCost", () => {
+  it("monotonically increases with reroll count", () => {
+    expect(rerollCost(0)).toBe(30);
+    expect(rerollCost(1)).toBe(55);
+    expect(rerollCost(2)).toBe(80);
+  });
+});
+
+describe("storeItems is fortify-only", () => {
+  it("returns only deploy: items", () => {
+    const s = newState();
+    const ids = storeItems(s, localPlayer(s)).map((it) => it.id);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.every((id) => id.startsWith("deploy:"))).toBe(true);
+  });
+});
+
+describe("isUpgradeableWeapon", () => {
+  it("includes a ranged weapon defined in WEAPONS", () => {
+    expect(isUpgradeableWeapon("pistol")).toBe(true);
+  });
+  it("excludes the melee weapon", () => {
+    expect(isUpgradeableWeapon("knife")).toBe(false);
+  });
+  it("excludes an id with no WEAPONS entry", () => {
+    expect(isUpgradeableWeapon("nonexistent")).toBe(false);
   });
 });

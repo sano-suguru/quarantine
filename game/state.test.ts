@@ -59,6 +59,23 @@ describe("newState", () => {
     // starters still owned alongside the unlock
     expect(s.owned.pistol).toBe(true);
   });
+
+  it("splits card: unlocks into unlockedCards, weapon unlocks into owned", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () =>
+        JSON.stringify({
+          version: 1,
+          salvage: 0,
+          unlocked: { rifle: true, "card:scavenger": true },
+        }),
+      setItem: () => {},
+    });
+    const s = newState();
+    vi.unstubAllGlobals();
+    expect(s.owned.rifle).toBe(true);
+    expect(s.owned["card:scavenger"]).toBeUndefined(); // not a weapon
+    expect(s.unlockedCards["card:scavenger"]).toBe(true);
+  });
 });
 
 describe("allocId", () => {

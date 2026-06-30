@@ -6,15 +6,16 @@ import { localPlayer } from "./engine/players";
 import { Renderer } from "./engine/renderer";
 import {
   audioLoops,
-  buyItem,
   clientAmbience,
+  closeArsenal,
   deployPlace,
+  draftReroll,
+  draftTake,
   draw,
   getState,
+  openArsenal,
   renderArsenal,
-  shopBuySelected,
   shopDeploy,
-  shopMove,
   startGame,
   syncShopUI,
   togglePause,
@@ -138,7 +139,9 @@ function main(): void {
   };
   el("restartBtn").onclick = toTitle;
   el("deployBtn").onclick = shopDeploy;
-  renderArsenal(); // populate the title-screen arsenal panel on first load
+  el("arsenalBtn").onclick = openArsenal;
+  el("arsenalBackBtn").onclick = closeArsenal;
+  renderArsenal(); // populate the ARSENAL overlay on first load
   wireCoop();
 
   const cross = el("cross");
@@ -203,11 +206,12 @@ function main(): void {
       return;
     }
     if (state.inShop) {
+      const me = localPlayer(state);
       const digit = /^Digit([1-9])$/.exec(e.code);
-      if (digit) buyItem(Number(digit[1]) - 1);
-      else if (e.code === "ArrowUp" || e.code === "KeyW") shopMove(-1);
-      else if (e.code === "ArrowDown" || e.code === "KeyS") shopMove(1);
-      else if (e.code === "Space") shopBuySelected();
+      if (digit) {
+        const card = me.draftOffer[Number(digit[1]) - 1];
+        if (card) draftTake(card);
+      } else if (e.code === "KeyR") draftReroll();
       else if (e.code === "Enter") shopDeploy();
       return;
     }

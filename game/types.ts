@@ -80,6 +80,10 @@ export interface EnemyType {
 }
 
 export interface Upgrade {
+  /** stable id for the draft card (`perk:<id>`) and meta unlock flag (`card:<id>`) */
+  id: string;
+  /** in the starter draft pool from a fresh save (false = unlocked via SALVAGE) */
+  starter: boolean;
   name: string;
   desc: string;
   /** mutate run-wide multipliers and/or the buying player `p` */
@@ -163,6 +167,19 @@ export interface Player {
    *  "noise"). sysPlayer sets it each tick, sysAI reads it to surge nearby zombies (the lure).
    *  Host-derived, NOT synced — clients never run sysPlayer/sysAI so it stays false there. */
   searching: boolean;
+  /** between-nights draft: card ids currently offered to this player (host-rolled, snapshot-synced) */
+  draftOffer: string[];
+  /** how many free picks this player has spent this night (free while < CONFIG.arsenal.freePicks,
+   *  then cards cost SCRAP). Reset each night by rollDraft. */
+  draftFreePicksUsed: number;
+  /** rerolls this player has done this night — drives escalating rerollCost; reset at openShop */
+  draftRerolls: number;
+  /** card ids this player has TAKEN this night (PERK ids only). Host-only roll state, NOT
+   *  snapshot-synced: only the host rolls/rerolls so clients never read it (makePlayer inits it to
+   *  []). Reset each night by rollDraft; passed as `exclude` to rollOffer on reroll so a taken perk
+   *  cannot resurface and stack within one night. Weapon (`lvl:`) cards are intentionally excluded
+   *  from this list — they are maxLevel-capped by canBuy and may be re-upgraded the same night. */
+  draftTaken: string[];
 }
 
 export interface Zombie {
@@ -467,6 +484,9 @@ export interface State {
   /** which weapons are available this run (starters + meta-unlocked). Shared = account-level
    *  unlock axis; per-player power (wlevel/muls/money) lives on Player. */
   owned: Record<string, boolean>;
+  /** which perk cards are unlocked this run (id = `card:<perkId>`); from meta, host-authoritative.
+   *  Read by draftPool. Separate from `owned` (weapons) so the two namespaces don't collide. */
+  unlockedCards: Record<string, boolean>;
   hash: SpatialHashLike;
   hitstopT: number;
   flashT: number;

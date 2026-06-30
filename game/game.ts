@@ -1,15 +1,21 @@
 import { CONFIG } from "./config";
 import {
+  cardItem,
+  draftPool,
   effWeapon,
   meleeArc,
   meleeReach,
+  rerollCost,
+  rollOffer,
   type StoreItem,
   salvageEarned,
+  salvageShare,
   storeItems,
 } from "./data/arsenal";
 import { DEPLOYABLE_TYPES, deployableCount, placeDeployable, placeSpot } from "./data/deployables";
 import { PICKUP_TYPES } from "./data/pickups";
 import { PLAYER_COLORS } from "./data/players";
+import { UNLOCKABLE_CARDS, UPGRADES } from "./data/upgrades";
 import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "./data/weapons";
 import { Audio } from "./engine/audio";
 import { type LightCandidate, selectLights } from "./engine/lights";
@@ -1062,20 +1068,11 @@ export function startGame(): void {
   announce("DAY", state.day);
 }
 
-let shopItems: StoreItem[] = [];
-let shopSel = 0;
-let shopEls: HTMLElement[] = [];
-let shopSig = ""; // store-list signature; a change means the DOM must be rebuilt
-
 /**
  * Full per-row signature: index + id + price + desc — every mutable thing `create` renders into a
- * row (but NOT `.sel`/`.off`, which are view-state re-applied each frame by highlightShop /
- * syncShopUI). It drives BOTH the rebuild gate (shopSig) and the renderList key, so the two can't
- * disagree: a deploy row's live built/queued count lives in `desc`, so a buy flips both the sig
- * and the key, rebuilding just that row with fresh text on host and client alike.
+ * row. Used as the renderList key for Fortify rows.
  */
 const shopRowSig = (it: StoreItem, i: number): string => `${i}:${it.id}:${it.price}:${it.desc}`;
-const shopSigOf = (items: StoreItem[]): string => items.map(shopRowSig).join("|");
 
 /** Authoritative: open the arsenal between nights (host/single sim). The overlay itself
  *  is shown by syncShopUI from `state.inShop`, so clients open it from the snapshot. */
@@ -1087,6 +1084,7 @@ function openShop(): void {
   // (a survivor cleared the wave to reach here). Gear is kept; see revivePlayer.
   for (const p of state.players) if (p.hp <= 0) revivePlayer(state, p);
   resupply();
+  for (const p of state.players) rollDraft(state, p); // host/single: roll each player's offer
 }
 
 /**
@@ -1122,65 +1120,115 @@ export function applyPlace(s: State, player: Player | undefined): boolean {
   return true;
 }
 
-function renderShop(): void {
-  const me = localPlayer(state);
-  el("shop-credits").textContent = String(me.money);
-  const box = el("choices");
-  // Key (shopRowSig) carries index + id + price + desc — the full rendered content — so a reused
-  // row always has correct text AND a correct captured `i`. `.sel`/`.off` are NOT in the key:
-  // they're view-state re-applied each frame (highlightShop / syncShopUI), so only a genuine
-  // content change rebuilds a row while the rest keep their hover.
-  renderList(box, shopItems, shopRowSig, (it, i) => {
-    const able = it.canBuy(state, me);
-    const d = document.createElement("div");
-    d.className = `srow${able ? "" : " off"}`;
-    d.innerHTML = `<div class='snum'>${i + 1}</div><div class='sinfo'><div class='cname'>${it.name}</div><div class='desc'>${it.desc}</div></div><div class='sprice'>${it.price}c</div>`;
-    d.onclick = () => buyItem(i);
-    d.onmouseenter = () => {
-      shopSel = i;
-      highlightShop();
-    };
-    return d;
-  });
-  // Re-grab node refs, then let highlightShop own `.sel`: a reused row keeps its old node, so the
-  // selection class must be (re)applied after every reconcile rather than baked into create.
-  shopEls = Array.from(box.children) as HTMLElement[];
-  highlightShop();
-}
-
-/** Update only the selection highlight — no DOM teardown, so clicks survive. */
-function highlightShop(): void {
-  shopEls.forEach((d, i) => {
-    d.classList.toggle("sel", i === shopSel);
-  });
-}
-
-export function shopMove(dir: number): void {
-  if (!state.inShop || shopItems.length === 0) return;
-  shopSel = (shopSel + dir + shopItems.length) % shopItems.length;
-  Audio.ui(false);
-  highlightShop();
+/** Host/single: roll a fresh nightly offer for player `p` and reset their free pick + reroll count. */
+export function rollDraft(state: State, p: Player): void {
+  p.draftOffer = rollOffer(draftPool(state, p), CONFIG.arsenal.offerSize).map((it) => it.id);
+  p.draftFreePicksUsed = 0;
+  p.draftRerolls = 0;
+  p.draftTaken = [];
 }
 
 /**
- * Buy the item at index `i`. On a client this just ships a request to the host (money,
- * levels and re-render arrive via the snapshot); on host/single it applies authoritatively
- * and rebuilds the list locally (prices/levels can change).
+ * Apply a draft "take" host-authoritatively. The first CONFIG.arsenal.freePicks takes of the night
+ * are FREE (counted by draftFreePicksUsed); further takes cost SCRAP (canBuy-gated). The card must
+ * be in the buyer's current offer. Returns false (changing nothing) on any guard miss.
  */
-export function buyItem(i: number): void {
+export function applyDraftTake(s: State, buyer: Player | undefined, cardId: string): boolean {
+  if (!s.inShop || !buyer?.draftOffer.includes(cardId)) return false;
+  const it = cardItem(s, buyer, cardId);
+  if (!it) return false;
+  if (buyer.draftFreePicksUsed < CONFIG.arsenal.freePicks) {
+    it.buy(s, buyer);
+    buyer.draftFreePicksUsed += 1;
+  } else {
+    if (!it.canBuy(s, buyer)) return false;
+    buyer.money -= it.price;
+    it.buy(s, buyer);
+  }
+  // Record perk takes so a reroll can't resurface them (perks have no per-night cap, so a
+  // re-offered perk could be taken again and stack). Weapon (`lvl:`) cards are intentionally NOT
+  // recorded — canBuy caps them at maxLevel and they may be upgraded again the same night.
+  if (cardId.startsWith("perk:")) buyer.draftTaken.push(cardId);
+  buyer.draftOffer = buyer.draftOffer.filter((id) => id !== cardId);
+  return true;
+}
+
+/** Apply a draft reroll host-authoritatively: charge escalating SCRAP, bump the reroll counter,
+ *  and redraw the cards the buyer currently has SHOWN (`draftOffer.length`). CONSEQUENCE: taking a
+ *  card before rerolling permanently shrinks the hand (3 → 2), and the pool/exclude rules can shrink
+ *  it further on repeated rerolls. This is host-authoritative and consistent (no correctness issue),
+ *  but it is order-dependent: rerolling before a pick sees a fuller hand than rerolling after. Whether
+ *  that asymmetry is a fair timing choice or an optimization trap is an OPEN design decision pending
+ *  playtest (see the economy spec). The alternative is to always redraw a full hand:
+ *  `rollOffer(draftPool(s, buyer), CONFIG.arsenal.offerSize, buyer.draftTaken)`. */
+export function applyDraftReroll(s: State, buyer: Player | undefined): boolean {
+  if (!s.inShop || !buyer || buyer.draftOffer.length === 0) return false;
+  const cost = rerollCost(buyer.draftRerolls);
+  if (buyer.money < cost) return false;
+  buyer.money -= cost;
+  buyer.draftRerolls += 1;
+  buyer.draftOffer = rollOffer(draftPool(s, buyer), buyer.draftOffer.length, buyer.draftTaken).map(
+    (it) => it.id,
+  );
+  return true;
+}
+
+function renderShop(): void {
+  const me = localPlayer(state);
+  el("shop-credits").textContent = String(me.money);
+  const freeLeft = Math.max(0, CONFIG.arsenal.freePicks - me.draftFreePicksUsed);
+  el("shop-free").textContent =
+    freeLeft > 0 ? `${freeLeft} free pick${freeLeft > 1 ? "s" : ""}` : "free picks used";
+
+  // draft cards (from this player's offer)
+  const cards = me.draftOffer
+    .map((id) => cardItem(state, me, id))
+    .filter((it): it is StoreItem => it !== undefined);
+  const cardKey = (it: StoreItem) =>
+    `${it.id}:${it.price}:${me.draftFreePicksUsed < CONFIG.arsenal.freePicks ? 1 : 0}`;
+  renderList(el("draft-cards"), cards, cardKey, (it, i) => {
+    const free = me.draftFreePicksUsed < CONFIG.arsenal.freePicks;
+    const able = free || it.canBuy(state, me);
+    const d = document.createElement("div");
+    d.className = `dcard${able ? "" : " off"}`;
+    const kind = it.id.startsWith("lvl:") ? "Weapon" : "Perk";
+    const cost = free
+      ? `<span class='dpick'>FREE</span>`
+      : `<span class='sprice'>${it.price}</span>`;
+    d.innerHTML = `<div class='dtop'><span class='dnum'>${i + 1}</span><span class='dkind'>${kind}</span></div><div class='cname'>${it.name}</div><div class='desc'>${it.desc}</div><div class='dfoot'>${cost}</div>`;
+    d.onclick = () => draftTake(it.id);
+    return d;
+  });
+
+  // reroll button state
+  const rc = rerollCost(me.draftRerolls);
+  el("reroll-cost").textContent = String(rc);
+  const rbtn = el<HTMLButtonElement>("rerollBtn");
+  rbtn.onclick = () => draftReroll();
+  rbtn.classList.toggle("off", me.money < rc || me.draftOffer.length === 0);
+
+  // fortify list (deployables) — existing .srow look
+  const forts = storeItems(state, me);
+  renderList(el("choices"), forts, shopRowSig, (it) => {
+    const able = it.canBuy(state, me);
+    const d = document.createElement("div");
+    d.className = `srow${able ? "" : " off"}`;
+    d.innerHTML = `<div class='sinfo'><div class='cname'>${it.name}</div><div class='desc'>${it.desc}</div></div><div class='sprice'>${it.price}</div>`;
+    d.onclick = () => buyItem(it.id);
+    return d;
+  });
+}
+
+/** Buy a Fortify (deployable) item by id. Client → request; host/single → apply + re-render. */
+export function buyItem(itemId: string): void {
   if (!state.inShop) return;
-  const it = shopItems[i];
-  if (!it) return;
   if (Net.mode === "client") {
-    Net.client?.requestBuy(it.id);
+    Net.client?.requestBuy(itemId);
     Audio.ui(true);
     return;
   }
-  if (applyBuy(state, it.id, localPlayer(state))) {
+  if (applyBuy(state, itemId, localPlayer(state))) {
     Audio.ui(true);
-    shopItems = storeItems(state, localPlayer(state));
-    shopSig = shopSigOf(shopItems);
-    if (shopSel >= shopItems.length) shopSel = Math.max(0, shopItems.length - 1);
     renderShop();
   } else {
     Audio.ui(false);
@@ -1202,8 +1250,36 @@ export function deployPlace(): void {
   Audio.ui(applyPlace(state, localPlayer(state)));
 }
 
-export function shopBuySelected(): void {
-  if (state.inShop) buyItem(shopSel);
+/** Take a draft card. Client → request to host; host/single → apply authoritatively + re-render. */
+export function draftTake(cardId: string): void {
+  if (!state.inShop) return;
+  if (Net.mode === "client") {
+    Net.client?.requestDraftTake(cardId);
+    Audio.ui(true);
+    return;
+  }
+  if (applyDraftTake(state, localPlayer(state), cardId)) {
+    Audio.ui(true);
+    renderShop();
+  } else {
+    Audio.ui(false);
+  }
+}
+
+/** Reroll the local player's draft offer. Client → request; host/single → apply + re-render. */
+export function draftReroll(): void {
+  if (!state.inShop) return;
+  if (Net.mode === "client") {
+    Net.client?.requestDraftReroll();
+    Audio.ui(true);
+    return;
+  }
+  if (applyDraftReroll(state, localPlayer(state))) {
+    Audio.ui(true);
+    renderShop();
+  } else {
+    Audio.ui(false);
+  }
 }
 
 /**
@@ -1226,42 +1302,20 @@ export function shopDeploy(): void {
 
 /**
  * Reconcile the shop overlay with `state.inShop` every frame (all modes). Clients open it
- * straight from the snapshot. While open we avoid tearing down the DOM each frame: only a
- * change in the item id-list triggers a full re-render; otherwise we cheaply refresh the
- * credits text and per-row affordance so hover/selection survive.
+ * straight from the snapshot. renderShop is called each frame while open — renderList diffs
+ * so only changed cards rebuild.
  */
 export function syncShopUI(): void {
-  const me = localPlayer(state);
   const open = state.inShop;
   const shown = shopVisible();
   if (open && !shown) {
-    shopItems = storeItems(state, me);
-    shopSig = shopSigOf(shopItems);
-    shopSel = 0;
     el("shop-wave").textContent = String(state.day);
-    renderShop();
     show("shop");
+  } else if (!open && shown) {
+    hide("shop");
     return;
   }
-  if (!open) {
-    if (shown) hide("shop");
-    return;
-  }
-  // open && shown: rebuild only if the item set changed, else a light refresh
-  const items = storeItems(state, me);
-  const sig = shopSigOf(items);
-  if (sig !== shopSig) {
-    shopItems = items;
-    shopSig = sig;
-    if (shopSel >= shopItems.length) shopSel = Math.max(0, shopItems.length - 1);
-    renderShop();
-  } else {
-    el("shop-credits").textContent = String(me.money);
-    shopEls.forEach((d, i) => {
-      const it = shopItems[i];
-      if (it) d.classList.toggle("off", !it.canBuy(state, me));
-    });
-  }
+  if (open) renderShop();
 }
 
 /** End the run on this machine: bank our salvage share and show the debrief. Shared by
@@ -1282,8 +1336,16 @@ function endRun(salvage: number, day: number, kills: number, money: number): voi
 function gameOver(): void {
   // the run's SALVAGE is a party pot, split evenly (floor so co-op never over-banks);
   // each player banks their own share to their own localStorage via the gameover event.
+  // INVARIANT: the players that actually bank == the non-absent set == {host (pid 0, never
+  // absent)} ∪ {open client links}. Host.onClose marks a dropped client `absent` AND splices
+  // its link out of the broadcast set in one synchronous handler, so the two stay in lockstep —
+  // a teammate held `absent` mid-reconnect has no link, receives no gameover event, and must
+  // therefore be excluded from the divisor or it dilutes the present players and leaks its share.
+  // (Not unit-tested at this level — gameOver is DOM/Audio/Net-bound and net code is out of the
+  // pure-test scope per CLAUDE.md; salvageShare carries the split's pure logic + its test.)
   const total = salvageEarned(state.day, state.kills);
-  const share = Math.floor(total / state.players.length);
+  const recipients = state.players.reduce((n, p) => (p.absent ? n : n + 1), 0);
+  const share = salvageShare(total, recipients);
   // money is per-player now; the debrief shows the squad's combined leftover credits
   // (in single-player that's just the one wallet → identical to before).
   const money = state.players.reduce((sum, p) => sum + p.money, 0);
@@ -1307,39 +1369,66 @@ export function toTitle(): void {
   show("start");
 }
 
-/** Render the title-screen ARSENAL panel: SALVAGE balance + weapon unlocks. */
+/** Render the dedicated ARSENAL overlay: SALVAGE balance + WEAPONS and CARDS unlock groups. */
 export function renderArsenal(): void {
   const meta = loadMeta();
-  el("salvage-bal").textContent = String(meta.salvage);
-  const rows = UNLOCKABLE.flatMap((u) => {
+  el("ars-bal").textContent = String(meta.salvage);
+
+  const weaponRows = UNLOCKABLE.flatMap((u) => {
     const w = WEAPONS[u.id];
     if (!w) return [];
     const owned = !!meta.unlocked[u.id];
-    return [{ u, w, owned, able: !owned && meta.salvage >= u.price }];
+    return [
+      { id: u.id, price: u.price, name: w.name, owned, able: !owned && meta.salvage >= u.price },
+    ];
   });
-  renderList(
-    el("arsenal-list"),
-    rows,
-    ({ u, owned, able }) => `${u.id}:${owned}:${able}`,
-    ({ u, w, owned, able }) => {
-      const d = document.createElement("div");
-      d.className = `arow${owned ? " owned" : able ? "" : " off"}`;
-      d.innerHTML = owned
-        ? `<div class='cname'>${w.name}</div><div class='atag'>UNLOCKED</div>`
-        : `<div class='cname'>${w.name}</div><div class='aprice'>${u.price} ◆</div>`;
-      if (!owned && able) d.onclick = () => unlockWeapon(u.id, u.price);
-      return d;
-    },
-  );
+  const cardRows = UNLOCKABLE_CARDS.flatMap((c) => {
+    const perkId = c.id.slice("card:".length);
+    const u = UPGRADES.find((x) => x.id === perkId);
+    if (!u) return [];
+    const owned = !!meta.unlocked[c.id];
+    return [
+      { id: c.id, price: c.price, name: u.name, owned, able: !owned && meta.salvage >= c.price },
+    ];
+  });
+
+  const draw = (boxId: string, rows: typeof weaponRows) =>
+    renderList(
+      el(boxId),
+      rows,
+      (r) => `${r.id}:${r.owned}:${r.able}`,
+      (r) => {
+        const d = document.createElement("div");
+        d.className = `arow${r.owned ? " owned" : r.able ? "" : " off"}`;
+        d.innerHTML = r.owned
+          ? `<div class='cname'>${r.name}</div><div class='atag'>UNLOCKED</div>`
+          : `<div class='cname'>${r.name}</div><div class='aprice'>${r.price} &#9670;</div>`;
+        if (!r.owned && r.able) d.onclick = () => unlockNode(r.id, r.price);
+        return d;
+      },
+    );
+  draw("ars-weapons", weaponRows);
+  draw("ars-cards", cardRows);
 }
 
-function unlockWeapon(id: string, price: number): void {
+function unlockNode(id: string, price: number): void {
   if (buyUnlock(id, price)) {
     Audio.ui(true);
     renderArsenal();
   } else {
     Audio.ui(false);
   }
+}
+
+/** Open the dedicated arsenal overlay from the title screen. */
+export function openArsenal(): void {
+  renderArsenal();
+  show("arsenal-screen");
+}
+
+/** Close the dedicated arsenal overlay and return to the title screen. */
+export function closeArsenal(): void {
+  hide("arsenal-screen");
 }
 
 export function togglePause(): void {
@@ -1377,8 +1466,7 @@ function interactPrompt(): string | null {
   }
   // E targets the nearest of the two (matches interact())
   if (mateD < reach && mateD <= barD) return "[E] heal teammate";
-  if (barD < reach)
-    return p.money >= CONFIG.siege.repairCost ? "[E] repair" : "[E] repair — no credits";
+  if (barD < reach) return "[E] repair";
 
   for (const c of state.caches) {
     if (c.looted) continue;

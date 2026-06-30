@@ -872,20 +872,23 @@ body {
   align-items: center;
   gap: 12px;
   padding: 10px 13px;
-  border: 1px solid var(--line);
+  /* dimmed-toxic at rest so a buyable fortify row reads as clickable */
+  border: 1px solid rgba(125, 255, 79, 0.28);
   background: rgba(0, 0, 0, 0.4);
   text-align: left;
   transition:
     border-color 0.1s,
-    background 0.1s;
+    background 0.1s,
+    box-shadow 0.1s;
 }
-.srow.sel {
+.srow:not(.off):hover {
   border-color: var(--toxic);
   background: rgba(20, 40, 18, 0.5);
-  box-shadow: 0 0 20px rgba(125, 255, 79, 0.28);
+  box-shadow: 0 0 14px rgba(125, 255, 79, 0.2);
 }
 .srow.off {
   opacity: 0.42;
+  border-color: var(--line);
 }
 .srow .snum {
   font-family: var(--display);
@@ -919,6 +922,124 @@ body {
 }
 #shop .btn {
   margin-top: 18px;
+}
+/* nightly draft */
+.draft {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: min(620px, 90vw);
+  margin-top: 14px;
+}
+.dcard {
+  pointer-events: auto;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  min-height: 132px;
+  padding: 11px 12px;
+  /* dimmed-toxic at rest so the card reads as interactive (not a passive panel); full toxic on hover */
+  border: 1px solid rgba(125, 255, 79, 0.32);
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 2px;
+  transition:
+    border-color 0.1s,
+    background 0.1s,
+    box-shadow 0.1s;
+}
+.dcard:hover {
+  border-color: var(--toxic);
+  background: rgba(20, 40, 18, 0.5);
+  box-shadow: 0 0 16px rgba(125, 255, 79, 0.22);
+}
+.dcard.off {
+  opacity: 0.42;
+}
+.dtop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dcard .dnum {
+  font-family: var(--display);
+  font-size: 16px;
+  line-height: 1;
+  color: var(--toxic);
+  min-width: 14px;
+}
+.dcard .dkind {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--dim);
+  text-transform: uppercase;
+}
+.dcard .cname {
+  font-size: 14px;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+.dcard .desc {
+  font-size: 10.5px;
+  color: var(--dim);
+  line-height: 1.4;
+  margin-top: 3px;
+  flex: 1;
+}
+.dcard .dfoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+}
+.dcard .dpick {
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--toxic);
+}
+.dcard .sprice {
+  font-size: 14px;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+.dcard.off .sprice {
+  color: var(--blood);
+}
+.draft-ctl {
+  margin-top: 12px;
+}
+.btn.ghost {
+  margin-top: 0;
+  background: transparent;
+  color: var(--ink);
+  /* toxic outline at rest so it reads as a button, not faint text */
+  box-shadow: 0 0 0 1px rgba(125, 255, 79, 0.45);
+  font-family: var(--display);
+  font-size: clamp(13px, 1.6vw, 16px);
+  letter-spacing: 0.16em;
+  padding: 8px 18px;
+}
+.btn.ghost:hover {
+  box-shadow:
+    0 0 0 1px var(--toxic),
+    0 0 18px rgba(125, 255, 79, 0.3);
+  background: rgba(125, 255, 79, 0.12);
+}
+.btn.ghost b {
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+.fort-label {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--dim);
+  text-transform: uppercase;
+  margin-top: 16px;
+}
+.store.fort {
+  max-height: 22vh;
+  margin-top: 8px;
 }
 .big {
   font-size: clamp(40px, 9vw, 90px);
@@ -1090,14 +1211,6 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* title-screen meta arsenal (permanent weapon unlocks) */
-#arsenal {
-  margin-top: 18px;
-  width: min(360px, 82vw);
-  border: 1px solid var(--line);
-  background: rgba(8, 14, 12, 0.5);
-  padding: 11px 13px;
-}
 .ars-head {
   font-size: 10px;
   letter-spacing: 0.26em;
@@ -1108,13 +1221,6 @@ body {
 .ars-head b {
   color: var(--amber);
   font-variant-numeric: tabular-nums;
-}
-#arsenal-list {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  max-height: clamp(120px, 28vh, 320px);
-  overflow-y: auto;
 }
 .arow {
   display: flex;
@@ -1128,11 +1234,13 @@ body {
 .arow:not(.owned):not(.off) {
   pointer-events: auto;
   cursor: pointer;
-  border-color: var(--line);
+  /* dimmed-toxic at rest so a buyable node reads as clickable */
+  border-color: rgba(125, 255, 79, 0.32);
 }
 .arow:not(.owned):not(.off):hover {
   border-color: var(--toxic);
   background: rgba(20, 40, 18, 0.45);
+  box-shadow: 0 0 14px rgba(125, 255, 79, 0.2);
 }
 .arow .cname {
   color: var(--ink);
@@ -1154,6 +1262,26 @@ body {
   color: var(--dim);
 }
 
+/* arsenal-screen overlay two-column layout */
+.ars-groups {
+  display: flex;
+  gap: 22px;
+  width: min(620px, 92vw);
+  margin-top: 14px;
+  text-align: left;
+}
+.ars-col {
+  flex: 1;
+  min-width: 0;
+}
+.ars-col > div[id] {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
 /* ---- title screen: fit short viewports without scrolling ---- */
 /* step 1: compact spacing + lower arsenal cap + smaller wordmark                  */
 @media (max-height: 820px) {
@@ -1166,16 +1294,6 @@ body {
   #start .controls {
     margin-top: 8px;
     gap: 3px 12px;
-  }
-  #arsenal {
-    margin-top: 10px;
-    padding: 8px 11px;
-  }
-  #arsenal .ars-head {
-    margin-bottom: 5px;
-  }
-  #arsenal-list {
-    max-height: clamp(80px, 16vh, 200px);
   }
   #start .btn {
     margin-top: 14px;
@@ -1200,16 +1318,6 @@ body {
     font-size: 10.5px;
     margin-top: 5px;
     gap: 2px 10px;
-  }
-  #arsenal {
-    margin-top: 6px;
-    padding: 5px 9px;
-  }
-  #arsenal .ars-head {
-    margin-bottom: 3px;
-  }
-  #arsenal-list {
-    max-height: clamp(64px, 10vh, 130px);
   }
   #start .btn {
     margin-top: 8px;

@@ -25,8 +25,14 @@ export function newState(): State {
   // which weapons this run can use: starters always, plus meta-unlocked ones
   const meta = loadMeta();
   const owned: Record<string, boolean> = {};
+  const unlockedCards: Record<string, boolean> = {};
   for (const id of STARTER_WEAPONS) owned[id] = true;
-  for (const id of Object.keys(meta.unlocked)) if (meta.unlocked[id]) owned[id] = true;
+  for (const id of Object.keys(meta.unlocked)) {
+    if (!meta.unlocked[id]) continue;
+    if (id.startsWith("card:"))
+      unlockedCards[id] = true; // perk card unlocks (NOT weapons)
+    else owned[id] = true; // weapon unlocks
+  }
 
   // HOME openings start fully boarded; POI walls join the collision set
   const barricades: Barricade[] = HOME.openings.map((o) => ({
@@ -74,6 +80,7 @@ export function newState(): State {
     wave: { n: 0, def: null, spawnT: 0 },
     kills: 0,
     owned,
+    unlockedCards,
     hash: new SpatialHash(64),
     hitstopT: 0,
     flashT: 0,

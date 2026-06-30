@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CONFIG } from "../config";
 import { newState } from "../state";
 import type { Player, State } from "../types";
-import { UPGRADES } from "./upgrades";
+import { UNLOCKABLE_CARDS, UPGRADES } from "./upgrades";
 import { WEAPON_ORDER, WEAPONS } from "./weapons";
 
 const byName = (name: string) => {
@@ -109,6 +109,29 @@ describe("UPGRADES preview()", () => {
       const txt = u.preview?.(s, p);
       expect(typeof txt).toBe("string");
       expect((txt ?? "").length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("UPGRADES id/starter split", () => {
+  it("every upgrade has a unique id", () => {
+    const ids = UPGRADES.map((u) => u.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+  it("exactly three starter perks", () => {
+    expect(
+      UPGRADES.filter((u) => u.starter)
+        .map((u) => u.id)
+        .sort(),
+    ).toEqual(["adrenaline", "fieldMedic", "hollowPoints"]);
+  });
+  it("UNLOCKABLE_CARDS reference real non-starter perks via card: namespace", () => {
+    for (const c of UNLOCKABLE_CARDS) {
+      expect(c.id.startsWith("card:")).toBe(true);
+      const perkId = c.id.slice("card:".length);
+      const u = UPGRADES.find((x) => x.id === perkId);
+      expect(u, `perk for ${c.id}`).toBeDefined();
+      expect(u?.starter).toBe(false);
     }
   });
 });
