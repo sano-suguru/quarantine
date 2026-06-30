@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG } from "../config";
+import { localPlayer } from "../engine/players";
 import { newState } from "../state";
 import type { State, WeaponDef } from "../types";
 import {
+  CARD_ORDER,
+  cardItem,
   effWeapon,
   levelCost,
   meleeArc,
@@ -73,5 +76,36 @@ describe("salvage earned per run", () => {
   });
   it("sums day + kill contributions, rounded", () => {
     expect(salvageEarned(3, 20)).toBe(Math.round(3 * a.salvagePerDay + 20 * a.salvagePerKill));
+  });
+});
+
+describe("cardItem", () => {
+  it("resolves a starter perk card", () => {
+    const s = newState();
+    const item = cardItem(s, localPlayer(s), "perk:hollowPoints");
+    expect(item?.name).toBe("Hollow Points");
+    expect(item?.price).toBe(80);
+  });
+  it("resolves a weapon upgrade card with the right Mk label and price", () => {
+    const s = newState();
+    const p = localPlayer(s);
+    const item = cardItem(s, p, "lvl:pistol");
+    expect(item?.name).toBe("PISTOL ▸ Mk 2");
+    expect(item?.price).toBe(60); // levelBaseCost at level 0
+  });
+  it("returns undefined for a maxed weapon", () => {
+    const s = newState();
+    const p = localPlayer(s);
+    p.wlevel.pistol = 3; // maxLevel
+    expect(cardItem(s, p, "lvl:pistol")).toBeUndefined();
+  });
+  it("returns undefined for an unknown id", () => {
+    const s = newState();
+    expect(cardItem(s, localPlayer(s), "bogus:x")).toBeUndefined();
+  });
+  it("CARD_ORDER lists perk then weapon cards, no melee", () => {
+    expect(CARD_ORDER).toContain("perk:fieldMedic");
+    expect(CARD_ORDER).toContain("lvl:shotgun");
+    expect(CARD_ORDER).not.toContain("lvl:knife");
   });
 });

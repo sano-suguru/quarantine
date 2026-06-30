@@ -110,3 +110,54 @@ export function storeItems(state: State, buyer: Player): StoreItem[] {
 
   return items;
 }
+
+/**
+ * Resolve a single draft card id to a StoreItem (used by host to apply and by client to render).
+ * `perk:<perkId>` → a perk card; `lvl:<weaponId>` → that weapon's next-Mk upgrade (undefined if
+ * the weapon is melee/unknown or already at maxLevel). Reuses the StoreItem abstraction — no new type.
+ */
+export function cardItem(_state: State, buyer: Player, id: string): StoreItem | undefined {
+  const a = CONFIG.arsenal;
+  if (id.startsWith("perk:")) {
+    const perkId = id.slice("perk:".length);
+    const u = UPGRADES.find((x) => x.id === perkId);
+    if (!u) return undefined;
+    return {
+      id,
+      name: u.name,
+      desc: u.desc,
+      price: a.perkCost,
+      canBuy: (_s, b) => b.money >= a.perkCost,
+      buy: (s, b) => u.apply(s, b),
+    };
+  }
+  if (id.startsWith("lvl:")) {
+    const wid = id.slice("lvl:".length);
+    const w = WEAPONS[wid];
+    if (!w || w.melee) return undefined;
+    const lvl = buyer.wlevel[wid] ?? 0;
+    if (lvl >= a.maxLevel) return undefined;
+    const price = levelCost(lvl);
+    return {
+      id,
+      name: `${w.name} ▸ Mk ${lvl + 2}`,
+      desc: `+${Math.round(a.dmgPerLevel * 100)}% dmg · +${Math.round(a.magPerLevel * 100)}% mag`,
+      price,
+      canBuy: (_s, b) => b.money >= price && (b.wlevel[wid] ?? 0) < a.maxLevel,
+      buy: (_s, b) => {
+        b.wlevel[wid] = (b.wlevel[wid] ?? 0) + 1;
+      },
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Stable wire order of every possible draft card id (perk cards then weapon-upgrade cards).
+ * APPEND-ONLY — this is the snapshot index for Player.draftOffer (see snapshot.ts). Adding a perk
+ * or weapon appends; never reorder.
+ */
+export const CARD_ORDER: string[] = [
+  ...UPGRADES.map((u) => `perk:${u.id}`),
+  ...WEAPON_ORDER.filter((id) => !WEAPONS[id]?.melee).map((id) => `lvl:${id}`),
+];
