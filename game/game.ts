@@ -1,8 +1,12 @@
 import { CONFIG } from "./config";
 import {
+  cardItem,
+  draftPool,
   effWeapon,
   meleeArc,
   meleeReach,
+  rerollCost,
+  rollOffer,
   type StoreItem,
   salvageEarned,
   storeItems,
@@ -1087,6 +1091,7 @@ function openShop(): void {
   // (a survivor cleared the wave to reach here). Gear is kept; see revivePlayer.
   for (const p of state.players) if (p.hp <= 0) revivePlayer(state, p);
   resupply();
+  for (const p of state.players) rollDraft(state, p); // host/single: roll each player's offer
 }
 
 /**
@@ -1119,6 +1124,46 @@ export function applyPlace(s: State, player: Player | undefined): boolean {
   if (!spot) return false;
   placeDeployable(s, defId, spot.x, spot.y);
   player.deployQueue.shift();
+  return true;
+}
+
+/** Host/single: roll a fresh nightly offer for player `p` and reset their free pick + reroll count. */
+export function rollDraft(state: State, p: Player): void {
+  p.draftOffer = rollOffer(draftPool(state, p), CONFIG.arsenal.offerSize).map((it) => it.id);
+  p.draftFreeUsed = false;
+  p.draftRerolls = 0;
+}
+
+/**
+ * Apply a draft "take" host-authoritatively. The first take of the night is FREE (sets
+ * draftFreeUsed); subsequent takes cost SCRAP (canBuy-gated). The card must be in the buyer's
+ * current offer. Returns false (changing nothing) on any guard miss.
+ */
+export function applyDraftTake(s: State, buyer: Player | undefined, cardId: string): boolean {
+  if (!s.inShop || !buyer?.draftOffer.includes(cardId)) return false;
+  const it = cardItem(s, buyer, cardId);
+  if (!it) return false;
+  if (!buyer.draftFreeUsed) {
+    it.buy(s, buyer);
+    buyer.draftFreeUsed = true;
+  } else {
+    if (!it.canBuy(s, buyer)) return false;
+    buyer.money -= it.price;
+    it.buy(s, buyer);
+  }
+  buyer.draftOffer = buyer.draftOffer.filter((id) => id !== cardId);
+  return true;
+}
+
+/** Apply a draft reroll host-authoritatively: charge escalating SCRAP, bump the reroll counter,
+ *  and redraw the same number of cards the buyer currently has shown. */
+export function applyDraftReroll(s: State, buyer: Player | undefined): boolean {
+  if (!s.inShop || !buyer || buyer.draftOffer.length === 0) return false;
+  const cost = rerollCost(buyer.draftRerolls);
+  if (buyer.money < cost) return false;
+  buyer.money -= cost;
+  buyer.draftRerolls += 1;
+  buyer.draftOffer = rollOffer(draftPool(s, buyer), buyer.draftOffer.length).map((it) => it.id);
   return true;
 }
 
