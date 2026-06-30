@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { goreIntensity } from "./fx";
+import { gibsToSpawn, goreIntensity } from "./fx";
 
 const DMG_REF = 90;
 const LOW = 0.33;
@@ -43,5 +43,28 @@ describe("goreIntensity", () => {
     const prevHp = 85;
     const nextHp = 72;
     expect(gi(13, nextHp, 85)).toBe(gi(prevHp - nextHp, nextHp, 85));
+  });
+});
+
+describe("gibsToSpawn", () => {
+  // signature: (intensity, fillRatio, threshold=0.5, min=2, max=7, fillCap=0.85)
+  it("emits nothing below the intensity threshold", () => {
+    expect(gibsToSpawn(0.4, 0, 0.5, 2, 7, 0.85)).toBe(0);
+  });
+
+  it("emits nothing once the particle buffer is past the fill cap", () => {
+    expect(gibsToSpawn(1, 0.9, 0.5, 2, 7, 0.85)).toBe(0);
+  });
+
+  it("emits the full count at max intensity with an empty buffer", () => {
+    expect(gibsToSpawn(1, 0, 0.5, 2, 7, 0.85)).toBe(7);
+  });
+
+  it("at exactly the threshold it still emits (lerped)", () => {
+    expect(gibsToSpawn(0.5, 0, 0.5, 2, 7, 0.85)).toBe(5); // round(lerp(2,7,0.5)=4.5)=5
+  });
+
+  it("throttles the count down as the buffer fills", () => {
+    expect(gibsToSpawn(1, 0.5, 0.5, 2, 7, 0.85)).toBe(4); // round(7 * 0.5 = 3.5) = 4
   });
 });

@@ -1,5 +1,5 @@
 import { CONFIG } from "../config";
-import { clamp, mixRGB, rand } from "../engine/math";
+import { clamp, lerp, mixRGB, rand } from "../engine/math";
 import type { ParticleKind, State } from "../types";
 
 const MAX_TEXTS = 160;
@@ -24,6 +24,25 @@ export function goreIntensity(
   const fracAfter = Math.max(0, hpAfter) / maxHp;
   const finisher = hpAfter <= 0 ? 1 : fracAfter <= lowHpBand ? 1 - fracAfter / lowHpBand : 0;
   return clamp(absScale + finisherBonus * finisher, 0, 1);
+}
+
+/**
+ * Pure: how many flesh chunks a hit should emit. Gated by an intensity threshold and
+ * throttled against the live particle fill ratio so gibs (the only NEW particle source)
+ * can never starve muzzle/spark/blood FX out of the shared cap. Stateless — no live-gib
+ * counter to keep in sync with expiry.
+ */
+export function gibsToSpawn(
+  intensity: number,
+  fillRatio: number,
+  threshold: number,
+  countMin: number,
+  countMax: number,
+  fillCap: number,
+): number {
+  if (intensity < threshold) return 0;
+  if (fillRatio >= fillCap) return 0;
+  return Math.round(lerp(countMin, countMax, intensity) * (1 - fillRatio));
 }
 
 function spawn(
