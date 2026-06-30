@@ -416,6 +416,8 @@ export function draw(): void {
       flc.flickerDepth,
       flc.baseFlickerDepth,
       flickerNoise(state.time, pl.id),
+      flc.dimFloor,
+      flc.dimStart,
     );
     cands.push({
       x: pl.x,

@@ -144,6 +144,8 @@ export const CONFIG = {
     lowThreshold: 0.25, // battery fraction where the DEEP flicker begins
     flickerDepth: 0.4, // how deep the low-battery flicker dips the cone
     baseFlickerDepth: 0.04, // subtle constant flicker even at full battery (a failing bulb)
+    dimFloor: 0.45, // steady cone brightness floor while lit — the beam never dims below this between flickers (fairness)
+    dimStart: 0.6, // battery fraction at/above which the cone is full-bright; below it the cone dims toward dimFloor
     shopBattery: 60, // safe-room battery resupply
     dropChance: 0.04, // chance a kill drops a battery (rarer than ammo)
     // dust motes drifting in the cone (visual only, drawn in draw() from state.time — no sim
