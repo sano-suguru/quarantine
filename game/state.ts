@@ -67,7 +67,6 @@ export function newState(): State {
     bullets: [],
     pickups: [],
     particles: [],
-    texts: [],
     decals: [],
     walls,
     barricades,

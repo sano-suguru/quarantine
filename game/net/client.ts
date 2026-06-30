@@ -7,7 +7,7 @@ import { approach, rand } from "../engine/math";
 import { localPlayer } from "../engine/players";
 import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
 import { applyFireFeel } from "../systems/feel";
-import { fxHurt, fxImpact, fxKill } from "../systems/fx";
+import { fxHurt, fxImpact, fxKill, goreIntensity } from "../systems/fx";
 import { integrateMovement } from "../systems/player";
 import type { Bullet } from "../types";
 import { advanceGhosts } from "./ghost";
@@ -237,7 +237,18 @@ export class Client {
       const p = pz.get(z.id);
       if (p && z.flash > p.flash + 0.01) {
         const t = ENEMY_TYPES[z.type];
-        fxImpact(st, z.x, z.y, Math.random() * Math.PI * 2, (t?.color ?? GREY) as RGB);
+        // re-derive gore strength from the synced hp drop (no dmg travels in snapshots).
+        // Exact for non-lethal hits; the killing-frame finisher spray is host-only (see spec §E).
+        const g = CONFIG.fx.gore;
+        const intensity = goreIntensity(
+          p.hp - z.hp,
+          z.hp,
+          z.maxHp,
+          g.dmgRef,
+          g.lowHpBand,
+          g.finisherBonus,
+        );
+        fxImpact(st, z.x, z.y, Math.random() * Math.PI * 2, (t?.color ?? GREY) as RGB, intensity);
         Audio.hit();
       }
     }

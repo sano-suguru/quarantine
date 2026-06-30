@@ -1,10 +1,47 @@
 import { CONFIG } from "../config";
-import { mixRGB, rand } from "../engine/math";
+import { clamp, lerp, mixRGB, rand } from "../engine/math";
 import type { ParticleKind, State } from "../types";
 
-const MAX_TEXTS = 160;
-
 type RGB = [number, number, number];
+
+/**
+ * Pure gore intensity (0..1) for one hit, split out for unit testing (mirrors
+ * flashlightIntensity's scalar style). The base is the weapon's ABSOLUTE damage, so a
+ * heavy gun always sprays more; the fraction-of-hp contributes only as a near-lethal
+ * "finisher" bonus, so a light tap on a low-hp mob does NOT over-gore.
+ */
+export function goreIntensity(
+  dmgDealt: number,
+  hpAfter: number,
+  maxHp: number,
+  dmgRef: number,
+  lowHpBand: number,
+  finisherBonus: number,
+): number {
+  const absScale = clamp(dmgDealt / dmgRef, 0, 1);
+  const fracAfter = Math.max(0, hpAfter) / maxHp;
+  const finisher = hpAfter <= 0 ? 1 : fracAfter <= lowHpBand ? 1 - fracAfter / lowHpBand : 0;
+  return clamp(absScale + finisherBonus * finisher, 0, 1);
+}
+
+/**
+ * Pure: how many flesh chunks a hit should emit. Gated by an intensity threshold and
+ * throttled against the live particle fill ratio so gibs (the only NEW particle source)
+ * can never starve muzzle/spark/blood FX out of the shared cap. Stateless — no live-gib
+ * counter to keep in sync with expiry.
+ */
+export function gibsToSpawn(
+  intensity: number,
+  fillRatio: number,
+  threshold: number,
+  countMin: number,
+  countMax: number,
+  fillCap: number,
+): number {
+  if (intensity < threshold) return 0;
+  if (fillRatio >= fillCap) return 0;
+  return Math.round(lerp(countMin, countMax, intensity) * (1 - fillRatio));
+}
 
 function spawn(
   state: State,
@@ -79,9 +116,19 @@ export function fxMuzzle(state: State, x: number, y: number, aim: number, color:
   // the firing player's muzzle-flash timer is set in fireWeapon (per-player)
 }
 
-/** sparks where a bullet bites a zombie */
-export function fxImpact(state: State, x: number, y: number, dir: number, color: RGB): void {
-  for (let i = 0; i < 6; i++) {
+/** sparks + blood where a hit bites flesh; richer the harder/closer-to-lethal the hit (intensity 0..1).
+ *  intensity defaults to 0 so non-combat callers (wall/barricade/RTB sparks) render exactly as before. */
+export function fxImpact(
+  state: State,
+  x: number,
+  y: number,
+  dir: number,
+  color: RGB,
+  intensity = 0,
+): void {
+  const g = CONFIG.fx.gore;
+  const sparks = Math.round(lerp(g.sparks[0], g.sparks[1], intensity));
+  for (let i = 0; i < sparks; i++) {
     const a = dir + rand(-1.0, 1.0);
     const sp = rand(120, 360);
     spawn(
@@ -97,8 +144,34 @@ export function fxImpact(state: State, x: number, y: number, dir: number, color:
       7,
     );
   }
-  bloodSpeck(state, x, y, color, 3);
-  bloodPool(state, x, y, false, dir);
+  bloodSpeck(state, x, y, color, Math.round(lerp(g.specks[0], g.specks[1], intensity)));
+  bloodPool(state, x, y, intensity >= g.poolBigAt, dir);
+  // flesh chunks on heavy / finishing hits — throttled so they never starve muzzle/spark FX
+  const fill = state.particles.length / CONFIG.fx.maxParticles;
+  const gibs = gibsToSpawn(
+    intensity,
+    fill,
+    g.gibThreshold,
+    g.gibCount[0],
+    g.gibCount[1],
+    g.gibFillCap,
+  );
+  for (let i = 0; i < gibs; i++) {
+    const a = dir + rand(-0.7, 0.7);
+    const sp = rand(80, 260);
+    spawn(
+      state,
+      x,
+      y,
+      Math.cos(a) * sp,
+      Math.sin(a) * sp,
+      rand(0.25, 0.5),
+      rand(2, 4.5),
+      color,
+      "shard",
+      4,
+    );
+  }
 }
 
 /** death burst — shockwave ring, viscera shards, glowing embers */
@@ -246,26 +319,7 @@ function pushDecal(state: State, x: number, y: number, r: number, color: RGB): v
   });
 }
 
-export function fxDamageText(
-  state: State,
-  x: number,
-  y: number,
-  value: number,
-  crit: boolean,
-): void {
-  if (state.texts.length >= MAX_TEXTS) state.texts.shift();
-  state.texts.push({
-    x: x + rand(-6, 6),
-    y,
-    vy: -rand(60, 90),
-    life: crit ? 0.85 : 0.6,
-    maxLife: crit ? 0.85 : 0.6,
-    value: Math.round(value),
-    crit,
-  });
-}
-
-/** advance all visual-only state: particles, floating text, blood decals */
+/** advance all visual-only state: particles, blood decals */
 export function sysFx(state: State, dt: number): void {
   const P = state.particles;
   for (let i = P.length - 1; i >= 0; i--) {
@@ -285,19 +339,6 @@ export function sysFx(state: State, dt: number): void {
       p.vx *= k;
       p.vy *= k;
     }
-  }
-
-  const T = state.texts;
-  for (let i = T.length - 1; i >= 0; i--) {
-    const t = T[i] as (typeof T)[number];
-    t.life -= dt;
-    if (t.life <= 0) {
-      T[i] = T[T.length - 1] as (typeof T)[number];
-      T.pop();
-      continue;
-    }
-    t.y += t.vy * dt;
-    t.vy *= Math.exp(-3 * dt);
   }
 
   const D = state.decals;

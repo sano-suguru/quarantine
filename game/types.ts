@@ -280,16 +280,6 @@ interface Particle {
   drag: number;
 }
 
-interface DamageText {
-  x: number;
-  y: number;
-  vy: number;
-  life: number;
-  maxLife: number;
-  value: number;
-  crit: boolean;
-}
-
 interface Decal {
   x: number;
   y: number;
@@ -461,7 +451,6 @@ export interface State {
   bullets: Bullet[];
   pickups: Pickup[];
   particles: Particle[];
-  texts: DamageText[];
   decals: Decal[];
   /** static shelter walls (block player, zombies and bullets) */
   walls: Segment[];
