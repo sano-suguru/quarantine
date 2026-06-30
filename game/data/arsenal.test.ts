@@ -17,6 +17,7 @@ import {
   salvageEarned,
   scaledDmg,
   scaledMag,
+  storeItems,
 } from "./arsenal";
 import { WEAPONS } from "./weapons";
 
@@ -184,5 +185,14 @@ describe("rerollCost", () => {
     expect(rerollCost(0)).toBe(30);
     expect(rerollCost(1)).toBe(55);
     expect(rerollCost(2)).toBe(80);
+  });
+});
+
+describe("storeItems is fortify-only", () => {
+  it("returns only deploy: items", () => {
+    const s = newState();
+    const ids = storeItems(s, localPlayer(s)).map((it) => it.id);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.every((id) => id.startsWith("deploy:"))).toBe(true);
   });
 });

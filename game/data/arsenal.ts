@@ -54,45 +54,11 @@ export interface StoreItem {
   buy: (s: State, buyer: Player) => void;
 }
 
-/** Build the store list for `buyer`: weapon upgrades + field perks priced off their own
- *  wallet/levels (the shop is each player's personal locker). `owned` is still shared. */
+/** Build the Fortify (deployables) store list for `buyer`. Weapon upgrades and perks moved to the
+ *  nightly draft (draftPool); this now returns only the spatial fortifications, priced off the
+ *  buyer's own wallet. `applyBuy` still resolves these by id. */
 export function storeItems(state: State, buyer: Player): StoreItem[] {
   const items: StoreItem[] = [];
-  const a = CONFIG.arsenal;
-
-  for (const id of WEAPON_ORDER) {
-    const w = WEAPONS[id];
-    if (!w || w.melee || !state.owned[id]) continue;
-    const lvl = buyer.wlevel[id] ?? 0;
-    if (lvl >= a.maxLevel) continue;
-    const price = levelCost(lvl);
-    items.push({
-      id: `lvl:${id}`,
-      name: `${w.name} ▸ Mk ${lvl + 2}`,
-      desc: `+${Math.round(a.dmgPerLevel * 100)}% dmg · +${Math.round(a.magPerLevel * 100)}% mag`,
-      price,
-      canBuy: (_s, b) => b.money >= price && (b.wlevel[id] ?? 0) < a.maxLevel,
-      buy: (_s, b) => {
-        b.wlevel[id] = (b.wlevel[id] ?? 0) + 1;
-      },
-    });
-  }
-
-  for (const u of UPGRADES) {
-    items.push({
-      id: `perk:${u.name}`,
-      name: u.name,
-      desc: u.desc,
-      price: a.perkCost,
-      canBuy: (_s, b) => b.money >= a.perkCost,
-      buy: (s, b) => u.apply(s, b),
-    });
-  }
-
-  // Fortify: buy with your own credits into your personal deploy queue, then drop it at your
-  // feet in the field (Q). A placed structure benefits the whole squad. The cap is the shared
-  // world-placed limit; the buy gate is the per-player view (placed + what you already hold), so
-  // you can't stockpile beyond what you could place — the hard cap is re-checked at place time.
   for (const id of Object.keys(DEPLOYABLE_TYPES)) {
     const d = DEPLOYABLE_TYPES[id] as DeployableDef;
     const queued = (b: Player) => b.deployQueue.reduce((n, q) => (q === id ? n + 1 : n), 0);
@@ -107,7 +73,6 @@ export function storeItems(state: State, buyer: Player): StoreItem[] {
       },
     });
   }
-
   return items;
 }
 
