@@ -416,6 +416,8 @@ export function draw(): void {
       flc.flickerDepth,
       flc.baseFlickerDepth,
       flickerNoise(state.time, pl.id),
+      flc.dimFloor,
+      flc.dimStart,
     );
     cands.push({
       x: pl.x,
@@ -936,18 +938,6 @@ export function updateHUD(): void {
   const lowAmmo = !wd.melee && wd.mag > 0 && (p.ammo === 0 || totalAmmo < wd.mag);
   el("ammo").classList.toggle("low", lowAmmo);
 
-  // flashlight battery
-  const batf = p.battery / CONFIG.flashlight.batteryMax;
-  el("batbar").style.width = `${100 * batf}%`;
-  const batBlock = el("battery");
-  batBlock.classList.toggle("low", p.lightOn && batf < CONFIG.flashlight.lowThreshold);
-  batBlock.classList.toggle("off", !p.lightOn || p.battery <= 0);
-  el("bat-state").textContent = !p.lightOn
-    ? "OFF"
-    : p.battery <= 0
-      ? "DEAD"
-      : `${Math.ceil(batf * 100)}%`;
-
   // medkits
   el("medkit-val").textContent = String(p.medkits);
   el("medkit").classList.toggle("empty", p.medkits <= 0);
@@ -981,9 +971,6 @@ export function updateHUD(): void {
   promptEl.classList.toggle("show", ip !== null);
 
   el("money").textContent = String(p.money);
-  // live hostile count — meaningful in both phases now that night survivors carry into the day
-  el("remaining").textContent = String(state.zombies.length);
-
   // weapon slot highlight (slots are built per run from owned weapons)
   if (p.weapon !== lastWeapon) {
     lastWeapon = p.weapon;
@@ -1463,10 +1450,7 @@ function interactPrompt(): string | null {
 
   for (const c of state.caches) {
     if (c.looted) continue;
-    if (Math.hypot(c.x - p.x, c.y - p.y) < reach)
-      return state.phase === "night"
-        ? "stand still to search — risky! (draws the horde)"
-        : "stand still to search";
+    if (Math.hypot(c.x - p.x, c.y - p.y) < reach) return "stand still to search";
   }
   return null;
 }
