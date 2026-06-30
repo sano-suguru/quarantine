@@ -1450,10 +1450,7 @@ function interactPrompt(): string | null {
 
   for (const c of state.caches) {
     if (c.looted) continue;
-    if (Math.hypot(c.x - p.x, c.y - p.y) < reach)
-      return state.phase === "night"
-        ? "stand still to search — risky! (draws the horde)"
-        : "stand still to search";
+    if (Math.hypot(c.x - p.x, c.y - p.y) < reach) return "stand still to search";
   }
   return null;
 }
