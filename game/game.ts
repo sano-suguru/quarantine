@@ -971,9 +971,6 @@ export function updateHUD(): void {
   promptEl.classList.toggle("show", ip !== null);
 
   el("money").textContent = String(p.money);
-  // live hostile count — meaningful in both phases now that night survivors carry into the day
-  el("remaining").textContent = String(state.zombies.length);
-
   // weapon slot highlight (slots are built per run from owned weapons)
   if (p.weapon !== lastWeapon) {
     lastWeapon = p.weapon;
