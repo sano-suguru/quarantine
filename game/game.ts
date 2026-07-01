@@ -505,21 +505,12 @@ export function draw(): void {
     const face = Math.atan2(ft.y - z.y, ft.x - z.x);
     const fl = z.flash > 0 ? z.flash / 0.12 : 0;
     // wound: bleed the body toward blood color + darken slightly as hp drops (persistent),
-    // then layer the transient white hit-flash on top. The body is non-additive, so this
-    // still goes black outside the flashlight cone — no leak of lurkers in the dark.
+    // then layer the transient white hit-flash on top. The body is non-additive: out of cone it
+    // dims to ambient (gloom), reading as a faint silhouette rather than a lit body — the dark's
+    // tell is that shape, not the old diffuse additive halo (removed: it didn't fit the sprites).
     const wound = 1 - z.hp / z.maxHp;
     const gg = CONFIG.fx.gore;
     const dk = 1 - gg.woundDarken * wound;
-    const pulse = z.type === "brute" ? 0.5 + 0.3 * Math.sin(state.time * 4) : 0.4;
-    R.glow(
-      zx,
-      zy,
-      rad * 2.1,
-      z.glow[0],
-      z.glow[1],
-      z.glow[2],
-      (0.3 + 0.4 * fl + pulse * 0.2) * grow,
-    );
 
     const spriteKey = ENEMY_TYPES[z.type]?.sprite;
     const layer = spriteKey ? R.spriteLayer(spriteKey) : -1;

@@ -197,8 +197,12 @@ export const CONFIG = {
   },
   siege: {
     dayDuration: 35, // seconds of the lit scavenge/repair phase
-    dayAmbient: 0.45, // bright enough to roam the arena in daylight
-    nightAmbient: 0.04, // near-black; the flashlight cone is essential
+    dayAmbient: 0.55, // bright enough to roam the arena in daylight
+    // gloom, not a void: high-albedo things (walls ~0.33, enemy sprites ~0.5) surface as faint
+    // silhouettes out of cone while the low-albedo floor (grid base ~0.05) stays near-black — so
+    // the cone still owns rich detail + reach. Raised from 0.04 (true near-black) after playtesters
+    // reported the world unreadably dark; tuned by eye for "gloom, cone still the hero".
+    nightAmbient: 0.1,
     boardMaxHp: 120, // a fresh barricade's hp
     repairAmount: 40, // hp restored per repair press
     repairCost: 0, // repair is free labor (time/repairCd-gated); SCRAP is reserved for the draft + fortify

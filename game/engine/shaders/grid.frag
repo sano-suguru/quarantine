@@ -38,9 +38,10 @@ void main(){
   vec2 world = u_cam + vec2(v_clip.x, -v_clip.y) * u_half;
   float minor = gridLine(world, 80.0)  * 0.06;
   float major = gridLine(world, 400.0) * 0.10;
-  vec3 base = vec3(0.027,0.039,0.031);
+  vec3 base = vec3(0.05,0.065,0.055);
   vec3 col = base + vec3(0.49,1.0,0.31) * (minor+major);
-  // the floor sinks to black outside the flashlight
+  // the floor dims toward black outside the flashlight (base kept low so it stays the darkest
+  // surface — walls/enemies out-of-cone read as lighter silhouettes against it)
   col *= lightAt(world);
   col = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, u_sat) * u_dim;
   frag = vec4(col,1.0);
