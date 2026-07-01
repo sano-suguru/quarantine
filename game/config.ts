@@ -131,6 +131,9 @@ export const CONFIG = {
     dartChancePerLurk: 0.05, // per-second dart probability contributed by each lurking zombie
     dartSpeed: 900, // world units/sec the streak crosses at
     dartLife: 0.16, // seconds a streak lives
+    // HP→world desaturation ease rate: exponential-lerp speed constant (per sec). ~12 → ~0.25 s
+    // settle, matching the old CSS transition: filter 0.25s ease-out cadence.
+    desatEaseRate: 12,
     // HP→world desaturation: the continuous "wound" readout that replaces the Integrity bar.
     // Full color at/above desatOnset (calm zone, day readability); saturation eases to
     // desatFloor and brightness drops by desatDim as HP drains to 0. desatGamma shapes the

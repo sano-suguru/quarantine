@@ -500,8 +500,11 @@ function flush(camX: number, camY: number): void {
     gl.bindVertexArray(gridVAO);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
-  // always leave flush in the default blend state (additive left SRC_ALPHA,ONE; the next
-  // frame's grid pass sets no blendFunc and relies on this being the alpha-over default).
+  // Leave flush in the default alpha-over blend state. The framebuffer auto-clears each frame
+  // (preserveDrawingBuffer is unset) and the grid pass outputs alpha=1, so it is blend-mode-
+  // independent and does not rely on this reset. The unconditional blendFunc here makes the
+  // end-of-flush blend state deterministic after the optional blood pass (which switches to
+  // ONE_MINUS_SRC_ALPHA and may or may not run each frame), so callers get a predictable baseline.
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindVertexArray(null);
 }
