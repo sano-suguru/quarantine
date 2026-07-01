@@ -9,6 +9,8 @@ uniform float u_lightInt[MAX_LIGHTS];
 uniform vec2 u_lightCone[MAX_LIGHTS];  // per-light: x = cos(halfAngle), y = range
 uniform float u_ambient; // shared ambient light floor
 uniform vec2 u_personal; // shared: x: radius, y: max brightness of the dim pool
+uniform float u_sat; // grade: 1 = full colour, 0 = greyscale
+uniform float u_dim; // grade: 1 = normal brightness, 0 = black
 out vec4 frag;
 float gridLine(vec2 w, float g){
   vec2 a = abs(fract(w/g - 0.5) - 0.5) / fwidth(w/g);
@@ -40,5 +42,6 @@ void main(){
   vec3 col = base + vec3(0.49,1.0,0.31) * (minor+major);
   // the floor sinks to black outside the flashlight
   col *= lightAt(world);
+  col = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, u_sat) * u_dim;
   frag = vec4(col,1.0);
 }

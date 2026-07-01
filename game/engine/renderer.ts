@@ -61,6 +61,12 @@ let b_half: WebGLUniformLocation | null;
 let bloodIntensity = 0;
 let bloodPulse = 0;
 let bloodTime = 0;
+let g_sat: WebGLUniformLocation | null;
+let g_dim: WebGLUniformLocation | null;
+let u_sat: WebGLUniformLocation | null;
+let u_dim: WebGLUniformLocation | null;
+let gradeSat = 1;
+let gradeDim = 1;
 
 interface Layer {
   vao: WebGLVertexArrayObject;
@@ -134,6 +140,8 @@ function init(cv: HTMLCanvasElement): void {
   u_lightCone = gl.getUniformLocation(instProg, "u_lightCone");
   u_personal = gl.getUniformLocation(instProg, "u_personal");
   u_emissive = gl.getUniformLocation(instProg, "u_emissive");
+  u_sat = gl.getUniformLocation(instProg, "u_sat");
+  u_dim = gl.getUniformLocation(instProg, "u_dim");
 
   quadVBO = gl.createBuffer() as WebGLBuffer;
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
@@ -152,6 +160,8 @@ function init(cv: HTMLCanvasElement): void {
   g_ambient = gl.getUniformLocation(gridProg, "u_ambient");
   g_lightCone = gl.getUniformLocation(gridProg, "u_lightCone");
   g_personal = gl.getUniformLocation(gridProg, "u_personal");
+  g_sat = gl.getUniformLocation(gridProg, "u_sat");
+  g_dim = gl.getUniformLocation(gridProg, "u_dim");
   gridVAO = gl.createVertexArray() as WebGLVertexArrayObject;
   gl.bindVertexArray(gridVAO);
   const triVBO = gl.createBuffer();
@@ -208,6 +218,13 @@ function setBlood(intensity: number, pulse: number, time: number): void {
   bloodIntensity = intensity;
   bloodPulse = pulse;
   bloodTime = time;
+}
+
+/** HP-driven world grade: sat (1 = full colour, 0 = greyscale), dim (1 = normal, 0 = black).
+ *  Applied to grid + instance world passes BEFORE the blood vignette. Render-only. */
+function setGrade(sat: number, dim: number): void {
+  gradeSat = sat;
+  gradeDim = dim;
 }
 
 /** start a new frame's light list (call before addLight) */
@@ -445,6 +462,8 @@ function flush(camX: number, camY: number): void {
   gl.uniform2fv(g_lightCone, lightCone);
   gl.uniform1f(g_ambient, coneAmbient);
   gl.uniform2f(g_personal, personalRadius, personalMax);
+  gl.uniform1f(g_sat, gradeSat);
+  gl.uniform1f(g_dim, gradeDim);
   gl.bindVertexArray(gridVAO);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -458,6 +477,8 @@ function flush(camX: number, camY: number): void {
   gl.uniform2fv(u_lightCone, lightCone);
   gl.uniform1f(u_ambient, coneAmbient);
   gl.uniform2f(u_personal, personalRadius, personalMax);
+  gl.uniform1f(u_sat, gradeSat);
+  gl.uniform1f(u_dim, gradeDim);
 
   // normal pass (bodies, ground): fully darkened outside the light
   gl.uniform1f(u_emissive, 0);
@@ -494,6 +515,7 @@ export const Renderer = {
   begin,
   setLightParams,
   setBlood,
+  setGrade,
   beginLights,
   addLight,
   sprite,
