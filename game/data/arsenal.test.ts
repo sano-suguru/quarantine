@@ -7,6 +7,7 @@ import type { StoreItem } from "./arsenal";
 import {
   CARD_ORDER,
   cardItem,
+  cycleWeaponSlot,
   draftPool,
   effWeapon,
   levelCost,
@@ -20,7 +21,7 @@ import {
   scaledMag,
   storeItems,
 } from "./arsenal";
-import { isUpgradeableWeapon, WEAPONS } from "./weapons";
+import { isUpgradeableWeapon, WEAPON_ORDER, WEAPONS } from "./weapons";
 
 const fake = (id: string): StoreItem => ({
   id,
@@ -216,5 +217,54 @@ describe("isUpgradeableWeapon", () => {
   });
   it("excludes an id with no WEAPONS entry", () => {
     expect(isUpgradeableWeapon("nonexistent")).toBe(false);
+  });
+});
+
+describe("cycleWeaponSlot", () => {
+  const all = () => true;
+
+  it("steps to the next slot", () => {
+    expect(cycleWeaponSlot(["a", "b", "c", "d"], all, "a", 1)).toBe(1);
+  });
+
+  it("steps to the previous slot", () => {
+    expect(cycleWeaponSlot(["a", "b", "c", "d"], all, "c", -1)).toBe(1);
+  });
+
+  it("wraps forward past the end", () => {
+    expect(cycleWeaponSlot(["a", "b", "c", "d"], all, "d", 1)).toBe(0);
+  });
+
+  it("wraps backward before the start", () => {
+    expect(cycleWeaponSlot(["a", "b", "c", "d"], all, "a", -1)).toBe(3);
+  });
+
+  it("skips ineligible (unowned) slots", () => {
+    // eligible = a, c only; from a, +1 lands on c (index 2), not b
+    const eligible = (id: string) => id === "a" || id === "c";
+    expect(cycleWeaponSlot(["a", "b", "c", "d"], eligible, "a", 1)).toBe(2);
+    expect(cycleWeaponSlot(["a", "b", "c", "d"], eligible, "c", 1)).toBe(0); // wraps to a
+  });
+
+  it("excludes melee weapons via the eligible predicate (knife stays put)", () => {
+    // real order + owned-everything, eligible = non-melee guns only
+    const eligible = (id: string) => isUpgradeableWeapon(id); // excludes knife
+    // from magnum (last gun), +1 wraps to pistol (index 0), never the knife at the end
+    expect(cycleWeaponSlot(WEAPON_ORDER, eligible, "magnum", 1)).toBe(
+      WEAPON_ORDER.indexOf("pistol"),
+    );
+  });
+
+  it("returns null when one or zero eligible slots", () => {
+    const only = (id: string) => id === "a";
+    expect(cycleWeaponSlot(["a", "b", "c"], only, "a", 1)).toBeNull();
+    expect(cycleWeaponSlot(["a", "b", "c"], only, "b", 1)).toBeNull();
+  });
+
+  it("enters the nearest eligible weapon when current is ineligible", () => {
+    // eligible = a, c; current b (ineligible). +1 -> first eligible (a=0); -1 -> last (c=2)
+    const eligible = (id: string) => id === "a" || id === "c";
+    expect(cycleWeaponSlot(["a", "b", "c"], eligible, "b", 1)).toBe(0);
+    expect(cycleWeaponSlot(["a", "b", "c"], eligible, "b", -1)).toBe(2);
   });
 });
