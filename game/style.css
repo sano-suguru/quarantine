@@ -27,6 +27,7 @@ body {
   width: 100vw;
   height: 100vh;
   cursor: none;
+  transition: filter 0.25s ease-out;
 }
 
 /* persistent atmospheric vignette */
@@ -150,44 +151,6 @@ body {
 .hud-block.r {
   text-align: right;
 }
-#hpbar-wrap {
-  width: 240px;
-  height: 11px;
-  border: 1px solid var(--dim);
-  position: relative;
-  background: rgba(0, 0, 0, 0.4);
-  margin-top: 4px;
-}
-#hpbar {
-  height: 100%;
-  width: 100%;
-  background: var(--toxic);
-  transition:
-    width 0.08s linear,
-    background 0.2s;
-}
-#hpnum {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--ink);
-  margin-top: 3px;
-}
-#hud.low #hpnum {
-  color: var(--blood);
-}
-#hud.low #hpbar-wrap {
-  animation: hppulse 1s ease-in-out infinite;
-}
-@keyframes hppulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 rgba(255, 77, 77, 0);
-  }
-  50% {
-    box-shadow: 0 0 16px rgba(255, 77, 77, 0.7);
-  }
-}
-
 /* flashlight battery */
 #battery {
   margin-top: 9px;
@@ -1296,8 +1259,7 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   #start,
-  .eyebrow .dot,
-  #hud.low #hpbar-wrap {
+  .eyebrow .dot {
     animation: none;
   }
   #start .torch {
