@@ -30,6 +30,42 @@ export function salvageEarned(day: number, kills: number): number {
   return Math.round(day * CONFIG.arsenal.salvagePerDay + kills * CONFIG.arsenal.salvagePerKill);
 }
 
+/**
+ * Resolve a mouse-wheel weapon step to an absolute `order` slot index.
+ * `eligible(id)` decides which slots are cyclable (owned && non-melee). Starting from
+ * `currentId`'s position among the eligible slots, move `step` (±1) with wrap-around and
+ * return the resulting absolute index into `order`. Returns null when there is no move:
+ * ≤1 eligible slot, or the destination equals the current slot.
+ * If `currentId` is not itself eligible (e.g. the knife, equipped via number key), enter the
+ * nearest eligible weapon in the step direction: the first for step>0, the last for step<0.
+ */
+export function cycleWeaponSlot(
+  order: readonly string[],
+  eligible: (id: string) => boolean,
+  currentId: string,
+  step: number,
+): number | null {
+  const slots: number[] = [];
+  for (let i = 0; i < order.length; i++) {
+    const id = order[i];
+    if (id !== undefined && eligible(id)) slots.push(i);
+  }
+  if (slots.length <= 1) return null;
+
+  const curSlot = order.indexOf(currentId);
+  const curPos = slots.indexOf(curSlot);
+  const destPos =
+    curPos === -1
+      ? step > 0
+        ? 0
+        : slots.length - 1
+      : (curPos + step + slots.length) % slots.length;
+
+  const dest = slots[destPos];
+  if (dest === undefined || dest === curSlot) return null;
+  return dest;
+}
+
 /** A single player's banked share of a run's SALVAGE pot, split evenly across the `recipients`
  *  that actually bank it (the non-absent players == host + connected clients). Floored so co-op
  *  never over-banks; `Math.max(1, …)` guards the impossible zero-recipient case. */

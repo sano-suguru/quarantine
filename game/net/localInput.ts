@@ -1,4 +1,6 @@
 import { CONFIG } from "../config";
+import { cycleWeaponSlot } from "../data/arsenal";
+import { isUpgradeableWeapon, WEAPON_ORDER } from "../data/weapons";
 import { localPlayer } from "../engine/players";
 import { Renderer } from "../engine/renderer";
 import { Input } from "../input";
@@ -21,6 +23,12 @@ let prevKeys = new Set<string>();
 // aim-assist: id of the zombie currently auto-targeted (for hysteresis, so the aim/light
 // don't flicker between two equidistant enemies). -1 = none.
 let aimTargetId = -1;
+// mouse-wheel weapon-switch debounce (module-local, like prevKeys/aimTargetId):
+// wheelArmed = may switch on the next wheel activity; re-armed after a quiet gap.
+// lastSampleMs = performance.now() of the previous sampleLocalInput call; a large gap means
+// we were non-live (shop/pause/settings/tab-away) and should drop stale wheel accumulation.
+let wheelArmed = true;
+let lastSampleMs = 0;
 
 /**
  * Opt-in auto-aim: angle to the nearest zombie within the flashlight's reach (what you can
@@ -61,9 +69,18 @@ function edge(code: string): boolean {
 
 export function sampleLocalInput(state: State): PlayerInput {
   const p = localPlayer(state);
+  const nowMs = performance.now();
+  // Resume drain: if sampling was interrupted (non-live > one burst gap), discard wheel that
+  // piled up while the sim was frozen so it can't fire a switch on the first live frame back.
+  if (nowMs - lastSampleMs > CONFIG.input.wheelBurstGapMs) {
+    Input.wheel = 0;
+    wheelArmed = true;
+  }
+  lastSampleMs = nowMs;
   // a downed player is a spectator: send nothing (no movement/fire, and no stale edge
   // that would fire the instant they respawn). Keep edge tracking coherent for next frame.
   if (p.hp <= 0) {
+    Input.wheel = 0;
     prevKeys = new Set(Input.keys);
     return emptyInput();
   }
@@ -97,6 +114,29 @@ export function sampleLocalInput(state: State): PlayerInput {
     if (edge(`Digit${i}`)) {
       weaponSlot = i - 1;
       break;
+    }
+  }
+
+  // Mouse-wheel weapon switch — only if a number key didn't already claim the slot. One switch
+  // per wheel "burst" (re-arm only after wheelBurstGapMs of silence) so trackpad inertia can't
+  // spin through the arsenal. Cycles owned, non-melee weapons; the knife stays number-key only.
+  // Always drain the wheel accumulator, even when a number key already claimed the slot this
+  // frame, so a stale delta never carries across frames (spec: no pile-up on number-key wins).
+  const w = Input.wheel;
+  Input.wheel = 0;
+  if (weaponSlot === null) {
+    if (nowMs - Input.wheelLastMs > CONFIG.input.wheelBurstGapMs) wheelArmed = true;
+    if (wheelArmed && w !== 0) {
+      const slot = cycleWeaponSlot(
+        WEAPON_ORDER,
+        (id) => !!state.owned[id] && isUpgradeableWeapon(id),
+        p.weapon,
+        Math.sign(w),
+      );
+      if (slot !== null) {
+        weaponSlot = slot;
+        wheelArmed = false;
+      }
     }
   }
 

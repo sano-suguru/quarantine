@@ -92,6 +92,11 @@ export const CONFIG = {
   // paired with the weapon_switch SFX + move ramp. Tune per weapon by playtest, not clip length.
   player: { radius: 16, speed: 200, maxHp: 100, moveRampRate: 1.5 },
   cam: { lerp: 8, shakeDecay: 8 },
+  input: {
+    wheelBurstGapMs: 120, // ms of wheel silence that ends a "burst": trackpad inertia fires
+    // wheel events for ~1s, so one-switch-per-burst (re-arm after this gap) stops the wheel
+    // from spinning through the whole arsenal. Also used to drain wheel accrued while non-live.
+  },
   feel: {
     hitstop: 0.05, // seconds of slow-mo on a kill
     hitstopScale: 0.12, // dt multiplier while hitstop is active
