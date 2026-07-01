@@ -12,6 +12,9 @@ uniform vec2 u_personal; // shared: x: radius, y: max brightness of the dim pool
 uniform float u_emissive;  // darkness floor for this pass (0 normal, >0 additive)
 uniform float u_sat; // grade: 1 = full colour, 0 = greyscale
 uniform float u_dim; // grade: 1 = normal brightness, 0 = black
+const int MAX_SPRITES = 32;
+uniform sampler2D u_sprites;
+uniform vec4 u_spriteRects[MAX_SPRITES]; // per-sprite atlas UV rect: [u0, v0, uWidth, vHeight]
 out vec4 frag;
 
 /* shape flags: 0 rect, 1 circle, 2 soft glow, 3 ring, 4 triangle, 5 hexagon, 6 slash */
@@ -111,6 +114,16 @@ void main(){
     float fillInner = CARVE_R - CARVE_OFF; // where the carve's +x rim cuts the fill
     float t = clamp((length(v_local) - fillInner) / (OUTER_R - fillInner), 0.0, 1.0); // 0 inner → 1 lead
     frag = vec4(v_color.rgb * (0.85 + 0.6 * t), v_color.a * fill);
+  } else if(s >= 16){
+    int i = s - 16;
+    vec4 rc = u_spriteRects[i];
+    // VFLIP: the vertex shader flips clip-space Y (-clip.y); whether the texture's V must also flip
+    // depends on the PNG's row order. Start with (0.5 - v_local.y); if the sprite renders upside
+    // down on device, change this one line to (v_local.y + 0.5). Verified by looking (exit crit 2).
+    vec2 uv = rc.xy + vec2(v_local.x + 0.5, 0.5 - v_local.y) * rc.zw;
+    vec4 t = texture(u_sprites, uv);
+    if(t.a < 0.5) discard;
+    frag = vec4(t.rgb, t.a) * v_color;
   } else {
     frag = v_color;
   }
