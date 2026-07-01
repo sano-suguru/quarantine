@@ -33,8 +33,8 @@
   - **なぜ固定クールダウンではダメか**: トラックパッドの慣性スクロールや高精細ホイールは 1 回の物理操作で `wheel` イベントを ~1 秒間多発させる。固定クールダウン（例 120ms）だと 1 秒の慣性で ~8 回切り替わり、指 1 本のスワイプで武器を一周してしまう。バーストデバウンスなら「1 ジェスチャ＝1 切り替え」に収まる。マウスのノッチをゆっくり刻めば（ギャップ > 閾値）1 ノッチ = 1 切り替え、速く回すと（ギャップ < 閾値）1 バースト = 1 切り替え。数字キーは従来どおり直接指定できるので、確実に狙った武器へ行きたい場合の逃げ道は残る（feel-first のトレードオフ）。
   - ※ ラバーダック検証前の旧案「溜まったノッチ数だけ複数ステップ」は撤回。慣性スクロール暴発のため。
 - **数字キー優先**：同一フレームで数字キーによるスロット選択がある場合、ホイールは無視（`weaponSlot` が `null` の時のみホイール解決）。競合回避。ただし数字キーが優先されたフレームでも `Input.wheel` は 0 リセットして溜め込まない。
-- ダウン中/観戦中はホイールを無視。`localInput` が早期 `emptyInput()` を返す全経路（`hp<=0`・設定オープン等）でも **`Input.wheel = 0` にリセット**して、非ライブ中に溜まったノッチが復帰 1 フレーム目で暴発しないようにする。
-- **フェーズ遷移でのリセット**：sim が回らない shop/pause 中に `wheel` イベントが溜まり、復帰時に一気に消費される穴を塞ぐため、`openShop` / `startNight`（deploy）/ pause 開始などの遷移で `Input.wheel = 0` をクリアする。クールダウン + 1 ステップクランプにより最悪でも 1 回の誤切り替えに抑えられるが、遷移リセットで完全に防ぐ。
+- ダウン中/観戦中はホイールを無視（`localInput` が早期 `emptyInput()` を返す。その経路でも `Input.wheel = 0` にリセット）。
+- **非ライブ復帰の暴発防止**：sim が回らない shop / pause / 設定オープン / タブ非アクティブ中は `sampleLocalInput` が呼ばれず `wheel` が溜まる。復帰 1 フレーム目で 1 回誤切り替えするのを防ぐため、localInput 側で「前回サンプルからの経過が閾値超なら復帰とみなしホイールをドレイン」する（詳細は変更点 §4）。`game.ts` / `main.ts` の変更は不要。
 
 ## 変更点
 
@@ -66,18 +66,31 @@ cycleWeaponSlot(
 
 ### 3. `game/net/localInput.ts`
 
-- モジュールローカル状態 `wheelArmed = true`（`prevKeys` / `aimTargetId` と同じ流儀）を追加。
-- 既存の数字キー解決の後、`weaponSlot` がまだ `null` の場合のみホイールを解決する。
-- `const w = Input.wheel; Input.wheel = 0;`（**読み取り後、必ず 0 リセット**。数字キー優先で使わなかった場合も溜め込まない）。
-- バースト終了判定で re-arm: `if (performance.now() - Input.wheelLastMs > CONFIG.input.wheelBurstGapMs) wheelArmed = true;`
-- `if (wheelArmed && w !== 0)` のとき `cycleWeaponSlot(WEAPON_ORDER, (id) => !!state.owned[id] && isUpgradeableWeapon(id), p.weapon, Math.sign(w))` を呼び、結果が非 `null` なら `weaponSlot` に代入し `wheelArmed = false`（同一バースト中の再切り替えを止める）。
+- モジュールローカル状態 `wheelArmed = true` と `lastSampleMs = 0`（`prevKeys` / `aimTargetId` と同じ流儀）を追加。
+- 関数先頭で `const nowMs = performance.now();` を取り、**非ライブ復帰ドレイン**を行う（下記「非ライブ復帰の扱い」）。その後で `lastSampleMs = nowMs;` を更新。
+- 既存の `p.hp<=0` 早期 return（`emptyInput()`）経路でも、return 前に `Input.wheel = 0` にリセット（`lastSampleMs` の更新は上で済ませておく）。
+- 既存の数字キー解決の後、`weaponSlot` がまだ `null` の場合のみホイールを解決する:
+  - `const w = Input.wheel; Input.wheel = 0;`（**読み取り後、必ず 0 リセット**。数字キー優先で使わなかった場合も溜め込まない）。
+  - バースト終了判定で re-arm: `if (nowMs - Input.wheelLastMs > CONFIG.input.wheelBurstGapMs) wheelArmed = true;`
+  - `if (wheelArmed && w !== 0)` のとき `cycleWeaponSlot(WEAPON_ORDER, (id) => !!state.owned[id] && isUpgradeableWeapon(id), p.weapon, Math.sign(w))` を呼び、結果が非 `null` なら `weaponSlot` に代入し `wheelArmed = false`（同一バースト中の再切り替えを止める）。
   - 巡回対象述語は既存の `isUpgradeableWeapon`（`weapons.ts`、`WEAPONS[id] != null && !w.melee`）を再利用。「所持済み かつ 銃器（非 melee）」を、melee 判定をハードコードせずデータ駆動で表す。`isUpgradeableWeapon` を `localInput` に import する。
-- `emptyInput()` を返す早期 return 経路（`p.hp<=0` 等）に入る前に `Input.wheel = 0` をリセットして、非ライブ中の蓄積を捨てる（`wheelArmed` はそのままでよい — 次に切り替える時は re-arm 済み）。
 
-### 4. フェーズ遷移でのリセット（`game/game.ts`）
+### 4. 非ライブ復帰の扱い（`localInput.ts` 内で完結）
 
-- sim が停止する shop/pause 中に溜まった `wheel` を復帰時に暴発させないため、`openShop` / `shopDeploy`（deploy→night）/ pause 開始のフェーズ遷移で `Input.wheel = 0` をクリアする。
-- 実装時、これらの遷移が `Input` を直接触るのが `game.ts` の既存の責務分離（systems は Input を読まない）に反しないか確認する。反する場合は、遷移フラグを見て `localInput` 側でリセットする形に寄せる。**1 ステップクランプ + クールダウンにより最悪でも 1 回の誤切り替えに抑えられている**ため、この遷移リセットは保険であり、配置は実装時に最もクリーンな方へ。
+`sampleLocalInput` は `main.ts` の 3 経路すべてで `live = st.running && !st.paused` のときだけ呼ばれ、設定オープン中は `emptyInput()` に差し替わって呼ばれない（`main.ts:291-292, 323, 332`）。つまり shop / pause / 設定オープン / タブ非アクティブの間は sampleLocalInput が呼ばれず、その間 `Input.wheel` は消費されず溜まる。これを復帰 1 フレーム目で暴発（1 回の誤切り替え）させないため、**localInput 内で「前回サンプルからの経過が大きければ復帰とみなしてホイールをドレイン」する**:
+
+```
+const nowMs = performance.now();
+if (nowMs - lastSampleMs > CONFIG.input.wheelBurstGapMs) {
+  Input.wheel = 0;   // 非ライブ中に溜まった分を捨てる
+  wheelArmed = true; // 復帰後の最初のホイールは 1 回切り替え可
+}
+lastSampleMs = nowMs;
+```
+
+- ライブ中は毎フレーム（~16ms）呼ばれるので経過は閾値未満 → 通常経路。shop/pause/設定/タブ復帰は秒単位の空きになる → その 1 フレームだけドレイン。
+- これにより `game.ts` / `main.ts` への変更は不要。ホイールの消費・リセット・ドレインはすべて入力境界層（`input.ts` + `localInput.ts`）に閉じ、systems の純粋性と「localInput が唯一の Input 読取り箇所」という既存規約を保つ。
+- バーストギャップ閾値（`wheelBurstGapMs`）を復帰判定にも流用する。「一定時間ホイール操作/サンプルが途切れたら新しいバースト/復帰とみなす」という一貫した意味付け。
 
 ### 5. `game/config.ts`
 
