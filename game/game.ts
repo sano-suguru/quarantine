@@ -631,6 +631,8 @@ export function draw(): void {
     CONFIG.horror.bloodGamma,
   );
   const bLow = lp.hp / lp.maxHp < CONFIG.horror.lowHp;
+  // throb is bounded downstream in blood.frag (clamp on drive + alpha); the old DOM path
+  // clamped here with Math.min(0.5, …) — keep that cap in the shader, not here.
   const bPulse = bLow ? beatStrength * Math.exp(-(state.time - lastBeatT) * 7) : 0;
   R.setBlood(bloodG * CONFIG.horror.bloodMax, bPulse, reducedMotion ? 0 : state.time);
 

@@ -134,8 +134,8 @@ export const CONFIG = {
     // HP→world desaturation: the continuous "wound" readout that replaces the Integrity bar.
     // Full color at/above desatOnset (calm zone, day readability); saturation eases to
     // desatFloor and brightness drops by desatDim as HP drains to 0. desatGamma shapes the
-    // curve (<1 front-loads so mid-HP damage is felt). The heartbeat + red dread-pulse (gated
-    // at lowHp above) stay the separate near-death alarm. All four are playtest-tuned.
+    // curve (<1 front-loads so mid-HP damage is felt). The heartbeat + blood-vignette throb
+    // (gated at lowHp above) stay the separate near-death alarm. All four are playtest-tuned.
     desatOnset: 0.65, // hp fraction at/above which the world is full color
     desatFloor: 0.2, // saturate() multiplier at death (>0 so blood/toxic still read)
     desatDim: 0.18, // brightness() reduction at death (1 → 1 - desatDim)
