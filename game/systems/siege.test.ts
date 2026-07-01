@@ -107,16 +107,17 @@ describe("nightMaxZombies", () => {
 
 describe("ambientForClock", () => {
   it("is full daylight mid-day", () => {
-    expect(ambientForClock("day", 35, 1)).toBeCloseTo(0.45, 5); // phaseT == dayDuration
+    // read from CONFIG so feel-tuning the ambient values doesn't break the curve tests
+    expect(ambientForClock("day", 35, 1)).toBeCloseTo(CONFIG.siege.dayAmbient, 5); // phaseT == dayDuration
   });
-  it("is near-black mid-night", () => {
-    expect(ambientForClock("night", nightDuration(1), 1)).toBeCloseTo(0.04, 5);
+  it("is gloom (not full black) mid-night", () => {
+    expect(ambientForClock("night", nightDuration(1), 1)).toBeCloseTo(CONFIG.siege.nightAmbient, 5);
   });
   it("crossfades down toward dusk (late day darker than mid-day)", () => {
     const mid = ambientForClock("day", 35, 1);
     const dusk = ambientForClock("day", 1, 1); // almost dusk
     expect(dusk).toBeLessThan(mid);
-    expect(dusk).toBeGreaterThanOrEqual(0.04);
+    expect(dusk).toBeGreaterThanOrEqual(CONFIG.siege.nightAmbient);
   });
   it("lifts toward dawn (end of night brighter than mid-night)", () => {
     const midNight = ambientForClock("night", nightDuration(1), 1);
