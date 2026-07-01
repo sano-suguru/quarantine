@@ -336,12 +336,14 @@ Then, inside the existing `if (p.hp <= 0) { … }` early-return block, add `Inpu
 Directly after the existing number-key resolution loop (the `for (let i = 1; i <= 9; i++) { if (edge(\`Digit${i}\`)) … }`), and before the `const input: PlayerInput = { … }` object literal, insert:
 
 ```ts
-  // Mouse-wheel weapon switch — only if a number key didn't already claim the slot. One switch
-  // per wheel "burst" (re-arm only after wheelBurstGapMs of silence) so trackpad inertia can't
-  // spin through the arsenal. Cycles owned, non-melee weapons; the knife stays number-key only.
+  // Mouse-wheel weapon switch. Always drain the accumulator first — even when a number key
+  // already claimed the slot this frame — so a stale delta never carries across frames.
+  // Then switch only if no number key won. One switch per wheel "burst" (re-arm only after
+  // wheelBurstGapMs of silence) so trackpad inertia can't spin through the arsenal. Cycles
+  // owned, non-melee weapons; the knife stays number-key only.
+  const w = Input.wheel;
+  Input.wheel = 0;
   if (weaponSlot === null) {
-    const w = Input.wheel;
-    Input.wheel = 0; // always consume, even when a number key won, so nothing piles up
     if (nowMs - Input.wheelLastMs > CONFIG.input.wheelBurstGapMs) wheelArmed = true;
     if (wheelArmed && w !== 0) {
       const slot = cycleWeaponSlot(
