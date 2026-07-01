@@ -65,6 +65,9 @@ export interface EnemyType {
   attackRate: number;
   color: [number, number, number];
   shape: number;
+  /** optional sprite-atlas key (a game/assets/sprites/<key>.png); when present and loaded, the
+   *  renderer draws this illustration instead of the SDF `shape`. Draw-time only, never synced. */
+  sprite?: string;
   glow: [number, number, number];
   eye: [number, number, number];
   /** aggro radius: zombies beyond it wander instead of chasing (daytime gating) */

@@ -11,6 +11,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     attackRate: 1.0,
     color: [0.4, 0.56, 0.28],
     shape: SHAPE.circle,
+    sprite: "zombie",
     glow: [0.35, 0.85, 0.3],
     eye: [1.0, 0.92, 0.4],
     sense: 520,
