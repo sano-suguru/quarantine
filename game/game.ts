@@ -93,6 +93,10 @@ let recentVoices: number[] = []; // state.time stamps of recent individual voice
 // heartbeat→vignette pulse: set when a heartbeat fires, read (and decayed) in updateHUD
 let lastBeatT = -10;
 let beatStrength = 0;
+// honor the OS "reduce motion" setting: shaders can't read CSS media queries, so we freeze the
+// blood churn/breathe by passing a constant clock (read once; guarded for non-DOM test env).
+const reducedMotion =
+  typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 // local flashlight die edge (battery → 0): play a one-shot "going dark" cue
 let prevBattery = 1;
 // HP→desaturation filter (Spec ③): cache the #game canvas + last filter string so the DOM is
@@ -617,6 +621,19 @@ export function draw(): void {
   // --- atmosphere: dust motes + darting shadows in the local cone ---
   drawAtmosphere(R, lp, ddt);
 
+  // blood vignette (Spec ③ follow-up): readable HP readout. Creep from the camera-followed
+  // player's HP (== local player in SP) + heartbeat throb folded in from the old #dread-pulse
+  // (local player's own beat). Render-only → single-player byte-for-byte, net untouched.
+  const cb = cameraTarget(state);
+  const bloodG = integrityGrade(
+    Math.max(0, cb.hp) / cb.maxHp,
+    CONFIG.horror.bloodOnset,
+    CONFIG.horror.bloodGamma,
+  );
+  const bLow = lp.hp / lp.maxHp < CONFIG.horror.lowHp;
+  const bPulse = bLow ? beatStrength * Math.exp(-(state.time - lastBeatT) * 7) : 0;
+  R.setBlood(bloodG * CONFIG.horror.bloodMax, bPulse, reducedMotion ? 0 : state.time);
+
   R.flush(camX, camY);
 }
 
@@ -925,7 +942,6 @@ let lastWeapon = "";
 export function updateHUD(): void {
   const p = localPlayer(state);
   const wd = effWeapon(p, p.weapon);
-  const hpf = Math.max(0, p.hp) / p.maxHp;
   // HP→world desaturation: continuous "wound" readout replacing the old Integrity bar. Tracks
   // cameraTarget (the player the camera follows) so a downed spectator sees the teammate they
   // watch drained by THAT player's HP; cameraTarget === localPlayer while alive / single-player.
@@ -1002,13 +1018,6 @@ export function updateHUD(): void {
       if (slot) slot.classList.toggle("active", WEAPON_ORDER[i] === p.weapon);
     }
   }
-
-  // dread vignette intensity
-  const low = hpf < CONFIG.horror.lowHp;
-  // heartbeat-synced red pulse: a quick throb in time with the heartbeat audio (set in
-  // audioAmbience). Decays from state.time so audio and visuals beat together.
-  const pulse = low ? beatStrength * Math.exp(-(state.time - lastBeatT) * 7) : 0;
-  el("dread-pulse").style.opacity = String(Math.min(0.5, pulse));
 
   // damage flash overlay
   const fl = el("flash");
