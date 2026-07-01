@@ -26,7 +26,7 @@ If Biome postinstall is blocked after install, run `bun pm trust @biomejs/biome`
 
 ## MCP servers
 
-Workspace MCP configuration lives in `.vscode/mcp.json`. It includes the official Playwright MCP server for browser automation against the Vite dev server; start `bun run dev` first, then use it for UI smoke checks, screenshots, and manual playtest support. Review and trust local MCP servers before starting them because they execute commands on the machine.
+Workspace MCP configuration lives in `.vscode/mcp.json`. It includes a pinned official Playwright MCP server for browser automation against the Vite dev server; start `bun run dev` first, then use it for UI smoke checks, screenshots, and manual playtest support. Review and trust local MCP servers before starting them because they execute commands on the machine. Update the pin deliberately after reviewing upstream release notes.
 
 ## Architecture
 
