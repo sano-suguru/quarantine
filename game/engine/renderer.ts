@@ -330,11 +330,23 @@ function loadImage(url: string): Promise<HTMLImageElement> {
  * Load every discovered PNG, pack them deterministically in glob-index order (NOT completion
  * order), upload into one atlas, and record half-texel-inset UV rects. ready flips per index only
  * after its texels are uploaded, so the draw side never emits an index the shader can't sample.
+ * A single PNG that fails to load is isolated (allSettled + a 1x1 placeholder slot) so the others
+ * still load at their stable index — one 404 must not silently drop the whole enemy roster to SDF.
  */
 async function loadSprites(): Promise<void> {
   if (SPRITE_ASSETS.length === 0) return;
-  const imgs = await Promise.all(SPRITE_ASSETS.map((a) => loadImage(a.url)));
-  const sizes = imgs.map((im) => ({ w: im.width, h: im.height }));
+  const settled = await Promise.allSettled(SPRITE_ASSETS.map((a) => loadImage(a.url)));
+  const imgs = settled.map((res, i) => {
+    if (res.status === "fulfilled") return res.value;
+    console.warn(
+      `[sprites] "${SPRITE_ASSETS[i]?.key}" failed to load; using SDF fallback`,
+      res.reason,
+    );
+    return null;
+  });
+  // A failed load keeps its index (1x1 placeholder) so a neighbor's failure never shifts another
+  // sprite's atlas index — the shader reads u_spriteRects[globIndex], which must stay stable.
+  const sizes = imgs.map((im) => (im ? { w: im.width, h: im.height } : { w: 1, h: 1 }));
   const maxAtlas = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
   const packed = packSprites(sizes, SPRITE_GUTTER, maxAtlas);
 

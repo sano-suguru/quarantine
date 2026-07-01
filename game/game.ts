@@ -510,14 +510,6 @@ export function draw(): void {
     const wound = 1 - z.hp / z.maxHp;
     const gg = CONFIG.fx.gore;
     const dk = 1 - gg.woundDarken * wound;
-    const wr = (z.color[0] + (gg.woundTint[0] - z.color[0]) * wound) * dk;
-    const wg = (z.color[1] + (gg.woundTint[1] - z.color[1]) * wound) * dk;
-    const wb = (z.color[2] + (gg.woundTint[2] - z.color[2]) * wound) * dk;
-    const col: [number, number, number] = [
-      wr + (1 - wr) * fl,
-      wg + (1 - wg) * fl,
-      wb + (1 - wb) * fl,
-    ];
     const pulse = z.type === "brute" ? 0.5 + 0.3 * Math.sin(state.time * 4) : 0.4;
     R.glow(
       zx,
@@ -538,17 +530,25 @@ export function draw(): void {
       // gave). The hit-flash is restored as a >1 overbright multiply (brightens the texel on hit) —
       // a texture multiply can't lerp to pure white like the SDF fill, but the pop reads. Normal
       // pass (u_emissive 0) → still black outside the cone.
-      const sdk = 1 - gg.woundDarken * wound;
       const flash = 1 + fl * SPRITE_FLASH;
-      const tr = (1 + (gg.woundTint[0] - 1) * wound) * sdk * flash;
-      const tg = (1 + (gg.woundTint[1] - 1) * wound) * sdk * flash;
-      const tb = (1 + (gg.woundTint[2] - 1) * wound) * sdk * flash;
+      const tr = (1 + (gg.woundTint[0] - 1) * wound) * dk * flash;
+      const tg = (1 + (gg.woundTint[1] - 1) * wound) * dk * flash;
+      const tb = (1 + (gg.woundTint[2] - 1) * wound) * dk * flash;
       // Rotate so the illustration's front (its bottom, local -y) points at the target from any
       // direction — front-first approach, not crab-walk (that was +x aligned) and not the
       // upright-billboard up/down bug. Drawn at SPRITE_SCALE× the hitbox (bare rad*2 mushes).
       const sz = rad * 2 * SPRITE_SCALE;
       R.spriteQuad(zx, zy, sz, sz, face + SPRITE_FACE_OFFSET, layer, tr, tg, tb, grow);
     } else {
+      // wound tint toward blood + darken (dk), then the transient white hit-flash lerp (fl) on top.
+      const wr = (z.color[0] + (gg.woundTint[0] - z.color[0]) * wound) * dk;
+      const wg = (z.color[1] + (gg.woundTint[1] - z.color[1]) * wound) * dk;
+      const wb = (z.color[2] + (gg.woundTint[2] - z.color[2]) * wound) * dk;
+      const col: [number, number, number] = [
+        wr + (1 - wr) * fl,
+        wg + (1 - wg) * fl,
+        wb + (1 - wb) * fl,
+      ];
       if (z.shape === SHAPE.tri) R.tri(zx, zy, rad, face, col[0], col[1], col[2], grow);
       else if (z.shape === SHAPE.hex)
         R.hex(zx, zy, rad, state.time * 0.6 + z.wob, col[0], col[1], col[2], grow);
@@ -559,13 +559,13 @@ export function draw(): void {
 
     // glowing eyes (appear even as it emerges from the dark) — SDF bodies only. A sprite has its
     // own face baked in; engine eyes at a fixed offset don't line up with the illustration.
-    const ex = Math.cos(face);
-    const ey = Math.sin(face);
-    const px2 = -ey;
-    const py2 = ex;
-    const eo = rad * 0.42;
-    const es = rad * 0.32;
-    if (layer < 0)
+    if (layer < 0) {
+      const ex = Math.cos(face);
+      const ey = Math.sin(face);
+      const px2 = -ey;
+      const py2 = ex;
+      const eo = rad * 0.42;
+      const es = rad * 0.32;
       for (const s of [-1, 1]) {
         R.add(
           zx + ex * eo + px2 * es * s,
@@ -580,6 +580,7 @@ export function draw(): void {
           SHAPE.glow,
         );
       }
+    }
   }
 
   // --- pickups (self-lit so they read in the dark; bob + blink before expiry) ---
