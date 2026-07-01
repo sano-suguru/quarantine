@@ -36,7 +36,7 @@ bun run lint:fix       # biome check --write src index.html   (add --unsafe for 
 bun run format         # biome format --write src index.html
 ```
 
-**Tests** use Vitest (`bun run test`, or `bun run test:watch`). By deliberate scope, only **pure, deterministic** code is tested — `waveDef()` (`game/data/waves.ts`), arsenal scaling (`game/data/arsenal.ts`), the math helpers (`game/engine/math.ts`), collision geometry (`game/engine/geometry.ts`), `SpatialHash` (`game/engine/spatialHash.ts`), `ammoTransfer` (`game/systems/ammo.ts`), and `flashlightIntensity` (`game/systems/flashlight.ts`). Tests are co-located as `*.test.ts`. The simulation "feel" (renderer, AI movement, camera, collision tuning, audio) is intentionally **not** unit-tested — validate that by playtesting. `vite.config.ts` carries the Vitest config (`environment: "node"`, since no DOM is needed).
+**Tests** use Vitest (`bun run test`, or `bun run test:watch`). By deliberate scope, only **pure, deterministic** code is tested — `waveDef()` (`game/data/waves.ts`), arsenal scaling (`game/data/arsenal.ts`), the math helpers (`game/engine/math.ts`), collision geometry (`game/engine/geometry.ts`), `SpatialHash` (`game/engine/spatialHash.ts`), `ammoTransfer` (`game/systems/ammo.ts`), `flashlightIntensity` (`game/systems/flashlight.ts`), and `integrityGrade` (`game/systems/integrity.ts`). Tests are co-located as `*.test.ts`. The simulation "feel" (renderer, AI movement, camera, collision tuning, audio) is intentionally **not** unit-tested — validate that by playtesting. `vite.config.ts` carries the Vitest config (`environment: "node"`, since no DOM is needed).
 
 ## Quality gates
 
@@ -79,7 +79,7 @@ Entry: `index.html` (markup + CSS) loads `game/main.ts` as a module.
   - `siege` (`sysSiege` + `startDay`/`startNight`) — the day/night loop; `sysSiege` returns `"night"` / `"dawn"` / `null` on the frame of transition.
   - `wave` (`sysWave`, `startWave`, `spawnZombie`) — spawns batches from the queue; `sysWave` returns `true` when the horde is cleared.
   - `camera` — exponential lerp toward the player and shake decay.
-  - Pure helpers (unit-tested): `ammo` (`ammoTransfer`), `flashlight` (`flashlightIntensity`), and `caches` (`restockCaches`/`lootCache`, loot emitted as normal pickups).
+  - Pure helpers (unit-tested): `ammo` (`ammoTransfer`), `flashlight` (`flashlightIntensity`), `integrity` (`integrityGrade`), and `caches` (`restockCaches`/`lootCache`, loot emitted as normal pickups).
 
 - **`game/data/*`** — the extension points. Note the split between **definitions** and **run-scaling**:
   - `weapons.ts` — weapon definitions: `WEAPONS` (id → `WeaponDef`), `WEAPON_ORDER` (array order drives the `1/2/3…` hotkey slots), `STARTER_WEAPONS`, `UNLOCKABLE` (meta-unlock prices).
