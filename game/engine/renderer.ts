@@ -5,11 +5,13 @@ import gridFrag from "./shaders/grid.frag?raw";
 import gridVert from "./shaders/grid.vert?raw";
 import instanceFrag from "./shaders/instance.frag?raw";
 import instanceVert from "./shaders/instance.vert?raw";
+import { SPRITE_ASSETS, spriteIndex } from "./spriteAssets";
+import { packSprites, uvRect } from "./spritePack";
 
 const FLOATS = 10;
 
 /** shape flags — must match instance.frag */
-export const SHAPE = { rect: 0, circle: 1, glow: 2, ring: 3, tri: 4, hex: 5, slash: 6 };
+export const SHAPE = { rect: 0, circle: 1, glow: 2, ring: 3, tri: 4, hex: 5, slash: 6, sprite: 16 };
 
 let gl: WebGL2RenderingContext;
 let canvas: HTMLCanvasElement;
@@ -67,6 +69,13 @@ let u_sat: WebGLUniformLocation | null;
 let u_dim: WebGLUniformLocation | null;
 let gradeSat = 1;
 let gradeDim = 1;
+const MAX_SPRITES = 32; // must match instance.frag
+const SPRITE_GUTTER = 2; // px between packed sprites; pairs with uvRect's half-texel inset
+let u_sprites: WebGLUniformLocation | null;
+let u_spriteRects: WebGLUniformLocation | null;
+let atlasTex: WebGLTexture;
+const spriteRects = new Float32Array(MAX_SPRITES * 4); // [u0,v0,uW,vH] * MAX_SPRITES, zero-init
+const spriteReady: boolean[] = []; // per index, true once its texels are uploaded
 
 interface Layer {
   vao: WebGLVertexArrayObject;
@@ -142,6 +151,16 @@ function init(cv: HTMLCanvasElement): void {
   u_emissive = gl.getUniformLocation(instProg, "u_emissive");
   u_sat = gl.getUniformLocation(instProg, "u_sat");
   u_dim = gl.getUniformLocation(instProg, "u_dim");
+  u_sprites = gl.getUniformLocation(instProg, "u_sprites");
+  u_spriteRects = gl.getUniformLocation(instProg, "u_spriteRects");
+  // 1x1 transparent atlas so the sampler is COMPLETE from frame 0 (before art loads / if none).
+  atlasTex = gl.createTexture() as WebGLTexture;
+  gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
   quadVBO = gl.createBuffer() as WebGLBuffer;
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
@@ -179,6 +198,7 @@ function init(cv: HTMLCanvasElement): void {
 
   resize();
   addEventListener("resize", resize);
+  void loadSprites();
 }
 
 function resize(): void {
@@ -295,6 +315,69 @@ function sprite(
   shape: number,
 ): void {
   write(normal, x, y, sx, sy, rot, r, g, b, a, shape);
+}
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`sprite load failed: ${url}`));
+    img.src = url;
+  });
+}
+
+/**
+ * Load every discovered PNG, pack them deterministically in glob-index order (NOT completion
+ * order), upload into one atlas, and record half-texel-inset UV rects. ready flips per index only
+ * after its texels are uploaded, so the draw side never emits an index the shader can't sample.
+ */
+async function loadSprites(): Promise<void> {
+  if (SPRITE_ASSETS.length === 0) return;
+  const imgs = await Promise.all(SPRITE_ASSETS.map((a) => loadImage(a.url)));
+  const sizes = imgs.map((im) => ({ w: im.width, h: im.height }));
+  const maxAtlas = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
+  const packed = packSprites(sizes, SPRITE_GUTTER, maxAtlas);
+
+  gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RGBA,
+    packed.atlas,
+    packed.atlas,
+    0,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    null,
+  );
+  for (let i = 0; i < imgs.length && i < MAX_SPRITES; i++) {
+    const r = packed.rects[i];
+    const im = imgs[i];
+    if (!r || !im) continue;
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, r.x, r.y, gl.RGBA, gl.UNSIGNED_BYTE, im);
+    spriteRects.set(uvRect(r, packed.atlas), i * 4);
+    spriteReady[i] = true;
+  }
+}
+
+function spriteQuad(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  rot: number,
+  index: number,
+  r: number,
+  g: number,
+  b: number,
+  a: number,
+): void {
+  write(normal, x, y, w, h, rot, r, g, b, a, SHAPE.sprite + index);
+}
+
+function spriteLayer(key: string): number {
+  const i = spriteIndex(key);
+  return i >= 0 && spriteReady[i] ? i : -1;
 }
 
 function circle(x: number, y: number, rad: number, r: number, g: number, b: number, a = 1): void {
@@ -479,6 +562,10 @@ function flush(camX: number, camY: number): void {
   gl.uniform2f(u_personal, personalRadius, personalMax);
   gl.uniform1f(u_sat, gradeSat);
   gl.uniform1f(u_dim, gradeDim);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+  gl.uniform1i(u_sprites, 0);
+  gl.uniform4fv(u_spriteRects, spriteRects);
 
   // normal pass (bodies, ground): fully darkened outside the light
   gl.uniform1f(u_emissive, 0);
@@ -522,6 +609,8 @@ export const Renderer = {
   beginLights,
   addLight,
   sprite,
+  spriteQuad,
+  spriteLayer,
   circle,
   rect,
   ring,
