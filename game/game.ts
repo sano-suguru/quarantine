@@ -54,6 +54,9 @@ const SPRITE_SCALE = 2.6;
 // front at the target from any direction (world +y = screen down → +90° aligns -y with face).
 // If the sprite faces a quarter/half turn off on device, nudge this by ±PI/2 or PI.
 const SPRITE_FACE_OFFSET = Math.PI / 2;
+// Hit-flash strength for sprites: on a hit the tint is multiplied by (1 + fl*this), i.e. an
+// overbright pop (a texture multiply can't lerp to pure white like the SDF fill does). Feel knob.
+const SPRITE_FLASH = 1.5;
 
 /* -------------------------- UPDATE / DRAW ----------------------- */
 let hbT = 0; // heartbeat timer
@@ -530,14 +533,16 @@ export function draw(): void {
     const layer = spriteKey ? R.spriteLayer(spriteKey) : -1;
     if (layer >= 0) {
       // A textured sprite already has its own colors, so — unlike the SDF fill `col` — its tint is
-      // WHITE at full HP (true illustration), darkening toward blood as it's wounded. The hit-flash
-      // `fl` is deliberately NOT mixed in: a multiply can't brighten past the texture, so it reads
-      // as an odd "blur" pop; the hit is carried by the additive glow halo (boosts on fl above) +
-      // blood fx instead. Normal pass (u_emissive 0) → still goes black outside the cone.
+      // WHITE at full HP (true illustration), darkening toward blood only as it's wounded (so a
+      // damaged zombie reads as bloodied, not the muddy blur that multiplying by the SDF body color
+      // gave). The hit-flash is restored as a >1 overbright multiply (brightens the texel on hit) —
+      // a texture multiply can't lerp to pure white like the SDF fill, but the pop reads. Normal
+      // pass (u_emissive 0) → still black outside the cone.
       const sdk = 1 - gg.woundDarken * wound;
-      const tr = (1 + (gg.woundTint[0] - 1) * wound) * sdk;
-      const tg = (1 + (gg.woundTint[1] - 1) * wound) * sdk;
-      const tb = (1 + (gg.woundTint[2] - 1) * wound) * sdk;
+      const flash = 1 + fl * SPRITE_FLASH;
+      const tr = (1 + (gg.woundTint[0] - 1) * wound) * sdk * flash;
+      const tg = (1 + (gg.woundTint[1] - 1) * wound) * sdk * flash;
+      const tb = (1 + (gg.woundTint[2] - 1) * wound) * sdk * flash;
       // Rotate so the illustration's front (its bottom, local -y) points at the target from any
       // direction — front-first approach, not crab-walk (that was +x aligned) and not the
       // upright-billboard up/down bug. Drawn at SPRITE_SCALE× the hitbox (bare rad*2 mushes).
