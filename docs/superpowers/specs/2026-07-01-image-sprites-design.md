@@ -3,6 +3,14 @@
 **Date:** 2026-07-01
 **Status:** design revised after rubber-duck review; pending spec review → implementation plan
 
+> **Post-implementation note (2026-07-01):** shipped. Feel verdict = HIT (walker rendered as a
+> sprite). The `gen-sprites.ts` API-generation automation described below was built then **removed**
+> — the nano-banana image model has a free-tier quota of 0 (needs billing), so it was unusable on
+> this account and only added a dependency (YAGNI). Sprites are added the free way instead: generate
+> in the Gemini chat, then process the image (transparent → NEAREST-128 → binarize alpha → square
+> pad) and wire it. See `docs/sprites.md` for the prompts + the add-a-sprite recipe. The renderer
+> mechanism (atlas, `spritePack`, `spriteAssets`, shader branch) shipped as designed.
+
 ## Goal
 
 Give the engine a **rebuild-proof sprite-rendering system** and seed it with one Gemini-generated
