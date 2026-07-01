@@ -521,7 +521,9 @@ export function draw(): void {
     const spriteKey = ENEMY_TYPES[z.type]?.sprite;
     const layer = spriteKey ? R.spriteLayer(spriteKey) : -1;
     if (layer >= 0) {
-      // wound-tinted color (wr/wg/wb) is the normal-pass multiply; darkness/flashlight come free.
+      // col[] (wound tint + normal-pass hit-flash, same as the SDF bodies below) is the sprite's
+      // multiply tint; normal pass (u_emissive 0) so it still goes black outside the cone — no
+      // lurker reveal. Darkness/flashlight/grade come free from the shared shader tail.
       // No silhouette ring: it is a circle and would mis-overlap a non-circular illustration.
       R.spriteQuad(zx, zy, rad * 2, rad * 2, face, layer, col[0], col[1], col[2], grow);
     } else {
