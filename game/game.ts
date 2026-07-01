@@ -13,6 +13,7 @@ import {
   storeItems,
 } from "./data/arsenal";
 import { DEPLOYABLE_TYPES, deployableCount, placeDeployable, placeSpot } from "./data/deployables";
+import { ENEMY_TYPES } from "./data/enemies";
 import { PICKUP_TYPES } from "./data/pickups";
 import { PLAYER_COLORS } from "./data/players";
 import { UNLOCKABLE_CARDS, UPGRADES } from "./data/upgrades";
@@ -517,12 +518,20 @@ export function draw(): void {
       (0.3 + 0.4 * fl + pulse * 0.2) * grow,
     );
 
-    if (z.shape === SHAPE.tri) R.tri(zx, zy, rad, face, col[0], col[1], col[2], grow);
-    else if (z.shape === SHAPE.hex)
-      R.hex(zx, zy, rad, state.time * 0.6 + z.wob, col[0], col[1], col[2], grow);
-    else R.circle(zx, zy, rad, col[0], col[1], col[2], grow);
-    // dark silhouette outline
-    R.ring(zx, zy, rad * 1.04, 0.02, 0.03, 0.02, 0.7 * grow);
+    const spriteKey = ENEMY_TYPES[z.type]?.sprite;
+    const layer = spriteKey ? R.spriteLayer(spriteKey) : -1;
+    if (layer >= 0) {
+      // wound-tinted color (wr/wg/wb) is the normal-pass multiply; darkness/flashlight come free.
+      // No silhouette ring: it is a circle and would mis-overlap a non-circular illustration.
+      R.spriteQuad(zx, zy, rad * 2, rad * 2, face, layer, col[0], col[1], col[2], grow);
+    } else {
+      if (z.shape === SHAPE.tri) R.tri(zx, zy, rad, face, col[0], col[1], col[2], grow);
+      else if (z.shape === SHAPE.hex)
+        R.hex(zx, zy, rad, state.time * 0.6 + z.wob, col[0], col[1], col[2], grow);
+      else R.circle(zx, zy, rad, col[0], col[1], col[2], grow);
+      // dark silhouette outline
+      R.ring(zx, zy, rad * 1.04, 0.02, 0.03, 0.02, 0.7 * grow);
+    }
 
     // glowing eyes (appear even as it emerges from the dark)
     const ex = Math.cos(face);
