@@ -76,8 +76,8 @@ describe("packSprites", () => {
     expect(p.rects[1]).toEqual({ x: 42, y: 0, w: 30, h: 30 });
   });
 
-  it("wraps to the next shelf when the row overflows the atlas width", () => {
-    // atlas 64: first 40 fits at x=0 (advance to 42); second 40 needs 42+42=84 > 64 → wrap
+  it("escalates to the next pow2 atlas when a shelf would overflow the smaller size", () => {
+    // two 42-wide cells: 84 > 64 so atlas 64 fails; 128 holds both on ONE shelf (y stays 0)
     const p = packSprites(
       [
         { w: 40, h: 40 },
@@ -86,8 +86,26 @@ describe("packSprites", () => {
       2,
       2048,
     );
-    expect(p.atlas).toBe(128); // both 42-wide rows: 84 > 64 so 64 fails; 128 holds both on one shelf
+    expect(p.atlas).toBe(128);
     expect(p.rects[1]).toEqual({ x: 42, y: 0, w: 40, h: 40 });
+  });
+
+  it("advances to a new shelf (y += rowH) when a row fills the chosen atlas width", () => {
+    // 4 cells of 62x42 in atlas 128: 2 fit per row (x=0, x=62; 124+62=186 > 128 → wrap),
+    // so #2 and #3 land on the second shelf at y=42. This exercises the y-advance path.
+    const p = packSprites(
+      [
+        { w: 60, h: 40 },
+        { w: 60, h: 40 },
+        { w: 60, h: 40 },
+        { w: 60, h: 40 },
+      ],
+      2,
+      2048,
+    );
+    expect(p.atlas).toBe(128);
+    expect(p.rects[2]).toEqual({ x: 0, y: 42, w: 60, h: 40 });
+    expect(p.rects[3]).toEqual({ x: 62, y: 42, w: 60, h: 40 });
   });
 
   it("throws when the sprites cannot fit within maxAtlas", () => {
@@ -177,7 +195,7 @@ export function uvRect(r: Rect, atlas: number): [number, number, number, number]
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `bun run test spritePack`
-Expected: PASS (5 tests).
+Expected: PASS (6 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -213,12 +231,20 @@ magick "<RAW>" -fuzz 12% -transparent white -channel A -threshold 50% +channel \
   -trim +repage game/assets/sprites/zombie.png
 ```
 
-- If the real art is not ready yet, generate a temporary opaque-silhouette placeholder so the pipeline builds and runs (swap for real art before Task 7):
+- If the real art is not ready yet, generate a temporary placeholder so the pipeline builds and
+  runs (swap for real art before Task 7). **Binarize the alpha here too** — the sprite branch does a
+  hard `t.a < 0.5` discard against a non-premultiplied blend, so anti-aliased edges (which have
+  `0 < a < 1` texels with darkened RGB) show a dark fringe under `NEAREST`. The `-threshold`
+  forces a hard edge so the placeholder doesn't look fringed and mislead the Task 6 sanity check:
 
 ```bash
 mkdir -p game/assets/sprites
-magick -size 96x96 xc:none -fill "#6b8e3a" -draw "circle 48,48 48,12" game/assets/sprites/zombie.png
+magick -size 96x96 xc:none -fill "#6b8e3a" -draw "circle 48,48 48,12" \
+  -channel A -threshold 50% +channel game/assets/sprites/zombie.png
 ```
+
+**Alpha binarization is required for BOTH the real art and any placeholder** — a soft-edged PNG will
+fringe. The real-art `magick` recipe above already includes `-threshold 50%`.
 
 Verify it exists and is RGBA:
 
@@ -289,6 +315,14 @@ const int MAX_SPRITES = 32;
 uniform sampler2D u_sprites;
 uniform vec4 u_spriteRects[MAX_SPRITES]; // per-sprite atlas UV rect: [u0, v0, uWidth, vHeight]
 ```
+
+**Fragment uniform-vector budget (verify, don't assume):** existing frag uniform arrays cost
+~32 vectors (`u_lightPos[8]`+`u_lightAim[8]`+`u_lightCone[8]`+`u_lightInt[8]`, each array element
+takes a vec4 slot) plus a handful of scalars; adding `u_spriteRects[32]` = 32 vectors brings the
+total to ≈70. `GL_MAX_FRAGMENT_UNIFORM_VECTORS` has a WebGL2 floor of **224**, so this is safe with
+wide margin. (If a target ever reports lower, `MAX_SPRITES` is a one-line constant to shrink — it
+must stay identical in both this shader and the renderer.) The Task 4 Step 6 runtime check will
+surface a link failure here immediately if any driver disagrees.
 
 - [ ] **Step 2: Add the sprite branch**
 
@@ -382,11 +416,18 @@ In `init()`, right after the `u_dim` location line (line 144), add:
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 ```
 
-Then, at the very end of `init()` (after the last setup line in the function), kick off the async load:
+Then kick off the async load as the **last statement of `init()`** — immediately after
+`addEventListener("resize", resize);` (renderer.ts:181), just before init's closing `}` on line
+182:
 
 ```ts
   void loadSprites();
 ```
+
+**Ordering matters:** `loadSprites()` binds `atlasTex`, so the `atlasTex` creation added earlier in
+this same step (right after the `u_dim` location, ~line 144) must run first. Both edits are inside
+`init()` and `init()` runs top-to-bottom, so placing the atlas creation at ~144 and this call at
+the end (181) guarantees the order. Do not move `void loadSprites()` above the atlas creation.
 
 - [ ] **Step 3: Add the loader, writer, and layer lookup**
 
@@ -622,7 +663,11 @@ Run: `bun run dev`, open http://localhost:5173, deploy into a night, and get wal
 - [ ] **Step 3: Judge against the 5 exit criteria (from the spec)**
 
 Look, specifically:
-1. **Crisp** — hard pixels, no blur; no bright/dark fringe at the sprite edges (gutter/inset working).
+1. **Crisp & contained** — hard pixels, no blur; no bright/dark fringe at the sprite edges
+   (gutter/inset + binarized alpha working). Also check the silhouette still reads on a **bright
+   background** (e.g. a lit POI interior): the removed dark silhouette ring used to give edge
+   contrast there — if the illustration's outline now washes out against light ground, note it (a
+   per-sprite outline could be re-added later, but it's a finding, not a blocker here).
 2. **Oriented** — the zombie faces the player and rotates naturally as it moves; not upside-down. If upside-down, flip the one `VFLIP` line in `instance.frag` (Task 3 Step 2) from `0.5 - v_local.y` to `v_local.y + 0.5` and rebuild.
 3. **Sinks & lifts** — a zombie outside the cone is black/invisible; sweeping the flashlight over it reveals it. It must NOT self-illuminate.
 4. **Grades** — as HP drops, the sprite desaturates/darkens with the world (blood-vignette grade), same as before.
