@@ -19,7 +19,7 @@ import { UNLOCKABLE_CARDS, UPGRADES } from "./data/upgrades";
 import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "./data/weapons";
 import { Audio } from "./engine/audio";
 import { type LightCandidate, selectLights } from "./engine/lights";
-import { anyAlive, localPlayer, nearestPlayer, revivePlayer } from "./engine/players";
+import { anyAlive, cameraTarget, localPlayer, nearestPlayer, revivePlayer } from "./engine/players";
 import { Renderer, SHAPE } from "./engine/renderer";
 import { addSalvage, buyUnlock, loadMeta } from "./meta";
 import { Net } from "./net/net";
@@ -31,6 +31,7 @@ import { sysCamera } from "./systems/camera";
 import { sysDeployables } from "./systems/deployables";
 import { flashlightIntensity } from "./systems/flashlight";
 import { sysFx } from "./systems/fx";
+import { integrityGrade } from "./systems/integrity";
 import { sysPickups } from "./systems/pickups";
 import { effectiveSearchTime, sysPlayer } from "./systems/player";
 import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "./systems/siege";
@@ -89,11 +90,20 @@ let lastDrawT = 0; // for a render-side dt derived from state.time (advances on 
 const voiceMem = new Map<number, { wasLit: boolean; nextGroan: number }>();
 let recentVoices: number[] = []; // state.time stamps of recent individual voices
 
-// heartbeat→vignette pulse: set when a heartbeat fires, read (and decayed) in updateHUD
+// heartbeat→vignette pulse: set when a heartbeat fires, read (and decayed) in draw
 let lastBeatT = -10;
 let beatStrength = 0;
+// honor the OS "reduce motion" setting: shaders can't read CSS media queries, so we freeze the
+// blood churn/breathe by passing a constant clock (read once; guarded for non-DOM test env).
+const reducedMotion =
+  typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 // local flashlight die edge (battery → 0): play a one-shot "going dark" cue
 let prevBattery = 1;
+// HP→world grade (desaturation + dim): eased current values. sat=1 dim=1 = full color.
+// Gated on state.running so dead-player 0 HP doesn't drain debrief/title screens.
+// Snapped to 1 by endRun/toTitle; held (not advanced) while not running.
+let gradeSatCur = 1;
+let gradeDimCur = 1;
 
 /** Reset the per-run atmosphere bookkeeping so stale zombie ids / darts don't carry across runs. */
 function resetAtmosphere(): void {
@@ -103,6 +113,11 @@ function resetAtmosphere(): void {
   lastBeatT = -10;
   beatStrength = 0;
   prevBattery = 1;
+  gradeSatCur = 1;
+  gradeDimCur = 1;
+  // Reset the render-side draw clock so the first draw() of a fresh run (where state.time resets
+  // to 0) doesn't produce a negative/large ddt that flings darts or garbles ease steps.
+  lastDrawT = 0;
 }
 
 export function update(dt: number): void {
@@ -609,6 +624,36 @@ export function draw(): void {
   // --- atmosphere: dust motes + darting shadows in the local cone ---
   drawAtmosphere(R, lp, ddt);
 
+  // HP-driven grade (desaturation + dim) and blood vignette: both gated on state.running so a
+  // dead player's 0 HP doesn't drain the debrief / title screens. When not running the cur vars
+  // are held at whatever endRun/toTitle already snapped them to (1/1), and blood is zeroed so
+  // the shader pass is skipped entirely. Pause holds (no advance while paused, but draw still runs).
+  if (state.running) {
+    // share cameraTarget and hpFrac with both grade and blood (different onset/gamma each)
+    const cb = cameraTarget(state);
+    const hpFrac = Math.max(0, cb.hp) / cb.maxHp;
+
+    // HP→world grade: ease toward target frame-rate-independently
+    const cg = integrityGrade(hpFrac, CONFIG.horror.desatOnset, CONFIG.horror.desatGamma);
+    const satT = 1 - cg * (1 - CONFIG.horror.desatFloor);
+    const dimT = 1 - cg * CONFIG.horror.desatDim;
+    const k = reducedMotion ? 1 : 1 - Math.exp(-CONFIG.horror.desatEaseRate * ddt);
+    gradeSatCur += (satT - gradeSatCur) * k;
+    gradeDimCur += (dimT - gradeDimCur) * k;
+
+    // blood vignette: same cb/hpFrac, different onset/gamma; heartbeat throb from local player
+    const bloodG = integrityGrade(hpFrac, CONFIG.horror.bloodOnset, CONFIG.horror.bloodGamma);
+    const bLow = lp.hp / lp.maxHp < CONFIG.horror.lowHp;
+    // throb is bounded downstream in blood.frag (clamp on drive + alpha)
+    const bPulse = bLow ? beatStrength * Math.exp(-(state.time - lastBeatT) * 7) : 0;
+    R.setBlood(bloodG * CONFIG.horror.bloodMax, bPulse, reducedMotion ? 0 : state.time);
+  } else {
+    // not running (debrief / title / arsenal): keep grade at 1/1 (held by snap), zero blood
+    R.setBlood(0, 0, state.time);
+  }
+  // always push the grade — held at 1/1 on non-running screens, eased during gameplay
+  R.setGrade(gradeSatCur, gradeDimCur);
+
   R.flush(camX, camY);
 }
 
@@ -917,10 +962,8 @@ let lastWeapon = "";
 export function updateHUD(): void {
   const p = localPlayer(state);
   const wd = effWeapon(p, p.weapon);
-  const hpf = Math.max(0, p.hp) / p.maxHp;
-  el("hpbar").style.width = `${100 * hpf}%`;
-  el("hpbar").style.background = hpf < 0.3 ? "var(--blood)" : "var(--toxic)";
-  el("hpnum").textContent = `${Math.max(0, Math.ceil(p.hp))} / ${p.maxHp}`;
+  // HP→world grade (desaturation + dim) now lives entirely in draw() via R.setGrade, driven
+  // frame-rate-independently with an eased cur value. No CSS filter writes here.
   el("wave").textContent = String(state.day);
   el("weapon-name").textContent = wd.name + (p.reloadT > 0 ? " · RELOADING" : "");
   const reserve = p.reserve[p.weapon] ?? 0;
@@ -979,15 +1022,6 @@ export function updateHUD(): void {
       if (slot) slot.classList.toggle("active", WEAPON_ORDER[i] === p.weapon);
     }
   }
-
-  // dread vignette intensity
-  const hud = el("hud");
-  const low = hpf < CONFIG.horror.lowHp;
-  hud.classList.toggle("low", low);
-  // heartbeat-synced red pulse: a quick throb in time with the heartbeat audio (set in
-  // audioAmbience). Decays from state.time so audio and visuals beat together.
-  const pulse = low ? beatStrength * Math.exp(-(state.time - lastBeatT) * 7) : 0;
-  el("dread-pulse").style.opacity = String(Math.min(0.5, pulse));
 
   // damage flash overlay
   const fl = el("flash");
@@ -1311,6 +1345,9 @@ function endRun(salvage: number, day: number, kills: number, money: number): voi
   el("over-salvage").textContent = String(salvage);
   hide("hud");
   show("over");
+  // snap grade to full color so debrief / title show no desaturation bleed-through
+  gradeSatCur = 1;
+  gradeDimCur = 1;
 }
 
 function gameOver(): void {
@@ -1345,6 +1382,9 @@ export function toTitle(): void {
   hide("hud");
   hide("lobby");
   hide("coop");
+  // snap grade to full color so title / arsenal show no desaturation bleed-through
+  gradeSatCur = 1;
+  gradeDimCur = 1;
   renderArsenal();
   show("start");
 }

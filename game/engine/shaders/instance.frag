@@ -10,6 +10,8 @@ uniform vec2 u_lightCone[MAX_LIGHTS];  // per-light: x = cos(halfAngle), y = ran
 uniform float u_ambient; // shared ambient light floor
 uniform vec2 u_personal; // shared: x: radius, y: max brightness of the dim pool
 uniform float u_emissive;  // darkness floor for this pass (0 normal, >0 additive)
+uniform float u_sat; // grade: 1 = full colour, 0 = greyscale
+uniform float u_dim; // grade: 1 = normal brightness, 0 = black
 out vec4 frag;
 
 /* shape flags: 0 rect, 1 circle, 2 soft glow, 3 ring, 4 triangle, 5 hexagon, 6 slash */
@@ -115,4 +117,5 @@ void main(){
   // normal pass (u_emissive 0) fully darkens; additive pass keeps a floor so
   // glows, muzzle flashes and zombie eyes still read in the dark.
   frag.rgb *= mix(u_emissive, 1.0, lightAt(v_world));
+  frag.rgb = mix(vec3(dot(frag.rgb, vec3(0.2126, 0.7152, 0.0722))), frag.rgb, u_sat) * u_dim;
 }

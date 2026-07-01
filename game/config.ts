@@ -131,6 +131,25 @@ export const CONFIG = {
     dartChancePerLurk: 0.05, // per-second dart probability contributed by each lurking zombie
     dartSpeed: 900, // world units/sec the streak crosses at
     dartLife: 0.16, // seconds a streak lives
+    // HP→world desaturation ease rate: exponential-lerp speed constant (per sec). ~12 → ~0.25 s
+    // settle, matching the old CSS transition: filter 0.25s ease-out cadence.
+    desatEaseRate: 12,
+    // HP→world desaturation: the continuous "wound" readout that replaces the Integrity bar.
+    // Full color at/above desatOnset (calm zone, day readability); saturation eases to
+    // desatFloor and brightness drops by desatDim as HP drains to 0. desatGamma shapes the
+    // curve (<1 front-loads so mid-HP damage is felt). The heartbeat + blood-vignette throb
+    // (gated at lowHp above) stay the separate near-death alarm. All four are playtest-tuned.
+    desatOnset: 0.65, // hp fraction at/above which the world is full color
+    desatFloor: 0.2, // saturate() multiplier at death (>0 so blood/toxic still read)
+    desatDim: 0.18, // brightness() reduction at death (1 → 1 - desatDim)
+    desatGamma: 0.7, // curve shaping: <1 front-loads mid-HP sensitivity; 1 = linear
+    // HP→blood vignette (shader pass): organic arterial red that creeps in from the edges and
+    // churns as HP drops — the readable "you're bleeding" cue. Reuses integrityGrade. The
+    // heartbeat throb is folded into the same shader (u_pulse). Shader-internal noise/breathe
+    // constants live in blood.frag.
+    bloodOnset: 0.85, // hp fraction at/above which no blood shows (starts early so damage reads)
+    bloodGamma: 0.6, // <1 front-loads: mid-HP bleeding reads before the deep band
+    bloodMax: 1.0, // scales the grade into u_blood; >1 also deepens the creep reach, not just opacity
   },
   flashlight: {
     halfAngle: 0.55, // cone half-angle in radians (~63° total)

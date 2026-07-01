@@ -1,4 +1,6 @@
 import { CONFIG } from "../config";
+import bloodFrag from "./shaders/blood.frag?raw";
+import bloodVert from "./shaders/blood.vert?raw";
 import gridFrag from "./shaders/grid.frag?raw";
 import gridVert from "./shaders/grid.vert?raw";
 import instanceFrag from "./shaders/instance.frag?raw";
@@ -13,6 +15,7 @@ let gl: WebGL2RenderingContext;
 let canvas: HTMLCanvasElement;
 let instProg: WebGLProgram;
 let gridProg: WebGLProgram;
+let bloodProg: WebGLProgram;
 let gridVAO: WebGLVertexArrayObject;
 let quadVBO: WebGLBuffer;
 let u_cam: WebGLUniformLocation | null;
@@ -51,6 +54,19 @@ let coneAmbient = 0.05;
 let personalRadius = 130;
 let personalMax = 0.5;
 let emissiveFloor = 0.4;
+let b_blood: WebGLUniformLocation | null;
+let b_pulse: WebGLUniformLocation | null;
+let b_time: WebGLUniformLocation | null;
+let b_half: WebGLUniformLocation | null;
+let bloodIntensity = 0;
+let bloodPulse = 0;
+let bloodTime = 0;
+let g_sat: WebGLUniformLocation | null;
+let g_dim: WebGLUniformLocation | null;
+let u_sat: WebGLUniformLocation | null;
+let u_dim: WebGLUniformLocation | null;
+let gradeSat = 1;
+let gradeDim = 1;
 
 interface Layer {
   vao: WebGLVertexArrayObject;
@@ -124,6 +140,8 @@ function init(cv: HTMLCanvasElement): void {
   u_lightCone = gl.getUniformLocation(instProg, "u_lightCone");
   u_personal = gl.getUniformLocation(instProg, "u_personal");
   u_emissive = gl.getUniformLocation(instProg, "u_emissive");
+  u_sat = gl.getUniformLocation(instProg, "u_sat");
+  u_dim = gl.getUniformLocation(instProg, "u_dim");
 
   quadVBO = gl.createBuffer() as WebGLBuffer;
   gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
@@ -142,6 +160,8 @@ function init(cv: HTMLCanvasElement): void {
   g_ambient = gl.getUniformLocation(gridProg, "u_ambient");
   g_lightCone = gl.getUniformLocation(gridProg, "u_lightCone");
   g_personal = gl.getUniformLocation(gridProg, "u_personal");
+  g_sat = gl.getUniformLocation(gridProg, "u_sat");
+  g_dim = gl.getUniformLocation(gridProg, "u_dim");
   gridVAO = gl.createVertexArray() as WebGLVertexArrayObject;
   gl.bindVertexArray(gridVAO);
   const triVBO = gl.createBuffer();
@@ -150,6 +170,12 @@ function init(cv: HTMLCanvasElement): void {
   gl.enableVertexAttribArray(0);
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   gl.bindVertexArray(null);
+
+  bloodProg = program(bloodVert, bloodFrag);
+  b_blood = gl.getUniformLocation(bloodProg, "u_blood");
+  b_pulse = gl.getUniformLocation(bloodProg, "u_pulse");
+  b_time = gl.getUniformLocation(bloodProg, "u_time");
+  b_half = gl.getUniformLocation(bloodProg, "u_half");
 
   resize();
   addEventListener("resize", resize);
@@ -184,6 +210,21 @@ function setLightParams(
   personalRadius = personalR;
   personalMax = personalM;
   emissiveFloor = emissive;
+}
+
+/** HP-driven blood vignette: intensity (0..1 HP creep), pulse (0..1 heartbeat throb), time
+ *  (churn/breathe clock; pass 0 to freeze for prefers-reduced-motion). Render-only. */
+function setBlood(intensity: number, pulse: number, time: number): void {
+  bloodIntensity = intensity;
+  bloodPulse = pulse;
+  bloodTime = time;
+}
+
+/** HP-driven world grade: sat (1 = full colour, 0 = greyscale), dim (1 = normal, 0 = black).
+ *  Applied to grid + instance world passes BEFORE the blood vignette. Render-only. */
+function setGrade(sat: number, dim: number): void {
+  gradeSat = sat;
+  gradeDim = dim;
 }
 
 /** start a new frame's light list (call before addLight) */
@@ -421,6 +462,8 @@ function flush(camX: number, camY: number): void {
   gl.uniform2fv(g_lightCone, lightCone);
   gl.uniform1f(g_ambient, coneAmbient);
   gl.uniform2f(g_personal, personalRadius, personalMax);
+  gl.uniform1f(g_sat, gradeSat);
+  gl.uniform1f(g_dim, gradeDim);
   gl.bindVertexArray(gridVAO);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -434,6 +477,8 @@ function flush(camX: number, camY: number): void {
   gl.uniform2fv(u_lightCone, lightCone);
   gl.uniform1f(u_ambient, coneAmbient);
   gl.uniform2f(u_personal, personalRadius, personalMax);
+  gl.uniform1f(u_sat, gradeSat);
+  gl.uniform1f(u_dim, gradeDim);
 
   // normal pass (bodies, ground): fully darkened outside the light
   gl.uniform1f(u_emissive, 0);
@@ -443,6 +488,24 @@ function flush(camX: number, camY: number): void {
   gl.uniform1f(u_emissive, emissiveFloor);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
   drawLayer(additive);
+
+  // blood vignette (HP-driven, render-only): final full-screen pass, alpha-over on top of all.
+  if (bloodIntensity > 0) {
+    gl.useProgram(bloodProg);
+    gl.uniform1f(b_blood, bloodIntensity);
+    gl.uniform1f(b_pulse, bloodPulse);
+    gl.uniform1f(b_time, bloodTime);
+    gl.uniform2f(b_half, viewHalfX, viewHalfY);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.bindVertexArray(gridVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  // Leave flush in the default alpha-over blend state. The framebuffer auto-clears each frame
+  // (preserveDrawingBuffer is unset) and the grid pass outputs alpha=1, so it is blend-mode-
+  // independent and does not rely on this reset. The unconditional blendFunc here makes the
+  // end-of-flush blend state deterministic after the optional blood pass (which switches to
+  // ONE_MINUS_SRC_ALPHA and may or may not run each frame), so callers get a predictable baseline.
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindVertexArray(null);
 }
 
@@ -454,6 +517,8 @@ export const Renderer = {
   init,
   begin,
   setLightParams,
+  setBlood,
+  setGrade,
   beginLights,
   addLight,
   sprite,
