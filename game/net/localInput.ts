@@ -120,9 +120,11 @@ export function sampleLocalInput(state: State): PlayerInput {
   // Mouse-wheel weapon switch — only if a number key didn't already claim the slot. One switch
   // per wheel "burst" (re-arm only after wheelBurstGapMs of silence) so trackpad inertia can't
   // spin through the arsenal. Cycles owned, non-melee weapons; the knife stays number-key only.
+  // Always drain the wheel accumulator, even when a number key already claimed the slot this
+  // frame, so a stale delta never carries across frames (spec: no pile-up on number-key wins).
+  const w = Input.wheel;
+  Input.wheel = 0;
   if (weaponSlot === null) {
-    const w = Input.wheel;
-    Input.wheel = 0; // always consume, even when a number key won, so nothing piles up
     if (nowMs - Input.wheelLastMs > CONFIG.input.wheelBurstGapMs) wheelArmed = true;
     if (wheelArmed && w !== 0) {
       const slot = cycleWeaponSlot(
