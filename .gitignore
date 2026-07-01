@@ -11,5 +11,8 @@ coverage
 .dev.vars
 .dev.vars.*
 
+# raw (pre-processed) sprite generations — the processed PNGs in the parent dir are committed
+game/assets/sprites/raw/
+
 # brainstorming visual-companion mockups
 .superpowers/
