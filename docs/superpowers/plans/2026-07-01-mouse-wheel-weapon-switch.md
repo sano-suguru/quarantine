@@ -39,7 +39,15 @@
   ```
   Returns an absolute index into `order` (the resolved `weaponSlot`), or `null` when there is no move. `step` is expected to be ±1 (caller clamps via `Math.sign`).
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Add the test imports (do this first — the vitest run below needs them)**
+
+In `game/data/arsenal.test.ts`:
+- Add `cycleWeaponSlot` to the existing `import { … } from "./arsenal";` block (the multi-line list at lines 7-22 — e.g. insert `cycleWeaponSlot,` after `cardItem,`).
+- Change line 23 from `import { isUpgradeableWeapon, WEAPONS } from "./weapons";` to `import { isUpgradeableWeapon, WEAPON_ORDER, WEAPONS } from "./weapons";` (`isUpgradeableWeapon` is already imported; only `WEAPON_ORDER` is missing).
+
+Without these, Step 3's run fails with `WEAPON_ORDER is not defined` / `cycleWeaponSlot is not a function` for the wrong reason (import error, not the intended "not implemented yet").
+
+- [ ] **Step 2: Write the failing tests**
 
 Append to `game/data/arsenal.test.ts`:
 
@@ -94,14 +102,14 @@ describe("cycleWeaponSlot", () => {
 });
 ```
 
-Ensure `cycleWeaponSlot` is added to the existing import from `"./arsenal"` and `isUpgradeableWeapon` / `WEAPON_ORDER` to the import from `"./weapons"` at the top of the test file (check current imports; `WEAPON_ORDER`/`isUpgradeableWeapon` may need adding).
+(Imports were added in Step 1.)
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 3: Run tests to verify they fail**
 
 Run: `bun run test -- arsenal`
 Expected: FAIL — `cycleWeaponSlot is not a function` / not exported.
 
-- [ ] **Step 3: Implement `cycleWeaponSlot` in `game/data/arsenal.ts`**
+- [ ] **Step 4: Implement `cycleWeaponSlot` in `game/data/arsenal.ts`**
 
 Add near the other pure helpers (e.g. after `salvageEarned`), keeping the existing comment style:
 
@@ -143,17 +151,17 @@ export function cycleWeaponSlot(
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 5: Run tests to verify they pass**
 
 Run: `bun run test -- arsenal`
 Expected: PASS (all `cycleWeaponSlot` cases green, existing arsenal tests still green).
 
-- [ ] **Step 5: Typecheck**
+- [ ] **Step 6: Typecheck**
 
 Run: `bun run typecheck`
 Expected: no errors.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add game/data/arsenal.ts game/data/arsenal.test.ts
