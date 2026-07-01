@@ -47,6 +47,10 @@ export function getState(): State {
 
 const TOXIC: [number, number, number] = [0.49, 1.0, 0.31];
 
+// Sprite zombies are drawn as an upright billboard at this multiple of the hitbox diameter (rad*2).
+// >1 so the illustration reads instead of minifying to mush at the collision size. Feel knob.
+const SPRITE_SCALE = 2.6;
+
 /* -------------------------- UPDATE / DRAW ----------------------- */
 let hbT = 0; // heartbeat timer
 let groanT = 2; // ambient groan timer
@@ -525,7 +529,11 @@ export function draw(): void {
       // multiply tint; normal pass (u_emissive 0) so it still goes black outside the cone — no
       // lurker reveal. Darkness/flashlight/grade come free from the shared shader tail.
       // No silhouette ring: it is a circle and would mis-overlap a non-circular illustration.
-      R.spriteQuad(zx, zy, rad * 2, rad * 2, face, layer, col[0], col[1], col[2], grow);
+      // Upright billboard (fixed rotation, NOT `face`): this art is a high-angle/near-front view,
+      // so rotating it toward the player reads as crab-walking. Drawn at SPRITE_SCALE× the hitbox
+      // because at the bare rad*2 the illustration minifies to mush. Both are feel knobs.
+      const sz = rad * 2 * SPRITE_SCALE;
+      R.spriteQuad(zx, zy, sz, sz, 0, layer, col[0], col[1], col[2], grow);
     } else {
       if (z.shape === SHAPE.tri) R.tri(zx, zy, rad, face, col[0], col[1], col[2], grow);
       else if (z.shape === SHAPE.hex)
@@ -535,27 +543,29 @@ export function draw(): void {
       R.ring(zx, zy, rad * 1.04, 0.02, 0.03, 0.02, 0.7 * grow);
     }
 
-    // glowing eyes (appear even as it emerges from the dark)
+    // glowing eyes (appear even as it emerges from the dark) — SDF bodies only. A sprite has its
+    // own face baked in; engine eyes at a fixed offset don't line up with the illustration.
     const ex = Math.cos(face);
     const ey = Math.sin(face);
     const px2 = -ey;
     const py2 = ex;
     const eo = rad * 0.42;
     const es = rad * 0.32;
-    for (const s of [-1, 1]) {
-      R.add(
-        zx + ex * eo + px2 * es * s,
-        zy + ey * eo + py2 * es * s,
-        rad * 0.42,
-        rad * 0.42,
-        0,
-        z.eye[0],
-        z.eye[1],
-        z.eye[2],
-        0.9,
-        SHAPE.glow,
-      );
-    }
+    if (layer < 0)
+      for (const s of [-1, 1]) {
+        R.add(
+          zx + ex * eo + px2 * es * s,
+          zy + ey * eo + py2 * es * s,
+          rad * 0.42,
+          rad * 0.42,
+          0,
+          z.eye[0],
+          z.eye[1],
+          z.eye[2],
+          0.9,
+          SHAPE.glow,
+        );
+      }
   }
 
   // --- pickups (self-lit so they read in the dark; bob + blink before expiry) ---
