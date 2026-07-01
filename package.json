@@ -16,7 +16,6 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "gen:sfx": "bun run scripts/gen-sfx.ts",
-    "gen:sprites": "bun run scripts/gen-sprites.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p scripts/tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -30,7 +29,6 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",
     "@elevenlabs/elevenlabs-js": "^2.54.0",
-    "@google/genai": "^2.10.0",
     "@types/bun": "^1.3.14",
     "@vitest/coverage-v8": "^4.1.9",
     "concurrently": "^10.0.3",
