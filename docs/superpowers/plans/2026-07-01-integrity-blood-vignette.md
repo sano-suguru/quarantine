@@ -263,7 +263,7 @@ In `game/game.ts` `draw()`, immediately before `R.flush(camX, camY);` (`:620`), 
 
 - [ ] **Step 4: Remove the `#dread-pulse` block from `updateHUD` (and its now-orphaned `hpf`)**
 
-In `game/game.ts` `updateHUD`, delete the whole dread-pulse block (`:1007-1011`):
+In `game/game.ts` `updateHUD`, delete the whole dread-pulse block (`:1006-1011`, including the leading `// dread vignette intensity` comment):
 ```ts
   // dread vignette intensity
   const low = hpf < CONFIG.horror.lowHp;
