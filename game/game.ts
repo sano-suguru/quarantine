@@ -47,9 +47,13 @@ export function getState(): State {
 
 const TOXIC: [number, number, number] = [0.49, 1.0, 0.31];
 
-// Sprite zombies are drawn as an upright billboard at this multiple of the hitbox diameter (rad*2).
-// >1 so the illustration reads instead of minifying to mush at the collision size. Feel knob.
+// Sprite zombies are drawn at this multiple of the hitbox diameter (rad*2), > 1 so the
+// illustration reads instead of minifying to mush at the collision size. Feel knob.
 const SPRITE_SCALE = 2.6;
+// The illustration's FRONT is its bottom edge (local -y). rot = face + this offset points that
+// front at the target from any direction (world +y = screen down → +90° aligns -y with face).
+// If the sprite faces a quarter/half turn off on device, nudge this by ±PI/2 or PI.
+const SPRITE_FACE_OFFSET = Math.PI / 2;
 
 /* -------------------------- UPDATE / DRAW ----------------------- */
 let hbT = 0; // heartbeat timer
@@ -534,12 +538,11 @@ export function draw(): void {
       const tr = (1 + (gg.woundTint[0] - 1) * wound) * sdk;
       const tg = (1 + (gg.woundTint[1] - 1) * wound) * sdk;
       const tb = (1 + (gg.woundTint[2] - 1) * wound) * sdk;
-      // Upright billboard, mirrored to face movement left/right. Full `face` rotation would
-      // crab-walk this high-angle art, so we only flip horizontally by the player-ward x. Drawn at
-      // SPRITE_SCALE× the hitbox (at bare rad*2 the illustration minifies to mush). Feel knobs.
+      // Rotate so the illustration's front (its bottom, local -y) points at the target from any
+      // direction — front-first approach, not crab-walk (that was +x aligned) and not the
+      // upright-billboard up/down bug. Drawn at SPRITE_SCALE× the hitbox (bare rad*2 mushes).
       const sz = rad * 2 * SPRITE_SCALE;
-      const sx = Math.cos(face) < 0 ? -sz : sz;
-      R.spriteQuad(zx, zy, sx, sz, 0, layer, tr, tg, tb, grow);
+      R.spriteQuad(zx, zy, sz, sz, face + SPRITE_FACE_OFFSET, layer, tr, tg, tb, grow);
     } else {
       if (z.shape === SHAPE.tri) R.tri(zx, zy, rad, face, col[0], col[1], col[2], grow);
       else if (z.shape === SHAPE.hex)
