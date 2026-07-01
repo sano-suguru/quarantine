@@ -525,15 +525,21 @@ export function draw(): void {
     const spriteKey = ENEMY_TYPES[z.type]?.sprite;
     const layer = spriteKey ? R.spriteLayer(spriteKey) : -1;
     if (layer >= 0) {
-      // col[] (wound tint + normal-pass hit-flash, same as the SDF bodies below) is the sprite's
-      // multiply tint; normal pass (u_emissive 0) so it still goes black outside the cone — no
-      // lurker reveal. Darkness/flashlight/grade come free from the shared shader tail.
-      // No silhouette ring: it is a circle and would mis-overlap a non-circular illustration.
-      // Upright billboard (fixed rotation, NOT `face`): this art is a high-angle/near-front view,
-      // so rotating it toward the player reads as crab-walking. Drawn at SPRITE_SCALE× the hitbox
-      // because at the bare rad*2 the illustration minifies to mush. Both are feel knobs.
+      // A textured sprite already has its own colors, so — unlike the SDF fill `col` — its tint is
+      // WHITE at full HP (true illustration), darkening toward blood as it's wounded. The hit-flash
+      // `fl` is deliberately NOT mixed in: a multiply can't brighten past the texture, so it reads
+      // as an odd "blur" pop; the hit is carried by the additive glow halo (boosts on fl above) +
+      // blood fx instead. Normal pass (u_emissive 0) → still goes black outside the cone.
+      const sdk = 1 - gg.woundDarken * wound;
+      const tr = (1 + (gg.woundTint[0] - 1) * wound) * sdk;
+      const tg = (1 + (gg.woundTint[1] - 1) * wound) * sdk;
+      const tb = (1 + (gg.woundTint[2] - 1) * wound) * sdk;
+      // Upright billboard, mirrored to face movement left/right. Full `face` rotation would
+      // crab-walk this high-angle art, so we only flip horizontally by the player-ward x. Drawn at
+      // SPRITE_SCALE× the hitbox (at bare rad*2 the illustration minifies to mush). Feel knobs.
       const sz = rad * 2 * SPRITE_SCALE;
-      R.spriteQuad(zx, zy, sz, sz, 0, layer, col[0], col[1], col[2], grow);
+      const sx = Math.cos(face) < 0 ? -sz : sz;
+      R.spriteQuad(zx, zy, sx, sz, 0, layer, tr, tg, tb, grow);
     } else {
       if (z.shape === SHAPE.tri) R.tri(zx, zy, rad, face, col[0], col[1], col[2], grow);
       else if (z.shape === SHAPE.hex)
