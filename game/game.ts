@@ -19,7 +19,7 @@ import { UNLOCKABLE_CARDS, UPGRADES } from "./data/upgrades";
 import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "./data/weapons";
 import { Audio } from "./engine/audio";
 import { type LightCandidate, selectLights } from "./engine/lights";
-import { anyAlive, localPlayer, nearestPlayer, revivePlayer } from "./engine/players";
+import { anyAlive, cameraTarget, localPlayer, nearestPlayer, revivePlayer } from "./engine/players";
 import { Renderer, SHAPE } from "./engine/renderer";
 import { addSalvage, buyUnlock, loadMeta } from "./meta";
 import { Net } from "./net/net";
@@ -31,6 +31,7 @@ import { sysCamera } from "./systems/camera";
 import { sysDeployables } from "./systems/deployables";
 import { flashlightIntensity } from "./systems/flashlight";
 import { sysFx } from "./systems/fx";
+import { integrityGrade } from "./systems/integrity";
 import { sysPickups } from "./systems/pickups";
 import { effectiveSearchTime, sysPlayer } from "./systems/player";
 import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "./systems/siege";
@@ -94,6 +95,11 @@ let lastBeatT = -10;
 let beatStrength = 0;
 // local flashlight die edge (battery → 0): play a one-shot "going dark" cue
 let prevBattery = 1;
+// HP→desaturation filter (Spec ③): cache the #game canvas + last filter string so the DOM is
+// touched only when the value changes (HP is stable most frames). Driven from cameraTarget so a
+// downed co-op spectator desaturates by the teammate they're watching, not their own corpse.
+let gameCanvas: HTMLElement | null = null;
+let lastFilter = "";
 
 /** Reset the per-run atmosphere bookkeeping so stale zombie ids / darts don't carry across runs. */
 function resetAtmosphere(): void {
@@ -103,6 +109,8 @@ function resetAtmosphere(): void {
   lastBeatT = -10;
   beatStrength = 0;
   prevBattery = 1;
+  lastFilter = "";
+  if (gameCanvas) gameCanvas.style.filter = "";
 }
 
 export function update(dt: number): void {
@@ -918,9 +926,24 @@ export function updateHUD(): void {
   const p = localPlayer(state);
   const wd = effWeapon(p, p.weapon);
   const hpf = Math.max(0, p.hp) / p.maxHp;
-  el("hpbar").style.width = `${100 * hpf}%`;
-  el("hpbar").style.background = hpf < 0.3 ? "var(--blood)" : "var(--toxic)";
-  el("hpnum").textContent = `${Math.max(0, Math.ceil(p.hp))} / ${p.maxHp}`;
+  // HP→world desaturation: continuous "wound" readout replacing the old Integrity bar. Tracks
+  // cameraTarget (the player the camera follows) so a downed spectator sees the teammate they
+  // watch drained by THAT player's HP; cameraTarget === localPlayer while alive / single-player.
+  const cam = cameraTarget(state);
+  const cg = integrityGrade(
+    Math.max(0, cam.hp) / cam.maxHp,
+    CONFIG.horror.desatOnset,
+    CONFIG.horror.desatGamma,
+  );
+  const filter =
+    cg > 0
+      ? `saturate(${1 - cg * (1 - CONFIG.horror.desatFloor)}) brightness(${1 - cg * CONFIG.horror.desatDim})`
+      : ""; // calm zone → no filter (no extra compositing pass)
+  if (filter !== lastFilter) {
+    gameCanvas ??= el("game");
+    gameCanvas.style.filter = filter;
+    lastFilter = filter;
+  }
   el("wave").textContent = String(state.day);
   el("weapon-name").textContent = wd.name + (p.reloadT > 0 ? " · RELOADING" : "");
   const reserve = p.reserve[p.weapon] ?? 0;
@@ -981,9 +1004,7 @@ export function updateHUD(): void {
   }
 
   // dread vignette intensity
-  const hud = el("hud");
   const low = hpf < CONFIG.horror.lowHp;
-  hud.classList.toggle("low", low);
   // heartbeat-synced red pulse: a quick throb in time with the heartbeat audio (set in
   // audioAmbience). Decays from state.time so audio and visuals beat together.
   const pulse = low ? beatStrength * Math.exp(-(state.time - lastBeatT) * 7) : 0;
