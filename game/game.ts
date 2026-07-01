@@ -1332,6 +1332,9 @@ function endRun(salvage: number, day: number, kills: number, money: number): voi
   el("over-salvage").textContent = String(salvage);
   hide("hud");
   show("over");
+  // clear the HP-desaturation filter so it does not persist onto the debrief screen
+  lastFilter = "";
+  if (gameCanvas) gameCanvas.style.filter = "";
 }
 
 function gameOver(): void {
@@ -1366,6 +1369,9 @@ export function toTitle(): void {
   hide("hud");
   hide("lobby");
   hide("coop");
+  // clear the HP-desaturation filter so it does not persist onto the title/arsenal screen
+  lastFilter = "";
+  if (gameCanvas) gameCanvas.style.filter = "";
   renderArsenal();
   show("start");
 }
