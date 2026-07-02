@@ -30,6 +30,7 @@ import {
   hostLobbyWaitModel,
   type LobbyWaitModel,
   type LobbyWaitSlot,
+  type ManualLobbyDisplayState,
   manualLobbyWaitModel,
 } from "./lobbyWait";
 import { Client } from "./net/client";
@@ -651,6 +652,11 @@ function wireCoop(): void {
     // manual fallback: opening <details> hides the room code (so the mode is unambiguous)
     // and lazily builds an offer on first open.
     let manualReady = false;
+    let manualState: ManualLobbyDisplayState = { k: "codes", role: "host" };
+    const setManualState = (state: ManualLobbyDisplayState): void => {
+      manualState = state;
+      if (manual.open) renderLobbyWait(manualLobbyWaitModel(manualState));
+    };
     manual.ontoggle = (): void => {
       roomHost.style.display = manual.open ? "none" : "flex";
       guide.textContent = manual.open
@@ -660,40 +666,29 @@ function wireCoop(): void {
         refreshSquad();
         return;
       }
-      if (manualReady) return;
-      manualReady = true;
-      sendBlock.style.order = "-1"; // your code first, their reply below
-      sendLabel.textContent = "Your code — send to a friend";
-      recvLabel.textContent = "Their reply — paste it here";
-      go.textContent = "Connect";
-      renderLobbyWait(manualLobbyWaitModel({ k: "codes", role: "host" }));
-      void (async () => {
-        try {
-          const { link, offer, accept } = await createHostLink();
-          host.add(link);
-          let opened = false;
-          link.onOpen(() => {
-            opened = true;
-            if (!manual.open) {
-              refreshSquad();
-              return;
-            }
-            setStatus("manual peer linked ✓");
-            renderLobbyWait(manualLobbyWaitModel({ k: "connected", role: "host" }));
-          });
-          link.onClose(() => {
-            if (!manual.open) {
-              refreshSquad();
-              return;
-            }
-            const step = opened ? "host" : "link";
-            setStatus(
-              step === "host"
-                ? "manual peer disconnected — re-open manual connect to try again"
-                : "manual peer link closed before it opened — re-open manual connect to try again",
-            );
-            renderLobbyWait(
-              manualLobbyWaitModel({
+      if (!manualReady) {
+        manualReady = true;
+        sendBlock.style.order = "-1"; // your code first, their reply below
+        sendLabel.textContent = "Your code — send to a friend";
+        recvLabel.textContent = "Their reply — paste it here";
+        go.textContent = "Connect";
+        void (async () => {
+          try {
+            const { link, offer, accept } = await createHostLink();
+            host.add(link);
+            let opened = false;
+            link.onOpen(() => {
+              opened = true;
+              setManualState({ k: "connected", role: "host" });
+              if (!manual.open) {
+                refreshSquad();
+                return;
+              }
+              setStatus("manual peer linked ✓");
+            });
+            link.onClose(() => {
+              const step = opened ? "host" : "link";
+              setManualState({
                 k: "error",
                 role: "host",
                 step,
@@ -701,42 +696,48 @@ function wireCoop(): void {
                   step === "host"
                     ? "Manual peer disconnected. Re-open manual connect to try again."
                     : "Manual peer link closed before it opened. Re-open manual connect to try again.",
-              }),
-            );
-          });
-          out.value = offer;
-          go.onclick = async () => {
-            const c = inEl.value.trim();
-            if (!c) return;
-            try {
-              renderLobbyWait(manualLobbyWaitModel({ k: "linking", role: "host" }));
-              await accept(c);
-              setStatus("manual peer linked ✓");
-              renderLobbyWait(manualLobbyWaitModel({ k: "connected", role: "host" }));
-            } catch {
-              setStatus("that reply code didn't parse");
-              renderLobbyWait(
-                manualLobbyWaitModel({
+              });
+              if (!manual.open) {
+                refreshSquad();
+                return;
+              }
+              setStatus(
+                step === "host"
+                  ? "manual peer disconnected — re-open manual connect to try again"
+                  : "manual peer link closed before it opened — re-open manual connect to try again",
+              );
+            });
+            out.value = offer;
+            go.onclick = async () => {
+              const c = inEl.value.trim();
+              if (!c) return;
+              try {
+                setManualState({ k: "linking", role: "host" });
+                await accept(c);
+                setStatus("manual peer linked ✓");
+                setManualState({ k: "connected", role: "host" });
+              } catch {
+                setStatus("that reply code didn't parse");
+                setManualState({
                   k: "error",
                   role: "host",
                   step: "codes",
                   msg: "That reply code didn't parse.",
-                }),
-              );
-            }
-          };
-        } catch (err) {
-          setStatus(`manual offer failed: ${err}`);
-          renderLobbyWait(
-            manualLobbyWaitModel({
+                });
+              }
+            };
+          } catch (err) {
+            setStatus(`manual offer failed: ${err}`);
+            setManualState({
               k: "error",
               role: "host",
               step: "codes",
               msg: `Manual offer failed: ${err}`,
-            }),
-          );
-        }
-      })();
+            });
+          }
+        })();
+      }
+      renderLobbyWait(manualLobbyWaitModel(manualState));
     };
   };
 
@@ -842,6 +843,11 @@ function wireCoop(): void {
     // manual fallback: opening <details> hides the room-code input (mode is unambiguous)
     // and lazily wires the paste-host-code → generate-reply flow on first open.
     let manualReady = false;
+    let manualState: ManualLobbyDisplayState = { k: "codes", role: "client" };
+    const setManualState = (state: ManualLobbyDisplayState): void => {
+      manualState = state;
+      if (manual.open) renderLobbyWait(manualLobbyWaitModel(manualState));
+    };
     let opened = false;
     let terminal = false;
     manual.ontoggle = (): void => {
@@ -857,77 +863,63 @@ function wireCoop(): void {
         return;
       }
       clearTimeout(failTimer);
-      if (manualReady) return;
-      manualReady = true;
-      sendBlock.style.order = ""; // host's code (recv) first, your reply (send) below
-      sendBlock.style.display = "none"; // reply revealed once generated
-      recvLabel.textContent = "Host's code — paste it here";
-      sendLabel.textContent = "Your reply — send it back to the host";
-      go.textContent = "Generate reply";
-      renderLobbyWait(manualLobbyWaitModel({ k: "codes", role: "client" }));
-      go.onclick = async () => {
-        const offer = inEl.value.trim();
-        renderLobbyWait(manualLobbyWaitModel({ k: "codes", role: "client" }));
-        if (!offer) return;
-        try {
-          const { link, answer } = await createClientLink(offer);
-          renderLobbyWait(manualLobbyWaitModel({ k: "linking", role: "client" }));
-          Net.mode = "client";
-          Net.client = new Client(link, undefined, {
-            // manual SDP bypasses the signaling version gate → re-check on Hello
-            onVersionMismatch: () => {
-              terminal = true;
-              setClientLobby({
-                k: "lost",
-                step: "host",
-                msg: "host is on a different version — update to play together",
-              });
-              renderLobbyWait(
-                manualLobbyWaitModel({
+      if (!manualReady) {
+        manualReady = true;
+        sendBlock.style.order = ""; // host's code (recv) first, your reply (send) below
+        sendBlock.style.display = "none"; // reply revealed once generated
+        recvLabel.textContent = "Host's code — paste it here";
+        sendLabel.textContent = "Your reply — send it back to the host";
+        go.textContent = "Generate reply";
+        go.onclick = async () => {
+          const offer = inEl.value.trim();
+          setManualState({ k: "codes", role: "client" });
+          if (!offer) return;
+          try {
+            const { link, answer } = await createClientLink(offer);
+            setManualState({ k: "linking", role: "client" });
+            Net.mode = "client";
+            Net.client = new Client(link, undefined, {
+              // manual SDP bypasses the signaling version gate → re-check on Hello
+              onVersionMismatch: () => {
+                terminal = true;
+                setClientLobby({
+                  k: "lost",
+                  step: "host",
+                  msg: "host is on a different version — update to play together",
+                });
+                setManualState({
                   k: "error",
                   role: "client",
                   step: "host",
                   msg: "Host is on a different version — update to play together.",
-                }),
-              );
-              link.close();
-            },
-            // host turned us away: room is full (the client closes its own link on this event)
-            onRoomFull: () => {
-              terminal = true;
-              setClientLobby({
-                k: "lost",
-                step: "host",
-                msg: "room is full — the squad is already at capacity (4).",
-              });
-              renderLobbyWait(
-                manualLobbyWaitModel({
+                });
+                link.close();
+              },
+              // host turned us away: room is full (the client closes its own link on this event)
+              onRoomFull: () => {
+                terminal = true;
+                setClientLobby({
+                  k: "lost",
+                  step: "host",
+                  msg: "room is full — the squad is already at capacity (4).",
+                });
+                setManualState({
                   k: "error",
                   role: "client",
                   step: "host",
                   msg: "Room is full — the squad is already at capacity (4).",
-                }),
-              );
-            },
-          });
-          link.onOpen(() => {
-            opened = true;
-            setClientLobby({ k: "connected" });
-            if (manual.open) {
-              renderLobbyWait(manualLobbyWaitModel({ k: "connected", role: "client" }));
-            }
-          });
-          link.onClose(() => {
-            if (terminal) return; // version mismatch / room full already rendered a terminal error
-            if (!manual.open) return;
-            const step = opened ? "host" : "link";
-            setStatus(
-              step === "host"
-                ? "manual link disconnected — re-open manual connect to retry"
-                : "manual link closed before it opened — re-open manual connect to retry",
-            );
-            renderLobbyWait(
-              manualLobbyWaitModel({
+                });
+              },
+            });
+            link.onOpen(() => {
+              opened = true;
+              setClientLobby({ k: "connected" });
+              setManualState({ k: "connected", role: "client" });
+            });
+            link.onClose(() => {
+              if (terminal) return; // version mismatch / room full already rendered a terminal error
+              const step = opened ? "host" : "link";
+              setManualState({
                 k: "error",
                 role: "client",
                 step,
@@ -935,25 +927,30 @@ function wireCoop(): void {
                   step === "host"
                     ? "Manual link disconnected. Re-open manual connect to retry."
                     : "Manual link closed before it opened. Re-open manual connect to retry.",
-              }),
-            );
-          });
-          out.value = answer;
-          sendBlock.style.display = "flex";
-          setStatus("reply ready — send it to the host, then wait");
-          renderLobbyWait(manualLobbyWaitModel({ k: "linking", role: "client" }));
-        } catch {
-          setStatus("that host code didn't parse");
-          renderLobbyWait(
-            manualLobbyWaitModel({
+              });
+              if (!manual.open) return;
+              setStatus(
+                step === "host"
+                  ? "manual link disconnected — re-open manual connect to retry"
+                  : "manual link closed before it opened — re-open manual connect to retry",
+              );
+            });
+            out.value = answer;
+            sendBlock.style.display = "flex";
+            setStatus("reply ready — send it to the host, then wait");
+            setManualState({ k: "linking", role: "client" });
+          } catch {
+            setStatus("that host code didn't parse");
+            setManualState({
               k: "error",
               role: "client",
               step: "codes",
               msg: "That host code didn't parse.",
-            }),
-          );
-        }
-      };
+            });
+          }
+        };
+      }
+      renderLobbyWait(manualLobbyWaitModel(manualState));
     };
   };
 
