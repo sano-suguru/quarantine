@@ -622,7 +622,125 @@ body {
     opacity: 0.25;
   }
 }
-/* co-op lobby: connecting spinner + squad badges */
+/* co-op lobby: visual waiting flow + squad slots */
+.lobby-wait {
+  width: min(520px, 90vw);
+  margin-top: 14px;
+  padding: 13px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: 0 0 0 1px rgba(159, 220, 184, 0.16);
+}
+.lobby-wait:empty {
+  display: none;
+}
+.lobby-stepper {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.lobby-stepper::before {
+  content: "";
+  position: absolute;
+  left: 12.5%;
+  right: 12.5%;
+  top: 18px;
+  height: 2px;
+  background: rgba(159, 220, 184, 0.18);
+}
+.lobby-step {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  text-align: center;
+  color: rgba(215, 255, 225, 0.52);
+}
+.lobby-step-node {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin: 0 auto 7px;
+  border-radius: 50%;
+  background: #08100b;
+  color: rgba(215, 255, 225, 0.56);
+  box-shadow: 0 0 0 1px rgba(159, 220, 184, 0.24);
+  font-size: 13px;
+  font-weight: 800;
+}
+.lobby-step.is-done .lobby-step-node {
+  background: rgba(125, 255, 79, 0.15);
+  color: var(--toxic);
+  box-shadow: 0 0 0 1px rgba(125, 255, 79, 0.42);
+}
+.lobby-step.is-current .lobby-step-node,
+.lobby-step.is-busy .lobby-step-node {
+  background: var(--toxic);
+  color: #041006;
+  box-shadow:
+    0 0 0 4px rgba(125, 255, 79, 0.12),
+    0 0 22px rgba(125, 255, 79, 0.42);
+}
+.lobby-step.is-busy .lobby-step-node {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.lobby-step.is-error .lobby-step-node {
+  background: var(--amber);
+  color: #140d02;
+  box-shadow:
+    0 0 0 4px rgba(255, 191, 71, 0.12),
+    0 0 22px rgba(255, 191, 71, 0.35);
+}
+.lobby-step.is-info .lobby-step-node {
+  background: rgba(159, 220, 184, 0.12);
+  color: #9fdcb8;
+  box-shadow: 0 0 0 1px rgba(159, 220, 184, 0.28);
+}
+.lobby-step-title {
+  overflow: hidden;
+  color: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.lobby-step-detail {
+  margin-top: 2px;
+  color: rgba(215, 255, 225, 0.5);
+  font-size: 10px;
+  line-height: 1.2;
+}
+.lobby-wait-card {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(125, 255, 79, 0.07);
+  box-shadow: 0 0 0 1px rgba(125, 255, 79, 0.2);
+  text-align: left;
+}
+.lobby-wait.tone-busy .lobby-wait-card {
+  background: rgba(159, 220, 184, 0.07);
+  box-shadow: 0 0 0 1px rgba(159, 220, 184, 0.2);
+}
+.lobby-wait.tone-warn .lobby-wait-card {
+  background: rgba(255, 191, 71, 0.08);
+  box-shadow: 0 0 0 1px rgba(255, 191, 71, 0.28);
+}
+.lobby-wait-title {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+.lobby-wait-detail {
+  margin-top: 4px;
+  color: rgba(215, 255, 225, 0.68);
+  font-size: 12px;
+  line-height: 1.35;
+}
 #lobby-status.busy::after {
   content: "";
   display: inline-block;
@@ -652,10 +770,21 @@ body {
   background: rgba(0, 0, 0, 0.35);
   box-shadow: 0 0 0 1px var(--line);
 }
+.squad-chip.empty,
+.squad-chip.unknown {
+  color: rgba(215, 255, 225, 0.5);
+  border-style: dashed;
+  background: rgba(0, 0, 0, 0.2);
+}
 .squad-dot {
   width: 9px;
   height: 9px;
   border-radius: 2px;
+}
+.squad-chip.empty .squad-dot,
+.squad-chip.unknown .squad-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgba(215, 255, 225, 0.35);
 }
 /* ?netlog co-op net-stat readout (hidden unless enabled) */
 #netstat {
