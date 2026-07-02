@@ -98,15 +98,71 @@ toggle, or a fresh lobby entry) invalidate an in-flight attempt. Disposing `Net.
 case where `becomeClient()` already wired a link before the abandon.
 
 **Callers:**
-- `openJoinLobby` — **replaces** the current inline `lastClientLobbyState = null` +
-  `roomGo.disabled = false`. (Fresh entry has no in-flight flow, so the abandon half is a harmless
-  idempotent no-op.)
+- `openJoinLobby` — called as its **first statement, before `openLobby("join")`**, replacing the
+  current inline `lastClientLobbyState = null` + `roomGo.disabled = false`. Ordering matters:
+  `endCoop()` does **not** clear `lastClientLobbyState` (it is `wireCoop`-local), so a prior
+  `connected` value survives a Back. If `openLobby` (which calls `syncEntryVisibility`) ran while
+  `lastClientLobbyState` was still stale-`connected`, `busy` would be true and the fresh JOIN row
+  would render hidden. Resetting **before** `openLobby` guarantees `syncEntryVisibility` derives from
+  a clean idle state. (Fresh entry has no in-flight flow, so the abandon half is a harmless idempotent
+  no-op.)
 - The **client** `manual.ontoggle` **open** branch, at its top (before the `manualReady` build) —
-  this is the *abandon-on-open* arbitration. Because the room-code attempt is now dead whenever
-  manual is open, `syncEntryVisibility` never has to reason about a concurrent room-code connect.
+  this is the *abandon-on-open* arbitration, **guarded** to fire only when a room-code attempt is
+  actually live:
+
+  ```ts
+  const k = lastClientLobbyState?.k;
+  if (manual.open && (k === "joining" || k === "linking" || k === "connected")) resetJoinEntry();
+  ```
+
+  The guard is required: the `failed` fallback opens `<details>` *programmatically*
+  (`manual.open = true`), which fires this same `ontoggle`. An unconditional `resetJoinEntry()` would
+  then null out the `failed` state and turn the auto-opened fallback into a blank idle entry. Only
+  `joining`/`linking`/`connected` represent a live attempt worth abandoning; `failed`/`lost`/`null`
+  are already settled (nothing in flight). Because the room-code attempt is dead whenever manual is
+  open with a live flow, `syncEntryVisibility` never has to reason about a concurrent room-code
+  connect.
 
 Not used by the **host** `manual.ontoggle` (a different handler): the host has no room-code
 "attempt" to abandon; opening manual there just prepares an additional peer offer.
+
+### Companion fixes (required for I2 to actually hold)
+
+Arbitration via the epoch only works if **every** post-`await` write-back in the room-code `join()`
+respects the epoch, and if abandoning actually releases the relay slot. Two spots don't today:
+
+1. **Un-guarded `catch` in `join()`** (`game/main.ts` ~941-960). The `onRoomFull`, `failTimer`,
+   `link.onOpen`, and `link.onClose` callbacks all early-return on `!isCoopEpochCurrent(epoch)`, but
+   the `catch` does not — a `joinRoom()` that **rejects late** (after manual was opened and the epoch
+   bumped) would still call `setClientLobby({ failed | lost })`, clobbering the manual flow. Add the
+   guard as the first line of the `catch`:
+
+   ```ts
+   } catch (err) {
+     if (!isCoopEpochCurrent(epoch)) return; // manual took over / lobby left — don't clobber it
+     roomGo.disabled = false;
+     ...
+   }
+   ```
+
+   (The resolve path is already safe: `becomeClient(epoch, …)` closes the link and returns `null`
+   when the epoch is stale.)
+
+2. **Signaling socket leak in `joinRoom()`** (`game/net/signaling.ts` ~145-155). The relay WebSocket
+   is closed **only** on `link.onOpen(() => ws.close())`. If the attempt is abandoned (or the NAT
+   `failTimer` fires) **before** the P2P link opens, disposing/closing the `PeerLink` never closes
+   the still-open signaling socket, so the worker keeps counting the client as a live room occupant
+   (`worker/room.ts` removes clients only on WS close) — leaking one of the 3 client slots and
+   risking a false "room is full". Close the socket on link-close too (both callbacks are supported —
+   `onOpen`/`onClose` push into arrays, and `link.close()` → `pc.close()` fires `closeCbs`):
+
+   ```ts
+   link.onOpen(() => ws.close());   // P2P up: signaling no longer needed
+   link.onClose(() => ws.close());  // abandoned/failed before open: release the relay slot
+   ```
+
+   This also repairs a **pre-existing latent leak** on the NAT-timeout path, independent of this
+   feature.
 
 ### `syncEntryVisibility()` — the sole writer of both controls' visibility (I1)
 
@@ -156,9 +212,17 @@ Toggling the whole wrap preserves the client flow's existing internal `#lobby-se
 | Connected, waiting for host             | connected                | false       | hidden             | shown       |
 | P2P failed (auto-opens manual fallback) | failed                   | true        | hidden             | shown       |
 | Dropped / roomfull / version / hostgone | lost                     | false       | shown (retry)      | shown       |
-| Manual opened (room-code abandoned)     | null (reset)             | true        | hidden             | shown       |
-| Manual peer/link connected              | null                     | true        | hidden             | **hidden**  |
-| Manual dropped → error (retry)          | null                     | true        | hidden             | shown       |
+| Manual opened, live room-code abandoned | null (reset)             | true        | hidden             | shown       |
+| Manual peer/link connected              | connected                | true        | hidden             | **hidden**  |
+| Manual dropped → error (retry)          | lost                     | true        | hidden             | shown       |
+
+Note the manual rows: the client manual flow also drives `setClientLobby` — success calls
+`setClientLobby({ connected })` and a drop calls `setClientLobby({ lost })` (`game/main.ts`
+~1050-1070) — so `lastClientLobbyState.k` is `connected`/`lost`, **not** `null`, on those rows. It
+doesn't affect `#lobby-room-join` (hidden regardless because `manual.open` is true) or the manual
+body (keyed on `lastManualState.k`); the column is filled in for accuracy. The `null (reset)` row is
+the guarded abandon-on-open case, which only fires from a live `joining`/`linking`/`connected`
+room-code attempt.
 
 Host lobby: `lobbyKind === "host"` ⇒ `#lobby-room-join` always hidden; `manualBody` hides on host
 manual `connected` (one-shot).
@@ -167,7 +231,9 @@ manual `connected` (one-shot).
 
 - `game/main.ts` — add `lobbyKind`, `lastManualState`, `resetJoinEntry()`, `syncEntryVisibility()`;
   wire the callers; remove the two replaced ad-hoc `roomJoin.style.display` writes; `manualBody`
-  handle. ~25–30 lines net.
+  handle; add the epoch guard to the `join()` `catch`. ~30 lines net.
+- `game/net/signaling.ts` — close the relay WebSocket on `link.onClose` too (release the room slot
+  when a join is abandoned/fails before P2P open). ~1 line.
 - `index.html` — add `id="lobby-manual-body"` to the `.lobby-wrap` inside `#lobby-manual`.
 - No CSS change.
 
@@ -179,9 +245,10 @@ lint + a 2-tab manual playtest. Playtest matrix (incl. rubber-duck edge cases):
 1. Join by code → connected: JOIN row disappears; only the progress card + Back remain.
 2. Connected → Back → re-open Join → JOIN row present and clickable (the earlier re-join bug).
 3. Join by code, open manual **while still connecting**: room-code attempt is abandoned (no ghost
-   on host), manual flow builds cleanly.
-4. Join by code, open manual, then the (abandoned) room-code link resolves late: **no** spurious
-   "connected", **no** second `Net.client`.
+   on host **and** the relay room slot is released — re-check the worker's client count), manual flow
+   builds cleanly.
+4. Join by code, open manual, then the (abandoned) room-code link resolves **or rejects** late:
+   **no** spurious "connected"/"failed" over the manual flow, **no** second `Net.client`.
 5. Close manual after step 3/4 (no manual connect): JOIN row reappears (idle), re-join works.
 6. Manual connect succeeds → manual body hides (only the connected card shows); then drop → error:
    manual body reappears for retry.
