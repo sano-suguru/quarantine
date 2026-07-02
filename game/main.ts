@@ -680,14 +680,19 @@ function wireCoop(): void {
             link.onOpen(() => {
               opened = true;
               setManualState({ k: "connected", role: "host" });
+              setStatus("manual peer linked ✓");
               if (!manual.open) {
                 refreshSquad();
                 return;
               }
-              setStatus("manual peer linked ✓");
             });
             link.onClose(() => {
               const step = opened ? "host" : "link";
+              setStatus(
+                step === "host"
+                  ? "manual peer disconnected — re-open manual connect to try again"
+                  : "manual peer link closed before it opened — re-open manual connect to try again",
+              );
               setManualState({
                 k: "error",
                 role: "host",
@@ -701,11 +706,6 @@ function wireCoop(): void {
                 refreshSquad();
                 return;
               }
-              setStatus(
-                step === "host"
-                  ? "manual peer disconnected — re-open manual connect to try again"
-                  : "manual peer link closed before it opened — re-open manual connect to try again",
-              );
             });
             out.value = offer;
             go.onclick = async () => {
