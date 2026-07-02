@@ -666,6 +666,9 @@ function wireCoop(): void {
         }),
       );
     };
+    host.onRoster = refreshSquad; // the host is the single source of truth for the squad badges —
+    // refresh from its authoritative roster changes (every peer path, incl. grace expiry/reconnect),
+    // NOT from incidental link/signaling events that fire before the host updates its peer state.
     refreshSquad();
     deploy.style.display = "inline-block";
     deploy.textContent = "Deploy raid";
@@ -680,7 +683,6 @@ function wireCoop(): void {
       code,
       (link) => host.add(link),
       (s) => {
-        refreshSquad();
         if (s.error) setStatus(`signaling: ${s.error} — use manual connect below`);
       },
     );
@@ -729,11 +731,7 @@ function wireCoop(): void {
               if (!isCoopEpochCurrent(epoch)) return;
               opened = true;
               setManualState({ k: "connected", role: "host" });
-              setStatus("manual peer linked ✓");
-              if (!manual.open) {
-                refreshSquad();
-                return;
-              }
+              setStatus("manual peer linked ✓"); // squad refresh is driven by host.onRoster
             });
             link.onClose(() => {
               if (!isCoopEpochCurrent(epoch)) return;
@@ -752,10 +750,6 @@ function wireCoop(): void {
                     ? "Manual peer disconnected. Re-open manual connect to try again."
                     : "Manual peer link closed before it opened. Re-open manual connect to try again.",
               });
-              if (!manual.open) {
-                refreshSquad();
-                return;
-              }
             });
             out.value = offer;
             go.onclick = async () => {

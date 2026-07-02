@@ -68,11 +68,19 @@ function makeNonce(): string {
  */
 export class Host {
   readonly links: PeerLink[] = [];
+  /** Roster-change notifier: invoked whenever connectedPids() could change (a peer decided,
+   *  dropped, was refused, re-attached, or a held body expired). The lobby squad refreshes from
+   *  THIS — the host's authoritative roster — so its badges never lag a connection event. */
+  onRoster: (() => void) | null = null;
   private peers: HostPeer[] = [];
   private started = false;
   private disposed = false;
   // when set, broadcasts are suppressed until this time (?netlog test hook to force snap starvation)
   private broadcastPausedUntil = 0;
+
+  private notifyRoster(): void {
+    this.onRoster?.();
+  }
 
   add(link: PeerLink): void {
     if (this.disposed) {
@@ -176,6 +184,7 @@ export class Host {
       } else {
         this.peers = this.peers.filter((x) => x !== peer); // pre-game / undecided drop
       }
+      this.notifyRoster(); // peer.open is now false (or the peer is gone) → squad shrinks
     });
   }
 
@@ -221,6 +230,7 @@ export class Host {
     peer.decided = true;
     this.sendHello(peer);
     if (this.started) this.spawnFresh(peer.pid);
+    this.notifyRoster(); // a new open+decided peer → squad gains a badge
   }
 
   /** Room is at capacity. Tell the client, then untrack the peer at once: a refused peer is a
@@ -257,6 +267,7 @@ export class Host {
       body.absent = false; // resume the body
       this.dropOld(old); // untrack + close the old link FIRST so its onClose no-ops
       this.sendHello(peer);
+      this.notifyRoster(); // re-attached peer is present again → squad restores the badge
     } else {
       if (old) this.dropOld(old);
       this.decideFresh(peer); // grace expired / unknown token → fresh slot
@@ -269,6 +280,7 @@ export class Host {
     this.peers = this.peers.filter((x) => x !== peer);
     const li = this.links.indexOf(peer.link);
     if (li >= 0) this.links.splice(li, 1);
+    this.notifyRoster(); // a refused/superseded peer left the roster → squad refreshes
   }
 
   /** Untrack a superseded peer and close its (dead) link, guarded so its callbacks no-op. */
@@ -318,13 +330,16 @@ export class Host {
     if (!this.started) return;
     const st = getState();
     const grace = CONFIG.net.reconnect.graceMs;
+    let removed = false;
     for (const peer of [...this.peers]) {
       if (peer.open || !peer.decided || peer.goneAt === 0) continue;
       if (now - peer.goneAt > grace) {
         removePlayer(st, peer.pid);
         this.peers = this.peers.filter((x) => x !== peer);
+        removed = true;
       }
     }
+    if (removed) this.notifyRoster(); // a held slot finally freed → registry/squad refresh
   }
 
   /** How many peers are currently connected (for the lobby squad display). */

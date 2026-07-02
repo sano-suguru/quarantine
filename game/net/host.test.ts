@@ -212,6 +212,57 @@ describe("Host grace + reconnect", () => {
   });
 });
 
+describe("Host roster notifications (lobby squad source of truth)", () => {
+  it("fires onRoster AFTER a lobby peer is decided, with the peer already present", () => {
+    const host = new Host();
+    const seen: number[][] = [];
+    host.onRoster = () => seen.push(host.connectedPids().sort());
+    const link = new FakePeerLink();
+    host.add(link);
+    link.fireOpen(); // pre-game open → decideFresh → open+decided
+    // the callback must observe the NEW roster (the peer is already counted), not a stale one
+    expect(seen.at(-1)).toEqual([1]);
+  });
+
+  it("fires onRoster AFTER a pre-game drop, with the peer already gone", () => {
+    const host = new Host();
+    const seen: number[][] = [];
+    const link = new FakePeerLink();
+    host.add(link);
+    link.fireOpen();
+    host.onRoster = () => seen.push(host.connectedPids().sort());
+    link.fireClose(); // pre-game drop → peer removed
+    expect(seen.at(-1)).toEqual([]); // squad refresh sees the emptied roster, not a ghost
+  });
+
+  it("fires onRoster on a mid-game drop so the badge shrinks (absent peer uncounted)", () => {
+    const host = new Host();
+    host.start();
+    const link = new FakePeerLink();
+    host.add(link);
+    link.fireOpen();
+    link.recv({ t: "join" });
+    const seen: number[][] = [];
+    host.onRoster = () => seen.push(host.connectedPids().sort());
+    link.fireClose(); // held absent → not connected
+    expect(seen.at(-1)).toEqual([]);
+  });
+
+  it("fires onRoster when a held body is removed at grace expiry", () => {
+    const host = new Host();
+    host.start();
+    const link = new FakePeerLink();
+    host.add(link);
+    link.fireOpen();
+    link.recv({ t: "join" });
+    link.fireClose();
+    let fired = 0;
+    host.onRoster = () => fired++;
+    host.tickGrace(performance.now() + CONFIG.net.reconnect.graceMs + 1000);
+    expect(fired).toBeGreaterThan(0);
+  });
+});
+
 describe("pickSlot", () => {
   it("assigns the lowest free client slot starting at 1", () => {
     expect(pickSlot([])).toEqual({ kind: "assign", pid: 1 });
