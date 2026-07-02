@@ -45,6 +45,8 @@ export type ManualLobbyDisplayState =
   | { k: "connected"; role: "host" | "client" }
   | { k: "error"; role: "host" | "client"; step: "codes" | "link" | "host"; msg: string };
 
+type ClientRecoverableFailureState = Extract<ClientLobbyDisplayState, { k: "failed" }>;
+
 const hostSteps = (squad: LobbyWaitStepState, deploy: LobbyWaitStepState): LobbyWaitStep[] => [
   { id: "room", label: "Room", detail: "created", state: "done" },
   { id: "squad", label: "Squad", detail: "players join", state: squad },
@@ -189,6 +191,23 @@ export function clientLobbyWaitModel(state: ClientLobbyDisplayState): LobbyWaitM
         showManualFallback: false,
       };
   }
+}
+
+export function clientManualFallbackWaitModel(
+  state: ClientRecoverableFailureState,
+): LobbyWaitModel {
+  return manualLobbyWaitModel(clientManualFallbackState(state));
+}
+
+export function clientManualFallbackState(
+  state: ClientRecoverableFailureState,
+): ManualLobbyDisplayState {
+  return {
+    k: "error",
+    role: "client",
+    step: state.step === "room" ? "codes" : "link",
+    msg: state.msg,
+  };
 }
 
 export function manualLobbyWaitModel(state: ManualLobbyDisplayState): LobbyWaitModel {

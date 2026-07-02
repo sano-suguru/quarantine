@@ -121,6 +121,21 @@ export function joinRoom(code: string): Promise<PeerLink> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(roomUrl(code, "client"));
     let settled = false;
+    const done = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(
+      () => done(new Error("room did not answer")),
+      CONFIG.net.roomAnswerTimeoutMs,
+    );
     ws.addEventListener("message", (e) => {
       const m = JSON.parse(e.data as string) as SignalMsg;
       if (m.t === "offer") {
@@ -129,20 +144,21 @@ export function joinRoom(code: string): Promise<PeerLink> {
           ws.send(JSON.stringify({ t: "answer", code: answer }));
           link.onOpen(() => ws.close()); // signaling no longer needed once P2P is up
           settled = true;
+          clearTimeout(timer);
           resolve(link);
         })();
       } else if (m.t === "full") {
-        reject(new Error("room is full"));
-        ws.close();
+        done(new Error("room is full"));
       } else if (m.t === "versionMismatch") {
-        reject(new Error("host is on a different version — update to play together"));
-        ws.close();
+        done(new Error("host is on a different version — update to play together"));
       } else if (m.t === "hostgone") {
-        if (!settled) reject(new Error("host left"));
+        done(new Error("host left"));
+      } else if (m.t === "nohost") {
+        done(new Error("room not found"));
       }
     });
     ws.addEventListener("error", () => {
-      if (!settled) reject(new Error("signaling unreachable"));
+      done(new Error("signaling unreachable"));
     });
   });
 }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { clientLobbyWaitModel, hostLobbyWaitModel, manualLobbyWaitModel } from "./lobbyWait";
+import {
+  clientLobbyWaitModel,
+  clientManualFallbackWaitModel,
+  hostLobbyWaitModel,
+  manualLobbyWaitModel,
+} from "./lobbyWait";
 
 describe("hostLobbyWaitModel", () => {
   it("shows Deploy as actionable immediately when hosting with zero peers", () => {
@@ -80,6 +85,23 @@ describe("clientLobbyWaitModel", () => {
     expect(failed.showManualFallback).toBe(true);
     expect(lost.steps.find((s) => s.id === "host")?.state).toBe("error");
     expect(lost.showManualFallback).toBe(false);
+  });
+
+  it("keeps the failed step warning-visible when recoverable failure opens manual fallback", () => {
+    const model = clientManualFallbackWaitModel({
+      k: "failed",
+      step: "link",
+      msg: "connection failed (network/NAT) — try manual connect below.",
+    });
+
+    expect(model.steps.map((s) => [s.id, s.label, s.state])).toEqual([
+      ["codes", "Codes", "done"],
+      ["link", "Link", "error"],
+      ["host", "Host", "future"],
+      ["raid", "Raid", "future"],
+    ]);
+    expect(model.tone).toBe("warn");
+    expect(model.steps.some((s) => s.label === "Room")).toBe(false);
   });
 });
 

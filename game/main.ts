@@ -27,6 +27,8 @@ import { Input } from "./input";
 import {
   type ClientLobbyDisplayState,
   clientLobbyWaitModel,
+  clientManualFallbackState,
+  clientManualFallbackWaitModel,
   hostLobbyWaitModel,
   type LobbyWaitModel,
   type LobbyWaitSlot,
@@ -444,6 +446,7 @@ function wireCoop(): void {
   let hostHandle: HostRoom | null = null;
   let coopPollTimer = 0; // OPEN RAIDS poll interval id (0 = not polling)
   let lastClientLobbyState: ClientLobby | null = null;
+  let pendingClientManualState: ManualLobbyDisplayState | null = null;
 
   // status with an optional "connecting" pulse dot (CSS .busy::after)
   const setStatus = (text: string, busy = false): void => {
@@ -535,7 +538,9 @@ function wireCoop(): void {
         break;
       case "failed":
         setStatus(s.msg);
+        pendingClientManualState = clientManualFallbackState(s);
         manual.open = true;
+        renderLobbyWait(clientManualFallbackWaitModel(s));
         break;
       case "lost":
         setStatus(s.msg);
@@ -881,6 +886,10 @@ function wireCoop(): void {
         return;
       }
       clearTimeout(failTimer);
+      if (pendingClientManualState) {
+        manualState = pendingClientManualState;
+        pendingClientManualState = null;
+      }
       if (!manualReady) {
         manualReady = true;
         sendBlock.style.order = ""; // host's code (recv) first, your reply (send) below

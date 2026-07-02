@@ -596,6 +596,12 @@ body {
 .overlay.hidden {
   display: none;
 }
+#lobby {
+  justify-content: flex-start;
+  box-sizing: border-box;
+  padding: clamp(18px, 4vh, 44px) 16px;
+  overflow-y: auto;
+}
 .eyebrow {
   display: inline-flex;
   align-items: center;
