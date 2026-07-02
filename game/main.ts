@@ -1182,6 +1182,7 @@ function wireCoop(): void {
     const top = selectQuickMatch(rooms).slice(0, 3);
     const pick = top.length ? top[Math.floor(Math.random() * top.length)] : undefined;
     if (!pick) {
+      fellBack = true; // synchronous fallback → latch before calling beginPublicHostFromQuickMatch
       beginPublicHostFromQuickMatch(epoch); // nothing joinable → host a public raid
       setStatus(
         registryOk
@@ -1195,6 +1196,7 @@ function wireCoop(): void {
     try {
       link = await joinRoom(pick.code);
     } catch {
+      fellBack = true; // synchronous fallback → latch before calling beginPublicHostFromQuickMatch
       beginPublicHostFromQuickMatch(epoch); // couldn't reach it (or version mismatch) → host instead
       setStatus("Couldn't reach that raid — hosting a public one instead.");
       return;
