@@ -443,6 +443,7 @@ function wireCoop(): void {
 
   let hostHandle: HostRoom | null = null;
   let coopPollTimer = 0; // OPEN RAIDS poll interval id (0 = not polling)
+  let lastClientLobbyState: ClientLobby | null = null;
 
   // status with an optional "connecting" pulse dot (CSS .busy::after)
   const setStatus = (text: string, busy = false): void => {
@@ -520,6 +521,7 @@ function wireCoop(): void {
   // failure-only "open the manual fallback" side-effect lives in exactly one place (the `failed`
   // case). `lost` (opened-then-dropped / version mismatch) deliberately does NOT open manual.
   const setClientLobby = (s: ClientLobby): void => {
+    lastClientLobbyState = s;
     if (!manual.open) renderLobbyWait(clientLobbyWaitModel(s));
     switch (s.k) {
       case "joining":
@@ -748,6 +750,7 @@ function wireCoop(): void {
     guide.textContent = "Enter the host's room code to connect.";
     roomInput.value = prefill ?? "";
     roomInput.focus();
+    lastClientLobbyState = null;
 
     // The room-code attempt's P2P-open timeout. Lifted to the lobby scope (not local to join) so
     // switching to the manual fallback can cancel it — otherwise a pending timer fires
@@ -759,6 +762,7 @@ function wireCoop(): void {
       if (!code || roomGo.disabled) return; // re-entry guard: ignore double-click / Enter spam
       roomGo.disabled = true;
       let rejected = false; // roomfull set a terminal message → don't let onClose clobber it
+      lastClientLobbyState = null;
       setClientLobby({ k: "joining" });
       try {
         const link = await joinRoom(code);
@@ -869,8 +873,11 @@ function wireCoop(): void {
       // Switching to manual abandons the room-code attempt — cancel its timeout so it can't fire
       // setClientLobby({failed}) over the manual flow (clearTimeout(undefined) is a safe no-op).
       if (!manual.open) {
-        wait.replaceChildren();
-        squad.replaceChildren();
+        if (lastClientLobbyState) renderLobbyWait(clientLobbyWaitModel(lastClientLobbyState));
+        else {
+          wait.replaceChildren();
+          squad.replaceChildren();
+        }
         return;
       }
       clearTimeout(failTimer);
