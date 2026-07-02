@@ -486,6 +486,7 @@ function wireCoop(): void {
   const status = el("lobby-status");
   const deploy = el("lobby-deploy");
   const manual = el<HTMLDetailsElement>("lobby-manual");
+  const manualBody = el("lobby-manual-body"); // the manual SDP entry controls (hidden once connected)
   const wait = el("lobby-wait");
   // manual-fallback elements
   const out = el<HTMLTextAreaElement>("lobby-out");
@@ -496,6 +497,8 @@ function wireCoop(): void {
   const recvLabel = el("lobby-recv-label");
 
   let lastClientLobbyState: ClientLobby | null = null;
+  let lobbyKind: "host" | "join" = "join"; // set in openLobby(); gates the room-code entry row
+  let lastManualState: ManualLobbyDisplayState | null = null; // owned by the setManualState funnels
 
   // status with an optional "connecting" pulse dot (CSS .busy::after)
   const setStatus = (text: string, busy = false): void => {
@@ -572,6 +575,17 @@ function wireCoop(): void {
   // event calls setClientLobby({...}) rather than poking setStatus/manual.open directly, so the
   // failure-only "open the manual fallback" side-effect lives in exactly one place (the `failed`
   // case). `lost` (opened-then-dropped / version mismatch) deliberately does NOT open manual.
+  // Sole writer of the entry controls' visibility (I1): a pure function of lobby state. The room-code
+  // row shows only in Join mode, only while manual is closed, and only when idle or in a retryable
+  // state (null / failed / lost) — hidden while actively connecting or connected. The manual body's
+  // entry controls are spent once a manual peer/link is connected.
+  const syncEntryVisibility = (): void => {
+    const k = lastClientLobbyState?.k;
+    const busy = k === "joining" || k === "linking" || k === "connected";
+    roomJoin.style.display = lobbyKind === "join" && !manual.open && !busy ? "flex" : "none";
+    manualBody.style.display = lastManualState?.k === "connected" ? "none" : "";
+  };
+
   const setClientLobby = (s: ClientLobby): void => {
     lastClientLobbyState = s;
     if (!manual.open) renderLobbyWait(clientLobbyWaitModel(s));
@@ -597,6 +611,7 @@ function wireCoop(): void {
       default:
         assertNever(s);
     }
+    syncEntryVisibility();
   };
 
   const openLobby = (kind: "host" | "join"): void => {
@@ -604,7 +619,6 @@ function wireCoop(): void {
     hide("coop");
     show("lobby");
     roomHost.style.display = kind === "host" ? "flex" : "none";
-    roomJoin.style.display = kind === "join" ? "flex" : "none";
     deploy.style.display = "none";
     squad.replaceChildren();
     wait.replaceChildren();
@@ -613,6 +627,9 @@ function wireCoop(): void {
     inEl.value = "";
     manual.open = false;
     manual.ontoggle = null;
+    lobbyKind = kind;
+    lastManualState = null; // manual body starts shown; setManualState will hide it on connect
+    syncEntryVisibility(); // sole writer of roomJoin + manualBody visibility (replaces the old direct write)
   };
   const closeLobby = (): void => {
     endCoop(); // disposes host/client links (host: no ghost peer; client: host sees us drop) + resets
@@ -700,10 +717,13 @@ function wireCoop(): void {
     let manualState: ManualLobbyDisplayState = { k: "codes", role: "host" };
     const setManualState = (state: ManualLobbyDisplayState): void => {
       manualState = state;
+      lastManualState = state; // sole owner of lastManualState (drives manual-body visibility)
       if (manual.open) renderLobbyWait(manualLobbyWaitModel(manualState));
+      syncEntryVisibility();
     };
     manual.ontoggle = (): void => {
       roomHost.style.display = manual.open ? "none" : "flex";
+      syncEntryVisibility(); // keep manualBody/roomJoin derived from state (host: roomJoin stays hidden)
       guide.textContent = manual.open
         ? "Manual connect — share your code, paste their reply."
         : "Share the room code with your squad, then Deploy.";
@@ -973,10 +993,12 @@ function wireCoop(): void {
     let manualState: ManualLobbyDisplayState = { k: "codes", role: "client" };
     const setManualState = (state: ManualLobbyDisplayState): void => {
       manualState = state;
+      lastManualState = state; // sole owner of lastManualState (drives manual-body visibility)
       if (manual.open) renderLobbyWait(manualLobbyWaitModel(manualState));
+      syncEntryVisibility();
     };
     manual.ontoggle = (): void => {
-      roomJoin.style.display = manual.open ? "none" : "flex";
+      syncEntryVisibility(); // roomJoin tracks manual.open via the sole writer
       guide.textContent = manual.open
         ? "Manual connect — paste the host's code to get a reply."
         : "Enter the host's room code to connect.";
