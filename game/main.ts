@@ -41,10 +41,16 @@ import { sampleLocalInput } from "./net/localInput";
 import { Net } from "./net/net";
 import { emptyInput } from "./net/playerInput";
 import { listRooms, type RoomInfo, selectQuickMatch, versionMatches } from "./net/registry";
-import { bumpCoopEpoch } from "./net/session";
+import { bumpCoopEpoch, coopEpoch, isCoopEpochCurrent } from "./net/session";
 import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
-import { createClientLink, createHostLink, getTurnStatus, NETLOG } from "./net/transport";
+import {
+  createClientLink,
+  createHostLink,
+  getTurnStatus,
+  NETLOG,
+  type PeerLink,
+} from "./net/transport";
 import { getSettings, setAimAssist } from "./settings";
 import { sysCamera } from "./systems/camera";
 import { sysFx } from "./systems/fx";
@@ -772,6 +778,55 @@ function wireCoop(): void {
     };
   };
 
+  // The single guarded "become a client" write-back. Every join path (room-code, quick match,
+  // manual SDP) routes here so a teardown mid-await can't resurrect a dead session: if the captured
+  // epoch is stale, close the freshly-obtained link and bail instead of wiring it into Net.
+  const becomeClient = (
+    epoch: number,
+    link: PeerLink,
+    code: string | null,
+    hooks?: ConstructorParameters<typeof Client>[2],
+  ): Client | null => {
+    if (!isCoopEpochCurrent(epoch)) {
+      try {
+        link.close(); // user left during the join await — drop the link so the host sees no ghost
+      } catch {
+        /* already closing — ignore */
+      }
+      return null;
+    }
+    Net.mode = "client";
+    coopRoomCode = code; // arm the reconnect watchdog (null for manual SDP: no room to rejoin)
+    const client = new Client(link, undefined, hooks);
+    Net.client = client;
+    return client;
+  };
+
+  // NON-terminal: a client attempt failed but the player stays in the flow (lobby stays open to
+  // retry). Drop the dead client link + reset transient client state without a full endCoop().
+  // Clears Net.client BEFORE dispose() so a synchronous re-entrant onClose sees no client and the
+  // attempt-local `settled` latch (set by the caller) already suppresses the fallback.
+  const abandonClientAttempt = (epoch: number): void => {
+    if (!isCoopEpochCurrent(epoch)) return; // a real teardown already owns Net — don't fight it
+    const client = Net.client;
+    Net.client = null;
+    Net.mode = "single";
+    coopRoomCode = null; // disarm the reconnect watchdog for the abandoned room
+    client?.dispose();
+  };
+
+  // NON-terminal transition: the quick-match join didn't pan out → abandon any in-flight client
+  // attempt (drops its link + resets coopRoomCode/Net.mode), then become a public host.
+  // (openHostLobby sets Net.mode = "host" and builds the Host.) Callers MUST set their attempt-local
+  // `settled` latch BEFORE calling this so the link.close() inside abandonClientAttempt can't
+  // re-enter the same fallback via onClose.
+  const beginPublicHostFromQuickMatch = (epoch: number): void => {
+    if (!isCoopEpochCurrent(epoch)) return; // teardown won — stay torn down
+    abandonClientAttempt(epoch); // dispose the in-flight client link + reset transient client state
+    if (!isCoopEpochCurrent(epoch)) return; // dispose's re-entrant onClose could have torn us down
+    openHostLobby(true);
+  };
+
   // ---- JOIN (by code; also used by an Open Raids row with a prefilled code) ----
   const openJoinLobby = (prefill?: string): void => {
     openLobby("join");
@@ -790,14 +845,16 @@ function wireCoop(): void {
       const code = roomInput.value.trim().toUpperCase(); // idFromName is case-sensitive
       if (!code || roomGo.disabled) return; // re-entry guard: ignore double-click / Enter spam
       roomGo.disabled = true;
-      let rejected = false; // roomfull set a terminal message → don't let onClose clobber it
+      const epoch = coopEpoch(); // cancel our write-backs if the player leaves during the await
+      // Attempt-local latch: the FIRST terminal outcome (roomfull / timeout / link-close failure)
+      // wins and every later one no-ops. This subsumes the old `rejected` flag and makes the flow
+      // safe against re-entrant onClose firing when abandonClientAttempt() closes the link.
+      let settled = false;
       lastClientLobbyState = null;
       setClientLobby({ k: "joining" });
       try {
         const link = await joinRoom(code);
-        Net.mode = "client";
-        coopRoomCode = code; // arm the reconnect watchdog for this room
-        Net.client = new Client(link, undefined, {
+        const client = becomeClient(epoch, link, code, {
           // persist our reconnect identity each Hello so a drop can rejoin the same slot
           onIdentity: (pid, nonce) => {
             try {
@@ -810,7 +867,8 @@ function wireCoop(): void {
           // do NOT open the manual fallback — surface a clear message and re-enable Join so the
           // player can try a different code.
           onRoomFull: () => {
-            rejected = true;
+            if (settled || !isCoopEpochCurrent(epoch)) return; // stale/already-settled — ignore
+            settled = true;
             clearTimeout(failTimer); // roomfull can arrive before/around open → don't let the
             // NAT-timeout later clobber this terminal message with a "failed"
             coopRoomCode = null; // don't try to reconnect to a room we were refused from
@@ -822,6 +880,10 @@ function wireCoop(): void {
             roomGo.disabled = false;
           },
         });
+        if (!client) {
+          roomGo.disabled = false; // player left during the await → re-enable Join for a future visit
+          return; // becomeClient already closed the link
+        }
         setClientLobby({ k: "linking" });
         // joinRoom resolves when our ANSWER is sent, NOT when the P2P link actually opens. A
         // blocked NAT/firewall (e.g. a corporate network) then fails silently. Confirm a real
@@ -829,7 +891,9 @@ function wireCoop(): void {
         // sees "couldn't connect" instead of sitting forever on a misleading "connected".
         let opened = false;
         failTimer = setTimeout(() => {
-          if (opened) return;
+          if (opened || settled || !isCoopEpochCurrent(epoch)) return;
+          settled = true;
+          abandonClientAttempt(epoch); // close the never-opened link so the host sees no ghost
           roomGo.disabled = false;
           setClientLobby({
             k: "failed",
@@ -840,13 +904,16 @@ function wireCoop(): void {
           });
         }, CONFIG.net.p2pOpenTimeoutMs);
         link.onOpen(() => {
+          if (!isCoopEpochCurrent(epoch)) return;
           opened = true;
           clearTimeout(failTimer);
           setClientLobby({ k: "connected" });
         });
         link.onClose(() => {
+          if (!isCoopEpochCurrent(epoch)) return; // teardown already closed us — don't touch the UI
           clearTimeout(failTimer);
-          if (rejected) return; // roomfull already showed the terminal "room is full"
+          if (settled) return; // roomfull/timeout already rendered the terminal outcome
+          settled = true;
           roomGo.disabled = false;
           setClientLobby(
             opened
