@@ -1166,6 +1166,10 @@ function wireCoop(): void {
   const quickMatch = async (): Promise<void> => {
     stopCoopPoll();
     el<HTMLButtonElement>("coop-quick").disabled = true; // no re-entry until we leave/return to the hub
+    const epoch = coopEpoch(); // cancel our write-backs if the player leaves the hub mid-scan
+    // Attempt-local latch: the first fallback-to-host wins; later callbacks (onClose re-entry after
+    // the client link is disposed, a late timeout) no-op instead of opening a second host.
+    let fellBack = false;
     coopStatus("scanning for raids…", true);
     let rooms: RoomInfo[] = [];
     let registryOk = true;
@@ -1174,10 +1178,11 @@ function wireCoop(): void {
     } catch {
       registryOk = false; // browser unreachable → fall through to hosting
     }
+    if (!isCoopEpochCurrent(epoch)) return; // left the hub during the scan
     const top = selectQuickMatch(rooms).slice(0, 3);
     const pick = top.length ? top[Math.floor(Math.random() * top.length)] : undefined;
     if (!pick) {
-      openHostLobby(true); // nothing joinable → host a public raid
+      beginPublicHostFromQuickMatch(epoch); // nothing joinable → host a public raid
       setStatus(
         registryOk
           ? "No open raids found — hosting a public one. Others can Quick Match in."
@@ -1190,14 +1195,12 @@ function wireCoop(): void {
     try {
       link = await joinRoom(pick.code);
     } catch {
-      openHostLobby(true); // couldn't reach it (or version mismatch) → host instead
+      beginPublicHostFromQuickMatch(epoch); // couldn't reach it (or version mismatch) → host instead
       setStatus("Couldn't reach that raid — hosting a public one instead.");
       return;
     }
     const code = pick.code;
-    Net.mode = "client";
-    coopRoomCode = code;
-    Net.client = new Client(link, undefined, {
+    const client = becomeClient(epoch, link, code, {
       onIdentity: (pid, nonce) => {
         try {
           sessionStorage.setItem(`q_rejoin_${code}`, JSON.stringify({ pid, nonce }));
@@ -1206,26 +1209,19 @@ function wireCoop(): void {
         }
       },
       onRoomFull: () => {
+        if (fellBack || !isCoopEpochCurrent(epoch)) return;
+        fellBack = true;
         clearTimeout(t); // defensive — normally already cleared on open
-        Net.client = null;
-        Net.mode = "single";
-        coopRoomCode = null;
-        openHostLobby(true);
+        beginPublicHostFromQuickMatch(epoch);
         setStatus("This raid is full — hosting a public one instead.");
       },
     });
+    if (!client) return; // player left during the await → becomeClient closed the link
     let opened = false;
     const t = window.setTimeout(() => {
-      if (opened) return;
-      try {
-        link.close();
-      } catch {
-        /* ignore */
-      }
-      Net.client = null;
-      Net.mode = "single";
-      coopRoomCode = null;
-      openHostLobby(true); // didn't connect in time → host instead
+      if (opened || fellBack || !isCoopEpochCurrent(epoch)) return;
+      fellBack = true;
+      beginPublicHostFromQuickMatch(epoch); // didn't connect in time → drop link + host instead
       setStatus(
         getTurnStatus() === "budget-reached"
           ? "Relay at capacity this month — hosting a public raid (same-network players only)."
@@ -1233,17 +1229,16 @@ function wireCoop(): void {
       );
     }, CONFIG.net.quickMatchTimeoutMs);
     link.onOpen(() => {
+      if (!isCoopEpochCurrent(epoch)) return;
       opened = true;
       clearTimeout(t);
       coopStatus("connected — waiting for host to deploy");
     });
     link.onClose(() => {
-      if (opened) return; // post-open drops are the reconnect watchdog's job
+      if (opened || fellBack || !isCoopEpochCurrent(epoch)) return; // post-open → reconnect watchdog
+      fellBack = true;
       clearTimeout(t);
-      Net.client = null;
-      Net.mode = "single";
-      coopRoomCode = null;
-      openHostLobby(true);
+      beginPublicHostFromQuickMatch(epoch);
       setStatus(
         getTurnStatus() === "budget-reached"
           ? "Relay at capacity this month — hosting a public raid (same-network players only)."
@@ -1255,17 +1250,17 @@ function wireCoop(): void {
   // ---- title + hub wiring ----
   el("mpCoopBtn").onclick = openCoopHub;
   el("coop-back").onclick = () => {
-    stopCoopPoll();
+    endCoop(); // cancel any in-flight quick match + drop a partial client link; also stops the poll
     hide("coop");
     show("start");
   };
   el("coop-quick").onclick = () => void quickMatch();
   el("coop-host").onclick = () => {
-    stopCoopPoll();
+    endCoop(); // cancel a pending quick match before starting a fresh host intent
     openHostLobby(true);
   };
   el("coop-joincode").onclick = () => {
-    stopCoopPoll();
+    endCoop(); // cancel a pending quick match before opening the join lobby
     openJoinLobby();
   };
 }
