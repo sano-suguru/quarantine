@@ -1,0 +1,9 @@
+- QUARANTINE: TypeScript/WebGL2 top-down day/night siege survival-horror game.
+- Entry `index.html` -> `game/main.ts`; fixed timestep loop at `CONFIG.simHz`.
+- `game/game.ts` owns mutable `state`, UI phase transitions, HUD/draw orchestration, and update order: player, AI, death check, bullets, pickups, FX, siege, camera, ambience.
+- `game/state.ts` builds full run state; `game/types.ts` holds shared interfaces.
+- Tune content/feel via `game/config.ts` and `game/data/**` first; systems and engine should stay generic.
+- `game/systems/**` are simulation systems over `(state, dt)`; keep UI-free and net-agnostic, return events instead of direct transitions.
+- `game/net/**` implements host-authoritative 2-4 player co-op; host runs sim, clients send intent and render interpolated/predicted snapshots.
+- Worker/signaling/static host lives in `worker/` with separate package/lock/tsconfig.
+- See tooling in `mem:tech_stack`, commands in `mem:suggested_commands`, style/design rules in `mem:conventions`, completion checks in `mem:task_completion`.

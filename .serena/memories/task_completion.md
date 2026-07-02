@@ -1,0 +1,5 @@
+- For code changes, run the smallest targeted validation that covers the change.
+- Standard checks: `bun run typecheck`; `bun run test` or targeted Vitest selector when pure logic is touched; `bun run lint` for formatting/lint import-type issues.
+- Use `bun run build` when bundling/runtime integration or Vite asset behavior is affected.
+- Worker-only changes require `cd worker && bunx tsc --noEmit --project worker/tsconfig.json`.
+- Rendering, audio, AI movement feel, camera feel, and other experiential changes require manual playtest; state results honestly if not played.

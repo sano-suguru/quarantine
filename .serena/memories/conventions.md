@@ -1,0 +1,8 @@
+- Preserve single-player behavior when touching co-op. Runtime paths: single-player `requestAnimationFrame` runs `update`; host uses worker ticker to update+broadcast; client sends input and renders snapshots without running `update`.
+- Host-authoritative co-op: clients send intent only (`input`, `buy`, `deploy`, `nightStart`); host validates/applies once. Keep paths idempotent.
+- Shared run economy/progression lives on `state`; per-player gear/ammo/health/flashlight lives on `Player` and is synced in snapshots.
+- Arrays often use swap-and-pop removal; entity order is not stable.
+- Input/control truth is live UI plus `game/main.ts` and `game/net/localInput.ts`; update together when changing controls.
+- WebRTC diagnostics must be privacy-preserving: candidate type/protocol only, never addresses/IPs.
+- Use data tables/config for gameplay tuning; avoid one-off special cases in systems.
+- Feel/visual/audio/net latency changes require playtesting; do not claim they are done from typecheck/tests alone.

@@ -1,0 +1,7 @@
+- Package manager/runtime: Bun pinned by `packageManager: bun@1.3.14`; `engines.bun >=1.3.14`.
+- Language: TypeScript ESM, strict settings incl. `noUncheckedIndexedAccess`, `isolatedModules`, import types.
+- App: Vite serves/bundles WebGL2 game; shaders imported as strings via `?raw`.
+- Tests: Vitest, node environment, co-located `game/**/*.test.ts`; coverage scoped to deterministic/pure logic.
+- Lint/format: Biome 2.5.x, 2-space indent, double quotes, semicolons, trailing commas, 100-char line width.
+- Hooks: Lefthook installed by `prepare`; pre-commit Biome on staged files, pre-push typecheck + tests.
+- Co-op backend: Cloudflare Worker/Durable Object in `worker/`; Vite proxies `/rooms` and `/turn` to local Worker during dev.
