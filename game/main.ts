@@ -913,7 +913,9 @@ function wireCoop(): void {
           link.onOpen(() => {
             opened = true;
             setClientLobby({ k: "connected" });
-            renderLobbyWait(manualLobbyWaitModel({ k: "connected", role: "client" }));
+            if (manual.open) {
+              renderLobbyWait(manualLobbyWaitModel({ k: "connected", role: "client" }));
+            }
           });
           link.onClose(() => {
             if (terminal) return; // version mismatch / room full already rendered a terminal error
