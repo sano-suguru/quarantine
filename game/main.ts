@@ -827,10 +827,23 @@ function wireCoop(): void {
         });
       } catch (err) {
         roomGo.disabled = false;
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg === "host is on a different version — update to play together") {
+          setClientLobby({ k: "lost", step: "host", msg });
+          return;
+        }
+        if (msg === "room is full") {
+          setClientLobby({
+            k: "lost",
+            step: "host",
+            msg: "room is full — the squad is already at capacity (4).",
+          });
+          return;
+        }
         setClientLobby({
           k: "failed",
           step: "room",
-          msg: `${err instanceof Error ? err.message : err} — try manual connect below`,
+          msg: `${msg} — try manual connect below`,
         });
       }
     };
@@ -882,43 +895,39 @@ function wireCoop(): void {
               // manual SDP bypasses the signaling version gate → re-check on Hello
               onVersionMismatch: () => {
                 terminal = true;
+                setManualState({
+                  k: "error",
+                  role: "client",
+                  step: "host",
+                  msg: "Host is on a different version — update to play together.",
+                });
                 setClientLobby({
                   k: "lost",
                   step: "host",
                   msg: "host is on a different version — update to play together",
                 });
-                if (manual.open) {
-                  setManualState({
-                    k: "error",
-                    role: "client",
-                    step: "host",
-                    msg: "Host is on a different version — update to play together.",
-                  });
-                }
                 link.close();
               },
               // host turned us away: room is full (the client closes its own link on this event)
               onRoomFull: () => {
                 terminal = true;
+                setManualState({
+                  k: "error",
+                  role: "client",
+                  step: "host",
+                  msg: "Room is full — the squad is already at capacity (4).",
+                });
                 setClientLobby({
                   k: "lost",
                   step: "host",
                   msg: "room is full — the squad is already at capacity (4).",
                 });
-                if (manual.open) {
-                  setManualState({
-                    k: "error",
-                    role: "client",
-                    step: "host",
-                    msg: "Room is full — the squad is already at capacity (4).",
-                  });
-                }
               },
             });
             link.onOpen(() => {
               opened = true;
+              setManualState({ k: "connected", role: "client" });
               setClientLobby({ k: "connected" });
-              if (manual.open) setManualState({ k: "connected", role: "client" });
             });
             link.onClose(() => {
               if (terminal) return; // version mismatch / room full already rendered a terminal error
@@ -927,19 +936,20 @@ function wireCoop(): void {
                 step === "host"
                   ? "Manual link disconnected. Re-open manual connect to retry."
                   : "Manual link closed before it opened. Re-open manual connect to retry.";
-              setClientLobby({ k: "lost", step, msg });
-              if (!manual.open) return;
               setManualState({
                 k: "error",
                 role: "client",
                 step,
                 msg,
               });
-              setStatus(
-                step === "host"
-                  ? "manual link disconnected — re-open manual connect to retry"
-                  : "manual link closed before it opened — re-open manual connect to retry",
-              );
+              setClientLobby({ k: "lost", step, msg });
+              if (manual.open) {
+                setStatus(
+                  step === "host"
+                    ? "manual link disconnected — re-open manual connect to retry"
+                    : "manual link closed before it opened — re-open manual connect to retry",
+                );
+              }
             });
             out.value = answer;
             sendBlock.style.display = "flex";
