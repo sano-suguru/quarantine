@@ -70,4 +70,21 @@ describe("joinRoom", () => {
 
     await expect(result).resolves.toBe("room did not answer");
   });
+
+  it("rejects with AbortError and closes the socket when aborted before an offer", async () => {
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    globalThis.location = { protocol: "http:", host: "localhost:5173" } as Location;
+
+    const controller = new AbortController();
+    const result = joinRoom("FAKE", controller.signal).then(
+      () => "resolved",
+      (error: unknown) => (error as { name?: string }).name ?? String(error),
+    );
+
+    const ws = FakeWebSocket.instances[0];
+    controller.abort();
+
+    await expect(result).resolves.toBe("AbortError");
+    expect(ws?.readyState).toBe(3); // socket closed to release the relay slot
+  });
 });

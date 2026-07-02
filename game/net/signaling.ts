@@ -121,16 +121,23 @@ export function hostRoom(
 }
 
 /** Join a room as client: receive the host's offer, answer it, resolve with the PeerLink.
- *  The signaling socket closes itself once the P2P link is up (non-trickle = nothing more
- *  to exchange). Rejects on a full room, a missing host, or an unreachable relay. */
-export function joinRoom(code: string): Promise<PeerLink> {
+ *  The signaling socket closes itself once the P2P link is up OR closes (non-trickle = nothing
+ *  more to exchange; releasing the relay slot on an abandoned/failed attempt). Pass an
+ *  AbortSignal to cancel a still-pending attempt (closes the socket + rejects with AbortError).
+ *  Rejects on a full room, a missing host, or an unreachable relay. */
+export function joinRoom(code: string, signal?: AbortSignal): Promise<PeerLink> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("aborted", "AbortError"));
+      return;
+    }
     const ws = new WebSocket(roomUrl(code, "client"));
     let settled = false;
     const done = (error: Error): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       reject(error);
       try {
         ws.close();
@@ -138,6 +145,8 @@ export function joinRoom(code: string): Promise<PeerLink> {
         /* already closing */
       }
     };
+    const onAbort = (): void => done(new DOMException("aborted", "AbortError"));
+    signal?.addEventListener("abort", onAbort, { once: true });
     const timer = setTimeout(
       () => done(new Error("room did not answer")),
       CONFIG.net.roomAnswerTimeoutMs,
@@ -147,10 +156,16 @@ export function joinRoom(code: string): Promise<PeerLink> {
       if (m.t === "offer") {
         void (async () => {
           const { link, answer } = await createClientLink(m.code);
+          if (settled) {
+            link.close(); // aborted/timed-out while minting the answer — drop the fresh link
+            return;
+          }
           ws.send(JSON.stringify({ t: "answer", code: answer }));
-          link.onOpen(() => ws.close()); // signaling no longer needed once P2P is up
+          link.onOpen(() => ws.close()); // P2P up: signaling no longer needed
+          link.onClose(() => ws.close()); // abandoned/failed before open: release the relay slot
           settled = true;
           clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
           resolve(link);
         })();
       } else if (m.t === "full") {
