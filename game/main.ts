@@ -671,8 +671,39 @@ function wireCoop(): void {
         try {
           const { link, offer, accept } = await createHostLink();
           host.add(link);
-          link.onOpen(refreshSquad);
-          link.onClose(refreshSquad);
+          let opened = false;
+          link.onOpen(() => {
+            opened = true;
+            if (!manual.open) {
+              refreshSquad();
+              return;
+            }
+            setStatus("manual peer linked ✓");
+            renderLobbyWait(manualLobbyWaitModel({ k: "connected", role: "host" }));
+          });
+          link.onClose(() => {
+            if (!manual.open) {
+              refreshSquad();
+              return;
+            }
+            const step = opened ? "host" : "link";
+            setStatus(
+              step === "host"
+                ? "manual peer disconnected — re-open manual connect to try again"
+                : "manual peer link closed before it opened — re-open manual connect to try again",
+            );
+            renderLobbyWait(
+              manualLobbyWaitModel({
+                k: "error",
+                role: "host",
+                step,
+                msg:
+                  step === "host"
+                    ? "Manual peer disconnected. Re-open manual connect to try again."
+                    : "Manual peer link closed before it opened. Re-open manual connect to try again.",
+              }),
+            );
+          });
           out.value = offer;
           go.onclick = async () => {
             const c = inEl.value.trim();
@@ -811,6 +842,8 @@ function wireCoop(): void {
     // manual fallback: opening <details> hides the room-code input (mode is unambiguous)
     // and lazily wires the paste-host-code → generate-reply flow on first open.
     let manualReady = false;
+    let opened = false;
+    let terminal = false;
     manual.ontoggle = (): void => {
       roomJoin.style.display = manual.open ? "none" : "flex";
       guide.textContent = manual.open
@@ -843,6 +876,7 @@ function wireCoop(): void {
           Net.client = new Client(link, undefined, {
             // manual SDP bypasses the signaling version gate → re-check on Hello
             onVersionMismatch: () => {
+              terminal = true;
               setClientLobby({
                 k: "lost",
                 step: "host",
@@ -860,6 +894,7 @@ function wireCoop(): void {
             },
             // host turned us away: room is full (the client closes its own link on this event)
             onRoomFull: () => {
+              terminal = true;
               setClientLobby({
                 k: "lost",
                 step: "host",
@@ -876,8 +911,30 @@ function wireCoop(): void {
             },
           });
           link.onOpen(() => {
+            opened = true;
             setClientLobby({ k: "connected" });
             renderLobbyWait(manualLobbyWaitModel({ k: "connected", role: "client" }));
+          });
+          link.onClose(() => {
+            if (terminal) return; // version mismatch / room full already rendered a terminal error
+            if (!manual.open) return;
+            const step = opened ? "host" : "link";
+            setStatus(
+              step === "host"
+                ? "manual link disconnected — re-open manual connect to retry"
+                : "manual link closed before it opened — re-open manual connect to retry",
+            );
+            renderLobbyWait(
+              manualLobbyWaitModel({
+                k: "error",
+                role: "client",
+                step,
+                msg:
+                  step === "host"
+                    ? "Manual link disconnected. Re-open manual connect to retry."
+                    : "Manual link closed before it opened. Re-open manual connect to retry.",
+              }),
+            );
           });
           out.value = answer;
           sendBlock.style.display = "flex";
