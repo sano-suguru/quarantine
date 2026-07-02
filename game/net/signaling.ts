@@ -66,6 +66,7 @@ export function hostRoom(
   const ws = new WebSocket(roomUrl(code, "host"));
   const accepts = new Map<number, (answerCode: string) => Promise<void>>();
   let connected = 0;
+  let closed = false;
   // latest public-listing meta; flushed the instant the socket opens so a public room registers
   // immediately (not after the first heartbeat tick), and re-sent on every setMeta thereafter.
   let lastMeta: { public: boolean; phase: string; day: number; players: number } | null = null;
@@ -79,6 +80,10 @@ export function hostRoom(
     if (m.t === "join") {
       void (async () => {
         const { link, offer, accept } = await createHostLink();
+        if (closed) {
+          link.close(); // the host tore down while we were minting this offer — drop the link
+          return;
+        }
         accepts.set(m.peerId, accept);
         link.onOpen(() => {
           connected++;
@@ -105,6 +110,7 @@ export function hostRoom(
 
   return {
     close() {
+      closed = true;
       ws.close();
     },
     setMeta(meta) {

@@ -710,11 +710,17 @@ function wireCoop(): void {
         recvLabel.textContent = "Their reply — paste it here";
         go.textContent = "Connect";
         void (async () => {
+          const epoch = coopEpoch(); // refuse this offer if the host session ended during the await
           try {
             const { link, offer, accept } = await createHostLink();
-            host.add(link);
+            if (!isCoopEpochCurrent(epoch)) {
+              link.close(); // host left/tore down before the offer resolved
+              return;
+            }
+            host.add(link); // Host.dispose() also rejects+closes if we were disposed after this check
             let opened = false;
             link.onOpen(() => {
+              if (!isCoopEpochCurrent(epoch)) return;
               opened = true;
               setManualState({ k: "connected", role: "host" });
               setStatus("manual peer linked ✓");
@@ -724,6 +730,7 @@ function wireCoop(): void {
               }
             });
             link.onClose(() => {
+              if (!isCoopEpochCurrent(epoch)) return;
               const step = opened ? "host" : "link";
               setStatus(
                 step === "host"
@@ -992,15 +999,15 @@ function wireCoop(): void {
           const offer = inEl.value.trim();
           setManualState({ k: "codes", role: "client" });
           if (!offer) return;
+          const epoch = coopEpoch(); // cancel our write-backs if the player leaves during the await
           let opened = false;
           let terminal = false;
           try {
             const { link, answer } = await createClientLink(offer);
-            setManualState({ k: "linking", role: "client" });
-            Net.mode = "client";
-            Net.client = new Client(link, undefined, {
+            const client = becomeClient(epoch, link, null, {
               // manual SDP bypasses the signaling version gate → re-check on Hello
               onVersionMismatch: () => {
+                if (!isCoopEpochCurrent(epoch)) return;
                 terminal = true;
                 setManualState({
                   k: "error",
@@ -1013,10 +1020,11 @@ function wireCoop(): void {
                   step: "host",
                   msg: "host is on a different version — update to play together",
                 });
-                link.close();
+                abandonClientAttempt(epoch); // close the link + drop the dead client mode
               },
               // host turned us away: room is full (the client closes its own link on this event)
               onRoomFull: () => {
+                if (!isCoopEpochCurrent(epoch)) return;
                 terminal = true;
                 setManualState({
                   k: "error",
@@ -1029,14 +1037,18 @@ function wireCoop(): void {
                   step: "host",
                   msg: "room is full — the squad is already at capacity (4).",
                 });
+                abandonClientAttempt(epoch); // drop the dead client mode (link self-closes on roomfull)
               },
             });
+            if (!client) return; // player left during the await → becomeClient closed the link
             link.onOpen(() => {
+              if (!isCoopEpochCurrent(epoch)) return;
               opened = true;
               setManualState({ k: "connected", role: "client" });
               setClientLobby({ k: "connected" });
             });
             link.onClose(() => {
+              if (!isCoopEpochCurrent(epoch)) return;
               if (terminal) return; // version mismatch / room full already rendered a terminal error
               const step = opened ? "host" : "link";
               const msg =
