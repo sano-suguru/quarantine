@@ -30,7 +30,8 @@
 - **Modify** `game/net/client.ts` — add `dispose()` + `disposed` guard.
 - **Modify** `game/net/host.ts` — add `dispose()`, an `add()` disposed-guard, and `disposed` flag.
 - **Modify** `game/net/host.test.ts` — add `Host.dispose()` tests (reuses the existing `FakePeerLink`).
-- **Modify** `game/main.ts` — lift session vars to module scope; add `endCoop()`, `startSingleRun()`, `startHostRun()`, `becomeClient()`, `abandonClientAttempt()`, `beginPublicHostFromQuickMatch()`; wire every exit path; add a `pagehide` handler.
+- **Modify** `game/main.ts` — lift session vars to module scope; add `endCoop()`, `startSingleRun()`, `startHostRun()`, `becomeClient()`, `abandonClientAttempt()`, `beginPublicHostFromQuickMatch()`; wire every exit path (incl. hub buttons); add a `pagehide` handler.
+- **Modify** `game/net/signaling.ts` — add a `closed` flag so `hostRoom()` drops a `createHostLink()` that resolves after teardown (Task 8).
 
 ---
 
@@ -245,7 +246,11 @@ Insert this method immediately before it:
     if (this.disposed) return;
     this.disposed = true;
     this.live = false;
-    this.link.close();
+    try {
+      this.link.close();
+    } catch {
+      /* link already closing/closed — teardown must not throw */
+    }
   }
 
 ```
@@ -308,6 +313,28 @@ describe("Host.dispose", () => {
     expect(aClosed).toBe(1);
     expect(bClosed).toBe(1);
     expect(host.connectedPids()).toEqual([]);
+    expect(host.links.length).toBe(0); // links array emptied, not just callbacks fired
+  });
+
+  it("tears down a started host with a decided peer without running the normal drop path", () => {
+    // Re-entrancy proof: dispose() closes links synchronously, which fires the real Host.onClose.
+    // Because peers/links are cleared BEFORE close(), that onClose sees no tracked peer and no-ops —
+    // it must NOT run the started+decided "mark absent / remove player" branch. Player state (the
+    // shared singleton) is therefore left untouched by the teardown.
+    const s = resetState("day");
+    const host = new Host();
+    const a = new FakePeerLink();
+    host.add(a);
+    a.fireOpen(); // lobby → decided immediately (pid assigned)
+    host.start(); // spawns the decided peer's player into state
+    expect(host.connectedPids().length).toBe(1);
+    const playersAfterStart = s.players.length;
+
+    host.dispose();
+
+    expect(host.links.length).toBe(0);
+    expect(host.connectedPids()).toEqual([]);
+    expect(s.players.length).toBe(playersAfterStart); // no re-entrant removal ran
   });
 
   it("is idempotent — a second dispose is a no-op", () => {
@@ -383,7 +410,11 @@ Insert the guard as the first statement:
 ```ts
   add(link: PeerLink): void {
     if (this.disposed) {
-      link.close(); // a stale createHostLink()/signaling callback landed after teardown — refuse it
+      try {
+        link.close(); // a stale createHostLink()/signaling callback landed after teardown — refuse it
+      } catch {
+        /* already closing — ignore */
+      }
       return;
     }
     const peer: HostPeer = {
@@ -410,7 +441,13 @@ In `game/net/host.ts`, add this method to the `Host` class (place it right after
     this.peers = [];
     this.links.length = 0;
     this.started = false;
-    for (const link of links) link.close();
+    for (const link of links) {
+      try {
+        link.close();
+      } catch {
+        /* already closing — teardown must not throw */
+      }
+    }
   }
 ```
 
@@ -766,6 +803,8 @@ Verify each scenario, then confirm the fix:
 
 Record PASS/FAIL for each. Do NOT proceed to Task 6 until 1-4 pass.
 
+> **Intermediate-state caveat:** after Task 5 but before Tasks 6-8, `endCoop()` disposing a link can synchronously fire the *still-unguarded* `join`/`quickMatch`/manual `onClose` callbacks (they don't yet check the epoch), causing a harmless redundant UI update (e.g. a lobby status flash) — NOT a leak. The scenarios above (lobby Back / restart on an already-connected or idle session) don't trigger it; the mid-connect races that would are only introduced/tested in Tasks 6-7. If you prefer zero intermediate flicker, land Tasks 5-8 as one reviewed checkpoint before the final playtest.
+
 - [ ] **Step 10: Commit**
 
 ```bash
@@ -794,9 +833,9 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 
 - [ ] **Step 1: Add the guarded helpers inside `wireCoop`**
 
-In `game/main.ts`, add these three helpers inside `wireCoop`, immediately after `openHostLobby` is defined (so `beginPublicHostFromQuickMatch` can call it) — around line 590. Add `coopEpoch`/`isCoopEpochCurrent` to the `./net/session` import from Task 5:
+In `game/main.ts`, first extend two imports, then add the helpers inside `wireCoop` immediately after `openHostLobby` is defined (so `beginPublicHostFromQuickMatch` can call it) — around line 590.
 
-Update the import (from Task 5's single-name import):
+**(a)** Add `coopEpoch`/`isCoopEpochCurrent` to the `./net/session` import from Task 5. Change:
 
 ```ts
 import { bumpCoopEpoch } from "./net/session";
@@ -808,7 +847,19 @@ to:
 import { bumpCoopEpoch, coopEpoch, isCoopEpochCurrent } from "./net/session";
 ```
 
-Then add the helpers (place after `openHostLobby`'s definition closes):
+**(b)** The `becomeClient` helper references the `PeerLink` type, which `main.ts` does not yet import (`verbatimModuleSyntax` requires an explicit `type` import). Find the transport import (line 46):
+
+```ts
+import { createClientLink, createHostLink, getTurnStatus, NETLOG } from "./net/transport";
+```
+
+Change to:
+
+```ts
+import { createClientLink, createHostLink, getTurnStatus, NETLOG, type PeerLink } from "./net/transport";
+```
+
+**(c)** Then add the helpers (place after `openHostLobby`'s definition closes):
 
 ```ts
   // The single guarded "become a client" write-back. Every join path (room-code, quick match,
@@ -821,7 +872,11 @@ Then add the helpers (place after `openHostLobby`'s definition closes):
     hooks?: ConstructorParameters<typeof Client>[2],
   ): Client | null => {
     if (!isCoopEpochCurrent(epoch)) {
-      link.close(); // user left during the join await — drop the link so the host sees no ghost
+      try {
+        link.close(); // user left during the join await — drop the link so the host sees no ghost
+      } catch {
+        /* already closing — ignore */
+      }
       return null;
     }
     Net.mode = "client";
@@ -833,20 +888,26 @@ Then add the helpers (place after `openHostLobby`'s definition closes):
 
   // NON-terminal: a client attempt failed but the player stays in the flow (lobby stays open to
   // retry). Drop the dead client link + reset transient client state without a full endCoop().
+  // Clears Net.client BEFORE dispose() so a synchronous re-entrant onClose sees no client and the
+  // attempt-local `settled` latch (set by the caller) already suppresses the fallback.
   const abandonClientAttempt = (epoch: number): void => {
     if (!isCoopEpochCurrent(epoch)) return; // a real teardown already owns Net — don't fight it
-    Net.client?.dispose();
+    const client = Net.client;
     Net.client = null;
     Net.mode = "single";
-    coopRoomCode = null;
+    coopRoomCode = null; // disarm the reconnect watchdog for the abandoned room
+    client?.dispose();
   };
 
-  // NON-terminal transition: the quick-match join didn't pan out → drop any in-flight client link
-  // and become a public host instead. (openHostLobby sets Net.mode = "host" and builds the Host.)
+  // NON-terminal transition: the quick-match join didn't pan out → abandon any in-flight client
+  // attempt (drops its link + resets coopRoomCode/Net.mode), then become a public host.
+  // (openHostLobby sets Net.mode = "host" and builds the Host.) Callers MUST set their attempt-local
+  // `settled` latch BEFORE calling this so the link.close() inside abandonClientAttempt can't
+  // re-enter the same fallback via onClose.
   const beginPublicHostFromQuickMatch = (epoch: number): void => {
     if (!isCoopEpochCurrent(epoch)) return; // teardown won — stay torn down
-    Net.client?.dispose();
-    Net.client = null;
+    abandonClientAttempt(epoch); // dispose the in-flight client link + reset transient client state
+    if (!isCoopEpochCurrent(epoch)) return; // dispose's re-entrant onClose could have torn us down
     openHostLobby(true);
   };
 ```
@@ -903,7 +964,10 @@ Change to (capture `epoch`, route through `becomeClient`, and bail if it returne
       if (!code || roomGo.disabled) return; // re-entry guard: ignore double-click / Enter spam
       roomGo.disabled = true;
       const epoch = coopEpoch(); // cancel our write-backs if the player leaves during the await
-      let rejected = false; // roomfull set a terminal message → don't let onClose clobber it
+      // Attempt-local latch: the FIRST terminal outcome (roomfull / timeout / link-close failure)
+      // wins and every later one no-ops. This subsumes the old `rejected` flag and makes the flow
+      // safe against re-entrant onClose firing when abandonClientAttempt() closes the link.
+      let settled = false;
       lastClientLobbyState = null;
       setClientLobby({ k: "joining" });
       try {
@@ -921,8 +985,8 @@ Change to (capture `epoch`, route through `becomeClient`, and bail if it returne
           // do NOT open the manual fallback — surface a clear message and re-enable Join so the
           // player can try a different code.
           onRoomFull: () => {
-            if (!isCoopEpochCurrent(epoch)) return; // stale attempt — teardown owns the UI
-            rejected = true;
+            if (settled || !isCoopEpochCurrent(epoch)) return; // stale/already-settled — ignore
+            settled = true;
             clearTimeout(failTimer); // roomfull can arrive before/around open → don't let the
             // NAT-timeout later clobber this terminal message with a "failed"
             coopRoomCode = null; // don't try to reconnect to a room we were refused from
@@ -934,7 +998,10 @@ Change to (capture `epoch`, route through `becomeClient`, and bail if it returne
             roomGo.disabled = false;
           },
         });
-        if (!client) return; // player left during the await → becomeClient closed the link
+        if (!client) {
+          roomGo.disabled = false; // player left during the await → re-enable Join for a future visit
+          return; // becomeClient already closed the link
+        }
         setClientLobby({ k: "linking" });
 ```
 
@@ -981,7 +1048,8 @@ Change to (each callback bails when stale; the timeout also drops the dead link 
 ```ts
         let opened = false;
         failTimer = setTimeout(() => {
-          if (opened || !isCoopEpochCurrent(epoch)) return;
+          if (opened || settled || !isCoopEpochCurrent(epoch)) return;
+          settled = true;
           abandonClientAttempt(epoch); // close the never-opened link so the host sees no ghost
           roomGo.disabled = false;
           setClientLobby({
@@ -1001,7 +1069,8 @@ Change to (each callback bails when stale; the timeout also drops the dead link 
         link.onClose(() => {
           if (!isCoopEpochCurrent(epoch)) return; // teardown already closed us — don't touch the UI
           clearTimeout(failTimer);
-          if (rejected) return; // roomfull already showed the terminal "room is full"
+          if (settled) return; // roomfull/timeout already rendered the terminal outcome
+          settled = true;
           roomGo.disabled = false;
           setClientLobby(
             opened
@@ -1033,7 +1102,7 @@ Practical guidance: implement Task 6 and Task 7 back-to-back, then type-check an
 ### Task 7: Epoch-guard quick match + route fallbacks through the transition helpers
 
 **Files:**
-- Modify: `game/main.ts` (`quickMatch` ~1075-1162)
+- Modify: `game/main.ts` (`quickMatch` ~1075-1162; hub button wiring ~1166-1179)
 
 **Interfaces:**
 - Consumes: `becomeClient`, `beginPublicHostFromQuickMatch`, `coopEpoch`, `isCoopEpochCurrent` (Task 6).
@@ -1048,6 +1117,9 @@ In `game/main.ts`, find `quickMatch` (around line 1075). Replace the body from t
     stopCoopPoll();
     el<HTMLButtonElement>("coop-quick").disabled = true; // no re-entry until we leave/return to the hub
     const epoch = coopEpoch(); // cancel our write-backs if the player leaves the hub mid-scan
+    // Attempt-local latch: the first fallback-to-host wins; later callbacks (onClose re-entry after
+    // the client link is disposed, a late timeout) no-op instead of opening a second host.
+    let fellBack = false;
     coopStatus("scanning for raids…", true);
     let rooms: RoomInfo[] = [];
     let registryOk = true;
@@ -1087,7 +1159,8 @@ In `game/main.ts`, find `quickMatch` (around line 1075). Replace the body from t
         }
       },
       onRoomFull: () => {
-        if (!isCoopEpochCurrent(epoch)) return;
+        if (fellBack || !isCoopEpochCurrent(epoch)) return;
+        fellBack = true;
         clearTimeout(t); // defensive — normally already cleared on open
         beginPublicHostFromQuickMatch(epoch);
         setStatus("This raid is full — hosting a public one instead.");
@@ -1145,7 +1218,8 @@ Change to (route both fallbacks through `beginPublicHostFromQuickMatch`, which d
 ```ts
     let opened = false;
     const t = window.setTimeout(() => {
-      if (opened || !isCoopEpochCurrent(epoch)) return;
+      if (opened || fellBack || !isCoopEpochCurrent(epoch)) return;
+      fellBack = true;
       beginPublicHostFromQuickMatch(epoch); // didn't connect in time → drop link + host instead
       setStatus(
         getTurnStatus() === "budget-reached"
@@ -1160,7 +1234,8 @@ Change to (route both fallbacks through `beginPublicHostFromQuickMatch`, which d
       coopStatus("connected — waiting for host to deploy");
     });
     link.onClose(() => {
-      if (opened || !isCoopEpochCurrent(epoch)) return; // post-open drops → reconnect watchdog's job
+      if (opened || fellBack || !isCoopEpochCurrent(epoch)) return; // post-open → reconnect watchdog
+      fellBack = true;
       clearTimeout(t);
       beginPublicHostFromQuickMatch(epoch);
       setStatus(
@@ -1172,23 +1247,67 @@ Change to (route both fallbacks through `beginPublicHostFromQuickMatch`, which d
   };
 ```
 
-- [ ] **Step 3: Type-check**
+- [ ] **Step 3: Cancel an in-flight quick-match when leaving/transitioning from the hub**
+
+`quickMatch` awaits `listRooms()`/`joinRoom()` while the hub is still shown, so the hub buttons (`coop-back`, `coop-host`, `coop-joincode`) can be clicked mid-scan. Without cancelling, the quick-match continuation still sees its epoch as current and can `becomeClient(...)`/`beginPublicHostFromQuickMatch(...)` after the player already navigated away. Route these three buttons through `endCoop()` so they bump the epoch (cancelling the pending attempt), dispose any partial client link, stop the poll, and reset to baseline before the new intent.
+
+In `game/main.ts`, find the hub wiring (around line 1166):
+
+```ts
+  el("coop-back").onclick = () => {
+    stopCoopPoll();
+    hide("coop");
+    show("start");
+  };
+  el("coop-quick").onclick = () => void quickMatch();
+  el("coop-host").onclick = () => {
+    stopCoopPoll();
+    openHostLobby(true);
+  };
+  el("coop-joincode").onclick = () => {
+    stopCoopPoll();
+    openJoinLobby();
+  };
+```
+
+Change to (`endCoop()` already clears `coopPollTimer`, so it subsumes `stopCoopPoll()`):
+
+```ts
+  el("coop-back").onclick = () => {
+    endCoop(); // cancel any in-flight quick match + drop a partial client link; also stops the poll
+    hide("coop");
+    show("start");
+  };
+  el("coop-quick").onclick = () => void quickMatch();
+  el("coop-host").onclick = () => {
+    endCoop(); // cancel a pending quick match before starting a fresh host intent
+    openHostLobby(true);
+  };
+  el("coop-joincode").onclick = () => {
+    endCoop(); // cancel a pending quick match before opening the join lobby
+    openJoinLobby();
+  };
+```
+
+Note: `endCoop()` sets `Net.mode = "single"`; `openHostLobby(true)` / `openJoinLobby()` then re-establish the host/lobby mode as before, so the happy path is unchanged.
+
+- [ ] **Step 4: Type-check**
 
 Run: `bun run typecheck`
 Expected: no errors. All three helpers (`becomeClient`, `abandonClientAttempt`, `beginPublicHostFromQuickMatch`) are now referenced.
 
-- [ ] **Step 4: Lint**
+- [ ] **Step 5: Lint**
 
 Run: `bun run lint`
 Expected: no errors.
 
-- [ ] **Step 5: Manual playtest — quick-match fallback + race**
+- [ ] **Step 6: Manual playtest — quick-match fallback + race**
 
 `bun run dev:coop`, two tabs.
 1. **Fallback → host:** Tab A → Co-op → **Quick Match** with no public rooms open. Expected: Tab A becomes a public host ("hosting a public one"). Tab B → Quick Match. Expected: Tab B joins Tab A's raid (squad shows P2).
-2. **Race:** Tab A hosts publicly. Tab B → Quick Match, then hit **coop-back** (hub Back) mid-connect. Expected: no ghost P2 on Tab A; no stray "public host" spun up on Tab B.
+2. **Race:** Tab A hosts publicly. Tab B → Quick Match, then hit **coop-back** (hub Back) mid-connect. Expected: no ghost P2 on Tab A; no stray "public host" spun up on Tab B. Repeat hitting **coop-host** mid-connect instead of Back — expected: Tab B lands cleanly in the host lobby with no leftover client link.
 
-- [ ] **Step 6: Commit (Tasks 6 + 7 together)**
+- [ ] **Step 7: Commit (Tasks 6 + 7 together)**
 
 ```bash
 git add game/main.ts
@@ -1208,6 +1327,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 
 **Files:**
 - Modify: `game/main.ts` (manual host `go.onclick` async ~682-745; manual client `go.onclick` async ~900-970)
+- Modify: `game/net/signaling.ts` (`hostRoom` `close()` + the `"join"` async handler ~80-107) — cancel stale host-offer minting
 
 **Interfaces:**
 - Consumes: `becomeClient`, `coopEpoch`, `isCoopEpochCurrent`, `Host.dispose` add-guard (already closes late links).
@@ -1354,6 +1474,85 @@ Change to:
                 terminal = true;
 ```
 
+- [ ] **Step 2b: Reset client state on the manual terminal errors**
+
+The two manual-client terminal hooks currently leave `Net.mode = "client"` / `Net.client` set after failing (the design flags this as the "manual version mismatch leaves stale client state" bug). Route both through `abandonClientAttempt(epoch)` so the session returns to the single-player baseline while the lobby stays open.
+
+In `onVersionMismatch`, the source ends the hook with a bare `link.close()` (around line 925):
+
+```ts
+                setClientLobby({
+                  k: "lost",
+                  step: "host",
+                  msg: "host is on a different version — update to play together",
+                });
+                link.close();
+              },
+```
+
+Change the trailing `link.close();` to `abandonClientAttempt(epoch);` (it disposes the link AND resets `Net.mode`/`Net.client`/`coopRoomCode`):
+
+```ts
+                setClientLobby({
+                  k: "lost",
+                  step: "host",
+                  msg: "host is on a different version — update to play together",
+                });
+                abandonClientAttempt(epoch); // close the link + drop the dead client mode
+              },
+```
+
+In `onRoomFull`, the source ends after `setClientLobby({ k: "lost", … "room is full …" })` with no reset (the comment notes the client closes its own link). Add the reset as the hook's final statement:
+
+```ts
+                setClientLobby({
+                  k: "lost",
+                  step: "host",
+                  msg: "room is full — the squad is already at capacity (4).",
+                });
+                abandonClientAttempt(epoch); // drop the dead client mode (link self-closes on roomfull)
+              },
+```
+
+`abandonClientAttempt` clears `Net.client` before disposing, and `terminal` is already `true`, so the re-entrant `onClose` early-returns — no double render.
+
+- [ ] **Step 2c: Guard the signaling host-offer async against teardown**
+
+The room-code host path has the same stale-async hazard as manual host: `hostRoom()`'s per-join handler `await`s `createHostLink()` then wires callbacks and `ws.send`s the offer — with no check that the host session is still alive (`game/net/signaling.ts:80-94`). After `HostRoom.close()` (which only closes the WS), a late-resolving `createHostLink()` calls `onPeer(link)` and `ws.send(...)` on a closed socket. `Host.dispose()`'s add-guard closes the surplus link, but the `ws.send` on a CLOSING/CLOSED socket can still throw. Add an explicit cancellation flag to `hostRoom`.
+
+In `game/net/signaling.ts`, find the `hostRoom` return + `close()` (around line 105):
+
+```ts
+  return {
+    close() {
+      ws.close();
+    },
+```
+
+Change to add a module-local `closed` flag (declare it near the top of `hostRoom`, next to `let connected = 0;` — search for that declaration and add `let closed = false;` beside it), then:
+
+```ts
+  return {
+    close() {
+      closed = true;
+      ws.close();
+    },
+```
+
+Then in the `"join"` handler's async IIFE (around line 80), guard right after the await:
+
+```ts
+      void (async () => {
+        const { link, offer, accept } = await createHostLink();
+        if (closed) {
+          link.close(); // the host tore down while we were minting this offer — drop the link
+          return;
+        }
+        accepts.set(m.peerId, accept);
+```
+
+(The rest of the handler — `link.onOpen`/`link.onClose`/`onPeer`/`ws.send` — is unchanged and now unreachable once `closed`.)
+
 - [ ] **Step 3: Type-check**
 
 Run: `bun run typecheck`
@@ -1373,11 +1572,12 @@ Expected: no errors.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add game/main.ts
-git commit -m "fix(coop): epoch-guard manual-SDP client + host flows
+git add game/main.ts game/net/signaling.ts
+git commit -m "fix(coop): epoch-guard manual-SDP flows + cancel stale host offers
 
-Manual connect now refuses stale links after teardown and routes the client
-write-back through becomeClient(), matching the room-code/quick-match paths.
+Manual connect now refuses stale links after teardown, routes the client
+write-back through becomeClient(), and resets client mode on version-mismatch/
+room-full. hostRoom() drops a late createHostLink() once the room is closed.
 
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 ```
@@ -1585,13 +1785,22 @@ If anything above FAILs, fix in the owning task's file, re-run `typecheck`/`lint
 - Layer 0 (epoch) → Task 1 (module) + Tasks 6-9 (guards on join/quickMatch/manual/reconnect). ✅
 - Layer 1 (dispose primitives) → Task 2 (Client) + Task 3 (Host + add-guard + claimTimer clear). ✅
 - Layer 2 (`endCoop`, terminal) → Task 5. ✅
-- Layer 2.5 (non-terminal transitions: `abandonClientAttempt`, `beginPublicHostFromQuickMatch`) → Task 6 (defined) + Tasks 6-7 (routed: P2P timeout, quick-match fallbacks). ✅
+- Layer 2.5 (non-terminal transitions: `abandonClientAttempt`, `beginPublicHostFromQuickMatch`) → Task 6 (defined) + Tasks 6-8 (routed: P2P timeout, quick-match fallbacks, manual version-mismatch/room-full). ✅
 - Layer 3 (start wrappers for leak ③) → Task 5 (`startSingleRun`/`startHostRun`, byte-for-byte `startGame` untouched). ✅
 - Layer 4 (pagehide) → Task 10. ✅
 - The 4 leaks: ① Task 5 (closeLobby→endCoop client dispose), ② Task 5 (endCoop host dispose), ③ Task 5 (restartBtn + startSingleRun), ④ Task 10 (pagehide). ✅
 - Split-ownership root cause → Task 4 (consolidate to module scope). ✅
 - Deferred leave/hostleft message + no PROTOCOL_VERSION bump → Global Constraints. ✅
 - Testing split (dispose+epoch unit-tested; main.ts playtest-verified) → Tasks 1-3 unit tests, Tasks 5-10 playtests. ✅
+
+**Rubber-duck follow-ups folded in (2026-07-02):**
+- Hub buttons (`coop-back`/`coop-host`/`coop-joincode`) can be clicked mid-quick-match → route through `endCoop()` to cancel the in-flight attempt (Task 7 Step 3). ✅
+- `becomeClient`/`abandonClientAttempt`/`beginPublicHostFromQuickMatch` re-entrancy: `abandonClientAttempt` clears `Net.client` before `dispose()`, `beginPublicHostFromQuickMatch` delegates to it and re-checks the epoch, and every async attempt carries an attempt-local latch (`settled` in join, `fellBack` in quick match, `terminal` in manual) so a re-entrant `onClose` can't double-fire (Tasks 6-8). ✅
+- Manual version-mismatch/room-full now reset client mode via `abandonClientAttempt` instead of leaking `Net.mode="client"` (Task 8 Step 2b). ✅
+- Stale signaling `createHostLink()` after teardown → `hostRoom()` `closed` flag drops the late link (Task 8 Step 2c). ✅
+- `roomGo.disabled` reset on the `join` null-bail so a future join isn't stuck disabled (Task 6 Step 2). ✅
+- `PeerLink` imported as a `type` in `main.ts`; all `dispose()`/guard `close()` calls wrapped in `try/catch` so teardown never throws (Tasks 2-3, 6). ✅
+- `Host.dispose` re-entrancy test added (started host + decided peer; asserts `links` emptied and no re-entrant player removal) (Task 3). ✅
 
 **2. Placeholder scan:** no "TBD"/"handle edge cases"/"similar to Task N"/"add validation" — every code step shows the full before/after and every command has an expected result. ✅
 
