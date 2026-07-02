@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CONFIG } from "../config";
 import { PROTOCOL_VERSION } from "./net";
-import { isJoinable, type RoomInfo, selectQuickMatch, versionMatches } from "./registry";
+import { isJoinable, listRooms, type RoomInfo, selectQuickMatch, versionMatches } from "./registry";
 
 const room = (over: Partial<RoomInfo>): RoomInfo => ({
   code: "AAAA",
@@ -11,6 +12,35 @@ const room = (over: Partial<RoomInfo>): RoomInfo => ({
   day: 1,
   lastSeen: 0,
   ...over,
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+describe("listRooms", () => {
+  it("rejects when the room browser request hangs", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+          }),
+      ),
+    );
+
+    const result = listRooms().then(
+      () => "resolved",
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+
+    await vi.advanceTimersByTimeAsync(CONFIG.net.registryFetchTimeoutMs);
+
+    await expect(result).resolves.toBe("rooms unavailable");
+  });
 });
 
 describe("versionMatches", () => {

@@ -26,6 +26,8 @@ export const CONFIG = {
     // candidates on restrictive networks → guaranteed cross-NAT failure. See transport.ts.
     iceGatherMaxMs: 8000, // hard cap before shipping whatever candidates we have (backstop)
     iceGatherGraceMs: 1200, // STUN-only: after the first reflexive candidate, wait this then go
+    roomAnswerTimeoutMs: 3000, // join-by-code: fake/empty rooms should fail quickly in lobby UI
+    registryFetchTimeoutMs: 3000, // quick-match/browser: don't leave the hub stuck scanning
     p2pOpenTimeoutMs: 15000, // client lobby: if the P2P link never opens, surface a failure
     // Client auto-reconnect (P4). The client triggers a reconnect when BOTH data channels go
     // quiet (no snapshot AND no rel pong) for snapStarvationMs — a true loss, not a snap-only

@@ -1,3 +1,4 @@
+import { CONFIG } from "../config";
 import { PROTOCOL_VERSION } from "./net";
 
 /**
@@ -24,10 +25,18 @@ const ROOMS_URL = "/rooms";
 
 /** Fetch the public room list. Throws on failure so callers can degrade (disable browser / QM). */
 export async function listRooms(): Promise<RoomInfo[]> {
-  const res = await fetch(ROOMS_URL);
-  if (!res.ok) throw new Error("rooms unavailable");
-  const data = (await res.json()) as { rooms?: RoomInfo[] };
-  return data.rooms ?? [];
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CONFIG.net.registryFetchTimeoutMs);
+  try {
+    const res = await fetch(ROOMS_URL, { signal: controller.signal });
+    if (!res.ok) throw new Error("rooms unavailable");
+    const data = (await res.json()) as { rooms?: RoomInfo[] };
+    return data.rooms ?? [];
+  } catch {
+    throw new Error("rooms unavailable");
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /** Can we actually play with this host's build? null version = pre-D host (format unchanged → ok). */

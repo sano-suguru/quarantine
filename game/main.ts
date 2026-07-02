@@ -24,15 +24,23 @@ import {
   updateHUD,
 } from "./game";
 import { Input } from "./input";
+import {
+  type ClientLobbyDisplayState,
+  clientLobbyWaitModel,
+  hostLobbyWaitModel,
+  type LobbyWaitModel,
+  type LobbyWaitSlot,
+} from "./lobbyWait";
 import { Client } from "./net/client";
 import { Host } from "./net/host";
 import { sampleLocalInput } from "./net/localInput";
 import { Net } from "./net/net";
 import { emptyInput } from "./net/playerInput";
 import { listRooms, type RoomInfo, selectQuickMatch, versionMatches } from "./net/registry";
+import { bumpCoopEpoch, coopEpoch, isCoopEpochCurrent } from "./net/session";
 import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
-import { createClientLink, createHostLink, getTurnStatus, NETLOG } from "./net/transport";
+import { getTurnStatus, NETLOG, type PeerLink } from "./net/transport";
 import { getSettings, setAimAssist } from "./settings";
 import { sysCamera } from "./systems/camera";
 import { sysFx } from "./systems/fx";
@@ -42,22 +50,16 @@ import { assertNever, el, hide, isEditableTarget, renderList, show } from "./ui"
 // (no day countdown / no spawns) until the host presses Start — see wireCoop()/frame().
 let hostStarted = false;
 
-// client reconnect (P4): the room code to rejoin on a drop (null = solo / host / manual-SDP,
-// none of which can auto-reconnect), and a re-entrancy guard so the watchdog fires one loop.
+// client reconnect (P4): the room code to rejoin on a drop (null = solo / host, neither of
+// which can auto-reconnect), and a re-entrancy guard so the watchdog fires one loop.
 let coopRoomCode: string | null = null;
 let reconnecting = false;
 
-// Client-side lobby connection lifecycle (room-code + manual-SDP join). Makes the
-// previously-implicit joining/linking/connected/failure states explicit so setClientLobby owns
-// the lobby status text, squad, and the failure-only manual.open side-effect in one place.
-// Scope is the lobby only: once the host deploys, startClientGame hides the lobby and Net.mode +
-// state.running become the source of truth.
-type ClientLobby =
-  | { k: "joining" } // relay handshake (pre-link)
-  | { k: "linking" } // P2P open wait (the p2pOpenTimeout window)
-  | { k: "connected" } // link open; waiting for the host to deploy
-  | { k: "failed"; msg: string } // connect failure → reveal the manual <details> fallback
-  | { k: "lost"; msg: string }; // opened then dropped in-lobby / version mismatch → no manual
+// Client-side lobby connection lifecycle (room-code join). Makes the previously-implicit
+// joining/linking/connected/failure states explicit so setClientLobby owns the lobby status text
+// and squad in one place. Scope is the lobby only: once the host deploys, startClientGame hides the
+// lobby and Net.mode + state.running become the source of truth.
+type ClientLobby = ClientLobbyDisplayState;
 // Q-to-place: a small local cooldown so a held/mashed key doesn't fire several reliable place
 // requests before the host's snapshot reflects the first (each would consume another queued item).
 let lastPlaceAt = -1e9;
@@ -66,6 +68,8 @@ let lastPlaceAt = -1e9;
 // Read by the Worker-clock tick to push registry meta (so a backgrounded public host isn't pruned).
 let coopHostHandle: HostRoom | null = null;
 let coopPublic = false;
+// OPEN RAIDS poll interval id (0 = not polling). Module scope so endCoop() can stop it.
+let coopPollTimer = 0;
 
 // personal options overlay (#settings): client-local, separate from the host-authoritative
 // pause. While open, local input is zeroed (so you don't act blind behind the overlay) and
@@ -93,6 +97,7 @@ const delayMs = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, 
 async function reconnectClient(code: string): Promise<void> {
   if (reconnecting) return;
   reconnecting = true;
+  const epoch = coopEpoch(); // a lobby/tab close during the backoff must abort the rebind
   Net.client?.suspend();
   const overlay = el("reconnect");
   const sub = el("reconnect-sub");
@@ -101,6 +106,10 @@ async function reconnectClient(code: string): Promise<void> {
   for (let i = 0; i < ladder.length; i++) {
     sub.textContent = `attempt ${i + 1} of ${ladder.length}…`;
     const res = await rejoinRoom(code);
+    if (!isCoopEpochCurrent(epoch)) {
+      if (res.status === "open") res.link.close(); // teardown won mid-attempt — drop the fresh link
+      return; // endCoop() already reset reconnecting + the overlay
+    }
     if (res.status === "open") {
       Net.client?.rebind(res.link, loadRejoinToken(code));
       overlay.classList.remove("show");
@@ -116,16 +125,51 @@ async function reconnectClient(code: string): Promise<void> {
       break;
     // retryable (timeout/unreachable): the host may be briefly unreachable (NAT blip) — back off
     await delayMs(ladder[i] ?? 1000);
+    if (!isCoopEpochCurrent(epoch)) return; // teardown during the backoff — stop retrying
   }
   // gave up: end the client session and return to title (method C: no host = no session)
-  overlay.classList.remove("show");
+  endCoop(); // closes the suspended link, clears the overlay, resets Net + session vars
+  toTitle();
+}
+
+/**
+ * The single terminal teardown for a co-op session. Every way of leaving co-op for good — lobby
+ * Back, game-over restart, tab close, reconnect give-up, or starting a solo run — routes here.
+ * Bumps the session epoch first so any in-flight join/quickMatch/reconnect sees itself as stale and
+ * bails (closing whatever link it obtained). Then disposes host/client links, closes the signaling
+ * handle, stops timers, and resets every session var to the single-player baseline. Idempotent.
+ */
+function endCoop(): void {
+  bumpCoopEpoch();
+  Net.host?.dispose();
+  Net.client?.dispose();
+  coopHostHandle?.close();
+  coopHostHandle = null;
+  coopPublic = false;
+  if (coopPollTimer) {
+    clearInterval(coopPollTimer);
+    coopPollTimer = 0;
+  }
   reconnecting = false;
-  coopRoomCode = null;
+  el("reconnect").classList.remove("show");
   Net.mode = "single";
   Net.host = null;
   Net.client = null;
   hostStarted = false;
-  toTitle();
+  coopRoomCode = null;
+}
+
+/** Solo Start: tear down any lingering co-op session, then build the single-player world. */
+function startSingleRun(): void {
+  endCoop();
+  startGame();
+}
+
+/** Host Deploy: build the world and start the authoritative sim/broadcast for connected peers. */
+function startHostRun(host: Host): void {
+  startGame(); // builds the fresh world + shows the HUD (hides the lobby)
+  host.start(); // spawn a player for everyone already connected
+  hostStarted = true; // frame loop now sims + broadcasts
 }
 
 function main(): void {
@@ -133,11 +177,11 @@ function main(): void {
   Renderer.init(canvas);
   Input.init(canvas);
 
-  el("startBtn").onclick = () => {
-    coopRoomCode = null; // solo: no room to reconnect to (don't arm the client watchdog)
-    startGame();
+  el("startBtn").onclick = startSingleRun;
+  el("restartBtn").onclick = () => {
+    endCoop(); // game-over → title must fully drop any co-op mode/links (was leaking a ghost peer)
+    toTitle();
   };
-  el("restartBtn").onclick = toTitle;
   el("deployBtn").onclick = shopDeploy;
   el("arsenalBtn").onclick = openArsenal;
   el("arsenalBackBtn").onclick = closeArsenal;
@@ -184,7 +228,7 @@ function main(): void {
   };
 
   addEventListener("keydown", (e) => {
-    // Typing into a text field (lobby room-code input, manual-SDP textareas) must not
+    // Typing into a text field (the lobby room-code input) must not
     // trigger game hotkeys — e.g. M would otherwise toggle mute mid-type.
     if (isEditableTarget(e.target)) return;
     const state = getState();
@@ -338,8 +382,8 @@ function main(): void {
       }
       if (live) sysCamera(st, dt);
       // reconnect watchdog: both channels silent past snapStarvationMs = a dead link → reconnect.
-      // Armed only for room-code sessions (manual-SDP has no code to rejoin with) and while a run
-      // is live; the host keeps broadcasting through pause/shop so quiet snaps mean a real drop.
+      // Armed only while a run is live (a client always has a room code to rejoin with);
+      // the host keeps broadcasting through pause/shop so quiet snaps mean a real drop.
       if (
         coopRoomCode &&
         !reconnecting &&
@@ -402,9 +446,8 @@ function main(): void {
 }
 
 /* ------------------------- co-op lobby ------------------------- */
-// Room-code auto-connect is the primary path (offer/answer brokered by the signaling
-// relay, see net/signaling.ts). Manual SDP copy-paste is kept as a zero-dependency
-// fallback, tucked into a <details>. The game world only appears on Deploy (host) /
+// Room-code auto-connect is the only client path (offer/answer brokered by the signaling
+// relay, see net/signaling.ts). The game world only appears on Deploy (host) /
 // first snapshot (client) — the lobby never shows the live world.
 
 /** A short, human-friendly room code (no ambiguous I/O/0/1/L). */
@@ -427,17 +470,11 @@ function wireCoop(): void {
   squad.classList.add("squad-row"); // flex layout for the chips renderList drops in directly
   const status = el("lobby-status");
   const deploy = el("lobby-deploy");
-  const manual = el<HTMLDetailsElement>("lobby-manual");
-  // manual-fallback elements
-  const out = el<HTMLTextAreaElement>("lobby-out");
-  const inEl = el<HTMLTextAreaElement>("lobby-in");
-  const go = el("lobby-go");
-  const sendBlock = el("lobby-send");
-  const sendLabel = el("lobby-send-label");
-  const recvLabel = el("lobby-recv-label");
+  const wait = el("lobby-wait");
 
-  let hostHandle: HostRoom | null = null;
-  let coopPollTimer = 0; // OPEN RAIDS poll interval id (0 = not polling)
+  let lastClientLobbyState: ClientLobby | null = null;
+  let lobbyKind: "host" | "join" = "join"; // set in openLobby(); gates the room-code entry row
+  let joinAbort: AbortController | null = null; // in-flight room-code attempt (abort to abandon it)
 
   // status with an optional "connecting" pulse dot (CSS .busy::after)
   const setStatus = (text: string, busy = false): void => {
@@ -455,41 +492,85 @@ function wireCoop(): void {
     const [r, g, b] = PLAYER_COLORS[pid % PLAYER_COLORS.length] ?? [0.49, 1, 0.31];
     return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
   };
-  const makeChip = ({ pid, label }: { pid: number; label: string }): HTMLElement => {
+  const makeSlotChip = ({ pid, label, state }: LobbyWaitSlot): HTMLElement => {
     const chip = document.createElement("span");
     chip.className = "squad-chip";
+    chip.classList.toggle("empty", state === "empty");
+    chip.classList.toggle("unknown", state === "unknown");
     const dot = document.createElement("span");
     dot.className = "squad-dot";
-    dot.style.background = chipColor(pid);
+    if (pid !== undefined && state === "filled") dot.style.background = chipColor(pid);
     const name = document.createElement("span");
     name.textContent = label;
     chip.append(dot, name);
     return chip;
   };
-  // #lobby-squad carries .squad-row (added above), so chips render directly into it.
-  const setSquad = (members: { pid: number; label: string }[]): void => {
-    renderList(squad, members, (m) => `${m.pid}:${m.label}`, makeChip);
+  const renderLobbySlots = (slots: readonly LobbyWaitSlot[]): void => {
+    renderList(
+      squad,
+      slots,
+      (slot, i) => `${i}:${slot.label}:${slot.state}:${slot.pid ?? "x"}`,
+      makeSlotChip,
+    );
+  };
+  const renderLobbyWait = (model: LobbyWaitModel): void => {
+    wait.className = `lobby-wait tone-${model.tone}`;
+    const stepper = document.createElement("div");
+    stepper.className = "lobby-stepper";
+    model.steps.forEach((step, i) => {
+      const item = document.createElement("div");
+      item.className = `lobby-step is-${step.state}`;
+      const node = document.createElement("div");
+      node.className = "lobby-step-node";
+      node.textContent = step.state === "done" ? "✓" : String(i + 1);
+      const title = document.createElement("div");
+      title.className = "lobby-step-title";
+      title.textContent = step.label;
+      const detail = document.createElement("div");
+      detail.className = "lobby-step-detail";
+      detail.textContent = step.detail;
+      item.append(node, title, detail);
+      stepper.append(item);
+    });
+
+    const card = document.createElement("div");
+    card.className = "lobby-wait-card";
+    const title = document.createElement("div");
+    title.className = "lobby-wait-title";
+    title.textContent = model.headline;
+    const detail = document.createElement("div");
+    detail.className = "lobby-wait-detail";
+    detail.textContent = model.detail;
+    card.append(title, detail);
+
+    wait.replaceChildren(stepper, card);
+    renderLobbySlots(model.slots);
   };
 
-  // Single owner of the client lobby's status/squad/manual derivation. Every client connection
-  // event calls setClientLobby({...}) rather than poking setStatus/manual.open directly, so the
-  // failure-only "open the manual fallback" side-effect lives in exactly one place (the `failed`
-  // case). `lost` (opened-then-dropped / version mismatch) deliberately does NOT open manual.
+  // Sole writer of the room-code entry-row visibility (I1): a pure function of lobby state. The row
+  // shows only in Join mode, and only when idle or in a retryable state (null / failed / lost) —
+  // hidden while actively connecting or connected.
+  const syncEntryVisibility = (): void => {
+    const k = lastClientLobbyState?.k;
+    const busy = k === "joining" || k === "linking" || k === "connected";
+    roomJoin.style.display = lobbyKind === "join" && !busy ? "flex" : "none";
+  };
+
   const setClientLobby = (s: ClientLobby): void => {
+    lastClientLobbyState = s;
+    renderLobbyWait(clientLobbyWaitModel(s));
     switch (s.k) {
       case "joining":
         setStatus("connecting via relay…", true); // squad already cleared by openLobby
         break;
       case "linking":
-        setSquad([{ pid: 1, label: "You" }]);
         setStatus("establishing P2P link…", true);
         break;
       case "connected":
         setStatus("connected — waiting for host to deploy");
         break;
       case "failed":
-        setStatus(s.msg);
-        manual.open = true;
+        setStatus(s.msg); // no fallback panel — the message + an enabled Join button drive the retry
         break;
       case "lost":
         setStatus(s.msg);
@@ -497,6 +578,7 @@ function wireCoop(): void {
       default:
         assertNever(s);
     }
+    syncEntryVisibility();
   };
 
   const openLobby = (kind: "host" | "join"): void => {
@@ -504,25 +586,15 @@ function wireCoop(): void {
     hide("coop");
     show("lobby");
     roomHost.style.display = kind === "host" ? "flex" : "none";
-    roomJoin.style.display = kind === "join" ? "flex" : "none";
     deploy.style.display = "none";
     squad.replaceChildren();
+    wait.replaceChildren();
     setStatus("");
-    out.value = "";
-    inEl.value = "";
-    manual.open = false;
-    manual.ontoggle = null;
+    lobbyKind = kind;
+    syncEntryVisibility(); // sole writer of the room-code entry-row visibility
   };
   const closeLobby = (): void => {
-    hostHandle?.close(); // closes the signaling socket → Room DO unlists a public room
-    hostHandle = null;
-    coopHostHandle = null;
-    coopPublic = false;
-    Net.mode = "single";
-    Net.host = null;
-    Net.client = null;
-    hostStarted = false;
-    coopRoomCode = null; // disarm the reconnect watchdog
+    endCoop(); // disposes host/client links (host: no ghost peer; client: host sees us drop) + resets
     hide("lobby");
     openCoopHub(); // back to the hub (you entered the lobby from there)
   };
@@ -530,10 +602,6 @@ function wireCoop(): void {
   el("lobby-room-copy").onclick = () => {
     roomCode.select();
     navigator.clipboard?.writeText(roomCode.value).catch(() => {});
-  };
-  el("lobby-copy").onclick = () => {
-    out.select();
-    navigator.clipboard?.writeText(out.value).catch(() => {});
   };
 
   // ---- HOST (public/private) ----
@@ -561,108 +629,143 @@ function wireCoop(): void {
         day: gs.day,
         players: (Net.host?.connectedPids().length ?? 0) + 1, // host + decided clients
       });
+      refreshSquad();
     };
 
     const refreshSquad = (): void => {
-      // host is player 0; each connected peer gets its pid's color/number
-      setSquad([
-        { pid: 0, label: "You (host)" },
-        ...host.connectedPids().map((pid) => ({ pid, label: `P${pid + 1}` })),
-      ]);
+      renderLobbyWait(
+        hostLobbyWaitModel({
+          isPublic: coopPublic,
+          peerPids: host.connectedPids(),
+        }),
+      );
     };
+    host.onRoster = refreshSquad; // the host is the single source of truth for the squad badges —
+    // refresh from its authoritative roster changes (every peer path, incl. grace expiry/reconnect),
+    // NOT from incidental link/signaling events that fire before the host updates its peer state.
     refreshSquad();
     deploy.style.display = "inline-block";
     deploy.textContent = "Deploy raid";
-    deploy.onclick = () => {
-      startGame(); // builds the fresh world + shows the HUD (hides this lobby)
-      host.start(); // spawn a player for everyone already connected
-      hostStarted = true; // frame loop now sims + broadcasts
-    };
+    deploy.onclick = () => startHostRun(host);
 
     const code = makeRoomCode();
     roomCode.value = code;
     setStatus(
       isPublic ? "public raid open — others can find you" : "private room — share the code",
     );
-    hostHandle = hostRoom(
+    coopHostHandle = hostRoom(
       code,
       (link) => host.add(link),
       (s) => {
-        refreshSquad();
-        if (s.error) setStatus(`signaling: ${s.error} — use manual connect below`);
+        if (s.error) setStatus(`signaling: ${s.error} — try again`);
       },
     );
-    coopHostHandle = hostHandle; // the host tick pushes registry meta through this
     // seed the listing now; buffered in hostRoom and flushed the instant the signaling WS opens
-    hostHandle.setMeta({
+    coopHostHandle.setMeta({
       public: isPublic,
       phase: "lobby",
       day: 1,
       players: (Net.host?.connectedPids().length ?? 0) + 1,
     });
+  };
 
-    // manual fallback: opening <details> hides the room code (so the mode is unambiguous)
-    // and lazily builds an offer on first open.
-    let manualReady = false;
-    manual.ontoggle = (): void => {
-      roomHost.style.display = manual.open ? "none" : "flex";
-      guide.textContent = manual.open
-        ? "Manual connect — share your code, paste their reply."
-        : "Share the room code with your squad, then Deploy.";
-      if (!manual.open || manualReady) return;
-      manualReady = true;
-      sendBlock.style.order = "-1"; // your code first, their reply below
-      sendLabel.textContent = "Your code — send to a friend";
-      recvLabel.textContent = "Their reply — paste it here";
-      go.textContent = "Connect";
-      void (async () => {
-        try {
-          const { link, offer, accept } = await createHostLink();
-          host.add(link);
-          link.onOpen(refreshSquad);
-          link.onClose(refreshSquad);
-          out.value = offer;
-          go.onclick = async () => {
-            const c = inEl.value.trim();
-            if (!c) return;
-            try {
-              await accept(c);
-              setStatus("manual peer linked ✓");
-            } catch {
-              setStatus("that reply code didn't parse");
-            }
-          };
-        } catch (err) {
-          setStatus(`manual offer failed: ${err}`);
-        }
-      })();
-    };
+  // The single guarded "become a client" write-back. Every join path (room-code, quick match)
+  // routes here so a teardown mid-await can't resurrect a dead session: if the captured
+  // epoch is stale, close the freshly-obtained link and bail instead of wiring it into Net.
+  const becomeClient = (
+    epoch: number,
+    link: PeerLink,
+    code: string | null,
+    hooks?: ConstructorParameters<typeof Client>[2],
+  ): Client | null => {
+    if (!isCoopEpochCurrent(epoch)) {
+      try {
+        link.close(); // user left during the join await — drop the link so the host sees no ghost
+      } catch {
+        /* already closing — ignore */
+      }
+      return null;
+    }
+    Net.mode = "client";
+    coopRoomCode = code; // arm the reconnect watchdog with the room to rejoin on a drop
+    const client = new Client(link, undefined, hooks);
+    Net.client = client;
+    return client;
+  };
+
+  // NON-terminal: a client attempt failed but the player stays in the flow (lobby stays open to
+  // retry). Drop the dead client link + reset transient client state without a full endCoop().
+  // Clears Net.client BEFORE dispose() so a synchronous re-entrant onClose sees no client and the
+  // attempt-local `settled` latch (set by the caller) already suppresses the fallback.
+  const abandonClientAttempt = (epoch: number): void => {
+    if (!isCoopEpochCurrent(epoch)) return; // a real teardown already owns Net — don't fight it
+    const client = Net.client;
+    Net.client = null;
+    Net.mode = "single";
+    coopRoomCode = null; // disarm the reconnect watchdog for the abandoned room
+    client?.dispose();
+  };
+
+  // NON-terminal transition: the quick-match join didn't pan out → abandon any in-flight client
+  // attempt (drops its link + resets coopRoomCode/Net.mode), then become a public host.
+  // (openHostLobby sets Net.mode = "host" and builds the Host.) Callers MUST set their attempt-local
+  // `settled` latch BEFORE calling this so the link.close() inside abandonClientAttempt can't
+  // re-enter the same fallback via onClose.
+  const beginPublicHostFromQuickMatch = (epoch: number): void => {
+    if (!isCoopEpochCurrent(epoch)) return; // teardown won — stay torn down
+    abandonClientAttempt(epoch); // dispose the in-flight client link + reset transient client state
+    if (!isCoopEpochCurrent(epoch)) return; // dispose's re-entrant onClose could have torn us down
+    openHostLobby(true);
   };
 
   // ---- JOIN (by code; also used by an Open Raids row with a prefilled code) ----
+  // I2 arbitration: abandon any in-flight room-code attempt so only one client connection flow is
+  // ever live. Bumping the epoch cancels cross-await write-backs; aborting joinAbort closes joinRoom's
+  // internal signaling socket immediately (in the pre-offer window no PeerLink exists yet, so epoch
+  // alone can't reach it); disposing Net.client covers the post-offer window. Idempotent — safe to
+  // call when nothing is live.
+  const resetJoinEntry = (): void => {
+    bumpCoopEpoch();
+    joinAbort?.abort();
+    joinAbort = null;
+    Net.client?.dispose();
+    Net.client = null;
+    Net.mode = "single";
+    coopRoomCode = null; // disarm the reconnect watchdog for the abandoned room
+    lastClientLobbyState = null;
+    roomGo.disabled = false;
+  };
+
   const openJoinLobby = (prefill?: string): void => {
+    resetJoinEntry(); // abandon any lingering attempt BEFORE openLobby (endCoop leaves this local state)
     openLobby("join");
     role.textContent = "Joining";
     guide.textContent = "Enter the host's room code to connect.";
     roomInput.value = prefill ?? "";
     roomInput.focus();
+    // Note: resetJoinEntry() above re-enables roomGo and clears lastClientLobbyState for this fresh
+    // entry (the re-entry guard is left set after a successful connect; Back doesn't clear it).
 
-    // The room-code attempt's P2P-open timeout. Lifted to the lobby scope (not local to join) so
-    // switching to the manual fallback can cancel it — otherwise a pending timer fires
-    // setClientLobby({failed}) over the manual flow, clobbering its status and re-opening <details>.
+    // The room-code attempt's P2P-open timeout. Lifted to the lobby scope (not local to join) so a
+    // Back / fresh lobby re-entry can cancel it — otherwise a pending timer fires
+    // setClientLobby({failed}) over a superseded flow, clobbering its status.
     let failTimer: ReturnType<typeof setTimeout> | undefined;
 
     const join = async (): Promise<void> => {
       const code = roomInput.value.trim().toUpperCase(); // idFromName is case-sensitive
       if (!code || roomGo.disabled) return; // re-entry guard: ignore double-click / Enter spam
       roomGo.disabled = true;
-      let rejected = false; // roomfull set a terminal message → don't let onClose clobber it
+      const epoch = coopEpoch(); // cancel our write-backs if the player leaves during the await
+      joinAbort = new AbortController(); // lets resetJoinEntry close joinRoom's socket in the pre-offer window
+      // Attempt-local latch: the FIRST terminal outcome (roomfull / timeout / link-close failure)
+      // wins and every later one no-ops. This subsumes the old `rejected` flag and makes the flow
+      // safe against re-entrant onClose firing when abandonClientAttempt() closes the link.
+      let settled = false;
+      lastClientLobbyState = null;
       setClientLobby({ k: "joining" });
       try {
-        const link = await joinRoom(code);
-        Net.mode = "client";
-        coopRoomCode = code; // arm the reconnect watchdog for this room
-        Net.client = new Client(link, undefined, {
+        const link = await joinRoom(code, joinAbort.signal);
+        const client = becomeClient(epoch, link, code, {
           // persist our reconnect identity each Hello so a drop can rejoin the same slot
           onIdentity: (pid, nonce) => {
             try {
@@ -671,21 +774,27 @@ function wireCoop(): void {
               /* sessionStorage unavailable — reconnect just falls back to a fresh slot */
             }
           },
-          // host turned us away: room is full. Terminal (manual connect can't get in either), so
-          // do NOT open the manual fallback — surface a clear message and re-enable Join so the
-          // player can try a different code.
+          // host turned us away: room is full. Terminal — surface a clear message and re-enable Join
+          // so the player can try a different code.
           onRoomFull: () => {
-            rejected = true;
+            if (settled || !isCoopEpochCurrent(epoch)) return; // stale/already-settled — ignore
+            settled = true;
             clearTimeout(failTimer); // roomfull can arrive before/around open → don't let the
             // NAT-timeout later clobber this terminal message with a "failed"
-            coopRoomCode = null; // don't try to reconnect to a room we were refused from
+            abandonClientAttempt(epoch); // reset client mode + dispose the refused link (nulls
+            // coopRoomCode too, so we don't reconnect to a room we were turned away from)
             setClientLobby({
               k: "lost",
+              step: "host",
               msg: "room is full — the squad is already at capacity (4).",
             });
             roomGo.disabled = false;
           },
         });
+        if (!client) {
+          roomGo.disabled = false; // player left during the await → re-enable Join for a future visit
+          return; // becomeClient already closed the link
+        }
         setClientLobby({ k: "linking" });
         // joinRoom resolves when our ANSWER is sent, NOT when the P2P link actually opens. A
         // blocked NAT/firewall (e.g. a corporate network) then fails silently. Confirm a real
@@ -693,38 +802,62 @@ function wireCoop(): void {
         // sees "couldn't connect" instead of sitting forever on a misleading "connected".
         let opened = false;
         failTimer = setTimeout(() => {
-          if (opened) return;
+          if (opened || settled || !isCoopEpochCurrent(epoch)) return;
+          settled = true;
+          abandonClientAttempt(epoch); // close the never-opened link so the host sees no ghost
           roomGo.disabled = false;
           setClientLobby({
             k: "failed",
+            step: "link",
             msg: failMsg(
-              "couldn't connect (network/NAT). Try a personal network, or manual connect below.",
+              "couldn't connect (network/NAT). Check the code, or try a personal device/network.",
             ),
           });
         }, CONFIG.net.p2pOpenTimeoutMs);
         link.onOpen(() => {
+          if (!isCoopEpochCurrent(epoch)) return;
           opened = true;
           clearTimeout(failTimer);
           setClientLobby({ k: "connected" });
         });
         link.onClose(() => {
+          if (!isCoopEpochCurrent(epoch)) return; // teardown already closed us — don't touch the UI
           clearTimeout(failTimer);
-          if (rejected) return; // roomfull already showed the terminal "room is full"
+          if (settled) return; // roomfull/timeout already rendered the terminal outcome
+          settled = true;
           roomGo.disabled = false;
           setClientLobby(
             opened
-              ? { k: "lost", msg: "disconnected from host." }
+              ? { k: "lost", step: "host", msg: "disconnected from host." }
               : {
                   k: "failed",
-                  msg: failMsg("connection failed (network/NAT) — try manual connect below."),
+                  step: "link",
+                  msg: failMsg(
+                    "connection failed (network/NAT) — check the code or try a personal device/network.",
+                  ),
                 },
           );
         });
       } catch (err) {
+        if (!isCoopEpochCurrent(epoch)) return; // lobby left / superseded — don't clobber it
         roomGo.disabled = false;
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg === "host is on a different version — update to play together") {
+          setClientLobby({ k: "lost", step: "host", msg });
+          return;
+        }
+        if (msg === "room is full") {
+          setClientLobby({
+            k: "lost",
+            step: "host",
+            msg: "room is full — the squad is already at capacity (4).",
+          });
+          return;
+        }
         setClientLobby({
           k: "failed",
-          msg: `${err instanceof Error ? err.message : err} — try manual connect below`,
+          step: "room",
+          msg: `${msg} — check the code and try again`,
         });
       }
     };
@@ -733,57 +866,6 @@ function wireCoop(): void {
       if (e.key === "Enter") void join();
     };
     if (prefill) void join(); // came from an Open Raids row → connect straight away
-
-    // manual fallback: opening <details> hides the room-code input (mode is unambiguous)
-    // and lazily wires the paste-host-code → generate-reply flow on first open.
-    let manualReady = false;
-    manual.ontoggle = (): void => {
-      roomJoin.style.display = manual.open ? "none" : "flex";
-      guide.textContent = manual.open
-        ? "Manual connect — paste the host's code to get a reply."
-        : "Enter the host's room code to connect.";
-      // Switching to manual abandons the room-code attempt — cancel its timeout so it can't fire
-      // setClientLobby({failed}) over the manual flow (clearTimeout(undefined) is a safe no-op).
-      if (manual.open) clearTimeout(failTimer);
-      if (!manual.open || manualReady) return;
-      manualReady = true;
-      sendBlock.style.order = ""; // host's code (recv) first, your reply (send) below
-      sendBlock.style.display = "none"; // reply revealed once generated
-      recvLabel.textContent = "Host's code — paste it here";
-      sendLabel.textContent = "Your reply — send it back to the host";
-      go.textContent = "Generate reply";
-      go.onclick = async () => {
-        const offer = inEl.value.trim();
-        if (!offer) return;
-        try {
-          const { link, answer } = await createClientLink(offer);
-          Net.mode = "client";
-          Net.client = new Client(link, undefined, {
-            // manual SDP bypasses the signaling version gate → re-check on Hello
-            onVersionMismatch: () => {
-              setClientLobby({
-                k: "lost",
-                msg: "host is on a different version — update to play together",
-              });
-              link.close();
-            },
-            // host turned us away: room is full (the client closes its own link on this event)
-            onRoomFull: () => {
-              setClientLobby({
-                k: "lost",
-                msg: "room is full — the squad is already at capacity (4).",
-              });
-            },
-          });
-          link.onOpen(() => setClientLobby({ k: "connected" }));
-          out.value = answer;
-          sendBlock.style.display = "flex";
-          setStatus("reply ready — send it to the host, then wait");
-        } catch {
-          setStatus("that host code didn't parse");
-        }
-      };
-    };
   };
 
   // ---- co-op hub: quick match + a live scan of open public raids ----
@@ -875,6 +957,10 @@ function wireCoop(): void {
   const quickMatch = async (): Promise<void> => {
     stopCoopPoll();
     el<HTMLButtonElement>("coop-quick").disabled = true; // no re-entry until we leave/return to the hub
+    const epoch = coopEpoch(); // cancel our write-backs if the player leaves the hub mid-scan
+    // Attempt-local latch: the first fallback-to-host wins; later callbacks (onClose re-entry after
+    // the client link is disposed, a late timeout) no-op instead of opening a second host.
+    let fellBack = false;
     coopStatus("scanning for raids…", true);
     let rooms: RoomInfo[] = [];
     let registryOk = true;
@@ -883,10 +969,12 @@ function wireCoop(): void {
     } catch {
       registryOk = false; // browser unreachable → fall through to hosting
     }
+    if (!isCoopEpochCurrent(epoch)) return; // left the hub during the scan
     const top = selectQuickMatch(rooms).slice(0, 3);
     const pick = top.length ? top[Math.floor(Math.random() * top.length)] : undefined;
     if (!pick) {
-      openHostLobby(true); // nothing joinable → host a public raid
+      fellBack = true; // synchronous fallback → latch before calling beginPublicHostFromQuickMatch
+      beginPublicHostFromQuickMatch(epoch); // nothing joinable → host a public raid
       setStatus(
         registryOk
           ? "No open raids found — hosting a public one. Others can Quick Match in."
@@ -899,14 +987,13 @@ function wireCoop(): void {
     try {
       link = await joinRoom(pick.code);
     } catch {
-      openHostLobby(true); // couldn't reach it (or version mismatch) → host instead
+      fellBack = true; // synchronous fallback → latch before calling beginPublicHostFromQuickMatch
+      beginPublicHostFromQuickMatch(epoch); // couldn't reach it (or version mismatch) → host instead
       setStatus("Couldn't reach that raid — hosting a public one instead.");
       return;
     }
     const code = pick.code;
-    Net.mode = "client";
-    coopRoomCode = code;
-    Net.client = new Client(link, undefined, {
+    const client = becomeClient(epoch, link, code, {
       onIdentity: (pid, nonce) => {
         try {
           sessionStorage.setItem(`q_rejoin_${code}`, JSON.stringify({ pid, nonce }));
@@ -915,26 +1002,19 @@ function wireCoop(): void {
         }
       },
       onRoomFull: () => {
+        if (fellBack || !isCoopEpochCurrent(epoch)) return;
+        fellBack = true;
         clearTimeout(t); // defensive — normally already cleared on open
-        Net.client = null;
-        Net.mode = "single";
-        coopRoomCode = null;
-        openHostLobby(true);
+        beginPublicHostFromQuickMatch(epoch);
         setStatus("This raid is full — hosting a public one instead.");
       },
     });
+    if (!client) return; // player left during the await → becomeClient closed the link
     let opened = false;
     const t = window.setTimeout(() => {
-      if (opened) return;
-      try {
-        link.close();
-      } catch {
-        /* ignore */
-      }
-      Net.client = null;
-      Net.mode = "single";
-      coopRoomCode = null;
-      openHostLobby(true); // didn't connect in time → host instead
+      if (opened || fellBack || !isCoopEpochCurrent(epoch)) return;
+      fellBack = true;
+      beginPublicHostFromQuickMatch(epoch); // didn't connect in time → drop link + host instead
       setStatus(
         getTurnStatus() === "budget-reached"
           ? "Relay at capacity this month — hosting a public raid (same-network players only)."
@@ -942,17 +1022,16 @@ function wireCoop(): void {
       );
     }, CONFIG.net.quickMatchTimeoutMs);
     link.onOpen(() => {
+      if (!isCoopEpochCurrent(epoch)) return;
       opened = true;
       clearTimeout(t);
       coopStatus("connected — waiting for host to deploy");
     });
     link.onClose(() => {
-      if (opened) return; // post-open drops are the reconnect watchdog's job
+      if (opened || fellBack || !isCoopEpochCurrent(epoch)) return; // post-open → reconnect watchdog
+      fellBack = true;
       clearTimeout(t);
-      Net.client = null;
-      Net.mode = "single";
-      coopRoomCode = null;
-      openHostLobby(true);
+      beginPublicHostFromQuickMatch(epoch);
       setStatus(
         getTurnStatus() === "budget-reached"
           ? "Relay at capacity this month — hosting a public raid (same-network players only)."
@@ -964,19 +1043,25 @@ function wireCoop(): void {
   // ---- title + hub wiring ----
   el("mpCoopBtn").onclick = openCoopHub;
   el("coop-back").onclick = () => {
-    stopCoopPoll();
+    endCoop(); // cancel any in-flight quick match + drop a partial client link; also stops the poll
     hide("coop");
     show("start");
   };
   el("coop-quick").onclick = () => void quickMatch();
   el("coop-host").onclick = () => {
-    stopCoopPoll();
+    endCoop(); // cancel a pending quick match before starting a fresh host intent
     openHostLobby(true);
   };
   el("coop-joincode").onclick = () => {
-    stopCoopPoll();
+    endCoop(); // cancel a pending quick match before opening the join lobby
     openJoinLobby();
   };
+
+  // Tab close / navigate away: best-effort teardown so the host sees us drop immediately (pc.close()
+  // sends the DTLS close) instead of holding a ghost peer until the ICE consent timeout. pagehide is
+  // the reliable signal on mobile Safari (beforeunload is not); it's best-effort — the OS may kill
+  // the tab first — but combined with the reconnect grace it covers the common case.
+  window.addEventListener("pagehide", () => endCoop());
 }
 
 main();

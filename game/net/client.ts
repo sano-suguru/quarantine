@@ -70,6 +70,7 @@ export class Client {
   // reconnect (P4): `live` gates send/render/callbacks while suspended between links;
   // lastSnapAt/lastRelAt drive the main-loop starvation watchdog (a true drop = BOTH go quiet).
   private live = true;
+  private disposed = false;
   private lastSnapAt = 0;
   private lastRelAt = 0;
 
@@ -163,6 +164,22 @@ export class Client {
       const r = this.hooks.rejoin;
       link.sendRel(r ? { t: "rejoin", pid: r.pid, nonce: r.nonce } : { t: "join" });
     });
+  }
+
+  /**
+   * Terminal teardown: close the current link and mark the client dead. Idempotent — safe to call
+   * from endCoop() regardless of whether we ever opened. Unlike suspend() (reconnect: keeps the
+   * instance alive to rebind), dispose() ends this Client for good.
+   */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.live = false;
+    try {
+      this.link.close();
+    } catch {
+      /* link already closing/closed — teardown must not throw */
+    }
   }
 
   /** Pause all net activity (send/render/callbacks) and drop stale prediction/buffers while the

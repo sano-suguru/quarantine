@@ -212,6 +212,57 @@ describe("Host grace + reconnect", () => {
   });
 });
 
+describe("Host roster notifications (lobby squad source of truth)", () => {
+  it("fires onRoster AFTER a lobby peer is decided, with the peer already present", () => {
+    const host = new Host();
+    const seen: number[][] = [];
+    host.onRoster = () => seen.push(host.connectedPids().sort());
+    const link = new FakePeerLink();
+    host.add(link);
+    link.fireOpen(); // pre-game open → decideFresh → open+decided
+    // the callback must observe the NEW roster (the peer is already counted), not a stale one
+    expect(seen.at(-1)).toEqual([1]);
+  });
+
+  it("fires onRoster AFTER a pre-game drop, with the peer already gone", () => {
+    const host = new Host();
+    const seen: number[][] = [];
+    const link = new FakePeerLink();
+    host.add(link);
+    link.fireOpen();
+    host.onRoster = () => seen.push(host.connectedPids().sort());
+    link.fireClose(); // pre-game drop → peer removed
+    expect(seen.at(-1)).toEqual([]); // squad refresh sees the emptied roster, not a ghost
+  });
+
+  it("fires onRoster on a mid-game drop so the badge shrinks (absent peer uncounted)", () => {
+    const host = new Host();
+    host.start();
+    const link = new FakePeerLink();
+    host.add(link);
+    link.fireOpen();
+    link.recv({ t: "join" });
+    const seen: number[][] = [];
+    host.onRoster = () => seen.push(host.connectedPids().sort());
+    link.fireClose(); // held absent → not connected
+    expect(seen.at(-1)).toEqual([]);
+  });
+
+  it("fires onRoster when a held body is removed at grace expiry", () => {
+    const host = new Host();
+    host.start();
+    const link = new FakePeerLink();
+    host.add(link);
+    link.fireOpen();
+    link.recv({ t: "join" });
+    link.fireClose();
+    let fired = 0;
+    host.onRoster = () => fired++;
+    host.tickGrace(performance.now() + CONFIG.net.reconnect.graceMs + 1000);
+    expect(fired).toBeGreaterThan(0);
+  });
+});
+
 describe("pickSlot", () => {
   it("assigns the lowest free client slot starting at 1", () => {
     expect(pickSlot([])).toEqual({ kind: "assign", pid: 1 });
@@ -318,5 +369,79 @@ describe("Host room cap", () => {
     fresh.recv({ t: "join" }); // mid-game fresh join while the room is full of (live + ghost)
     expect(fresh.sent.some((m) => m.t === "roomfull")).toBe(true); // ghost protected (feel-first)
     expect(fresh.hello()).toBeUndefined();
+  });
+});
+
+describe("Host.dispose", () => {
+  it("closes every connected link and clears the roster", () => {
+    resetState("day");
+    const host = new Host();
+    const a = new FakePeerLink();
+    const b = new FakePeerLink();
+    host.add(a);
+    host.add(b);
+    a.fireOpen();
+    b.fireOpen();
+    let aClosed = 0;
+    let bClosed = 0;
+    a.onClose(() => aClosed++);
+    b.onClose(() => bClosed++);
+
+    host.dispose();
+
+    expect(aClosed).toBe(1);
+    expect(bClosed).toBe(1);
+    expect(host.connectedPids()).toEqual([]);
+    expect(host.links.length).toBe(0); // links array emptied, not just callbacks fired
+  });
+
+  it("tears down a started host with a decided peer without running the normal drop path", () => {
+    // Re-entrancy proof: dispose() closes links synchronously, which fires the real Host.onClose.
+    // Because peers/links are cleared BEFORE close(), that onClose sees no tracked peer and no-ops —
+    // it must NOT run the started+decided "mark absent / remove player" branch. Player state (the
+    // shared singleton) is therefore left untouched by the teardown.
+    const s = resetState("day");
+    const host = new Host();
+    const a = new FakePeerLink();
+    host.add(a);
+    a.fireOpen(); // lobby → decided immediately (pid assigned)
+    host.start(); // spawns the decided peer's player into state
+    expect(host.connectedPids().length).toBe(1);
+    const playersAfterStart = s.players.length;
+
+    host.dispose();
+
+    expect(host.links.length).toBe(0);
+    expect(host.connectedPids()).toEqual([]);
+    expect(s.players.length).toBe(playersAfterStart); // no re-entrant removal ran
+  });
+
+  it("is idempotent — a second dispose is a no-op", () => {
+    resetState("day");
+    const host = new Host();
+    const a = new FakePeerLink();
+    host.add(a);
+    a.fireOpen();
+    let closes = 0;
+    a.onClose(() => closes++);
+
+    host.dispose();
+    host.dispose();
+
+    expect(closes).toBe(1);
+  });
+
+  it("rejects and closes links added after dispose", () => {
+    resetState("day");
+    const host = new Host();
+    host.dispose();
+    const late = new FakePeerLink();
+    let closed = 0;
+    late.onClose(() => closed++);
+
+    host.add(late);
+
+    expect(closed).toBe(1);
+    expect(host.connectedPids()).toEqual([]);
   });
 });
