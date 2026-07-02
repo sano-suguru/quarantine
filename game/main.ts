@@ -1283,6 +1283,12 @@ function wireCoop(): void {
     endCoop(); // cancel a pending quick match before opening the join lobby
     openJoinLobby();
   };
+
+  // Tab close / navigate away: best-effort teardown so the host sees us drop immediately (pc.close()
+  // sends the DTLS close) instead of holding a ghost peer until the ICE consent timeout. pagehide is
+  // the reliable signal on mobile Safari (beforeunload is not); it's best-effort — the OS may kill
+  // the tab first — but combined with the reconnect grace it covers the common case.
+  window.addEventListener("pagehide", () => endCoop());
 }
 
 main();
