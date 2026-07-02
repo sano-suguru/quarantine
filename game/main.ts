@@ -499,6 +499,7 @@ function wireCoop(): void {
   let lastClientLobbyState: ClientLobby | null = null;
   let lobbyKind: "host" | "join" = "join"; // set in openLobby(); gates the room-code entry row
   let lastManualState: ManualLobbyDisplayState | null = null; // owned by the setManualState funnels
+  let joinAbort: AbortController | null = null; // in-flight room-code attempt (abort to abandon it)
 
   // status with an optional "connecting" pulse dot (CSS .busy::after)
   const setStatus = (text: string, busy = false): void => {
@@ -855,18 +856,32 @@ function wireCoop(): void {
   };
 
   // ---- JOIN (by code; also used by an Open Raids row with a prefilled code) ----
+  // I2 arbitration: abandon any in-flight room-code attempt so only one client connection flow is
+  // ever live. Bumping the epoch cancels cross-await write-backs; aborting joinAbort closes joinRoom's
+  // internal signaling socket immediately (in the pre-offer window no PeerLink exists yet, so epoch
+  // alone can't reach it); disposing Net.client covers the post-offer window. Idempotent — safe to
+  // call when nothing is live.
+  const resetJoinEntry = (): void => {
+    bumpCoopEpoch();
+    joinAbort?.abort();
+    joinAbort = null;
+    Net.client?.dispose();
+    Net.client = null;
+    Net.mode = "single";
+    coopRoomCode = null; // disarm the reconnect watchdog for the abandoned room
+    lastClientLobbyState = null;
+    roomGo.disabled = false;
+  };
+
   const openJoinLobby = (prefill?: string): void => {
+    resetJoinEntry(); // abandon any lingering attempt BEFORE openLobby (endCoop leaves this local state)
     openLobby("join");
     role.textContent = "Joining";
     guide.textContent = "Enter the host's room code to connect.";
     roomInput.value = prefill ?? "";
     roomInput.focus();
-    // Re-enable the Join button on every fresh entry — its re-entry guard (roomGo.disabled) is left
-    // set after a SUCCESSFUL connect, and leaving via Back doesn't clear it, so a second visit's
-    // click would otherwise be swallowed. This is the single re-enable point for the guard, mirroring
-    // openCoopHub for the quick-match button.
-    roomGo.disabled = false;
-    lastClientLobbyState = null;
+    // Note: resetJoinEntry() above re-enables roomGo and clears lastClientLobbyState for this fresh
+    // entry (the re-entry guard is left set after a successful connect; Back doesn't clear it).
 
     // The room-code attempt's P2P-open timeout. Lifted to the lobby scope (not local to join) so
     // switching to the manual fallback can cancel it — otherwise a pending timer fires
@@ -878,6 +893,7 @@ function wireCoop(): void {
       if (!code || roomGo.disabled) return; // re-entry guard: ignore double-click / Enter spam
       roomGo.disabled = true;
       const epoch = coopEpoch(); // cancel our write-backs if the player leaves during the await
+      joinAbort = new AbortController(); // lets resetJoinEntry close joinRoom's socket in the pre-offer window
       // Attempt-local latch: the FIRST terminal outcome (roomfull / timeout / link-close failure)
       // wins and every later one no-ops. This subsumes the old `rejected` flag and makes the flow
       // safe against re-entrant onClose firing when abandonClientAttempt() closes the link.
@@ -885,7 +901,7 @@ function wireCoop(): void {
       lastClientLobbyState = null;
       setClientLobby({ k: "joining" });
       try {
-        const link = await joinRoom(code);
+        const link = await joinRoom(code, joinAbort.signal);
         const client = becomeClient(epoch, link, code, {
           // persist our reconnect identity each Hello so a drop can rejoin the same slot
           onIdentity: (pid, nonce) => {
@@ -1013,6 +1029,12 @@ function wireCoop(): void {
         return;
       }
       clearTimeout(failTimer);
+      // A live room-code attempt is abandoned when the player switches to manual (I2). Guard to live
+      // states only: the `failed` fallback opens <details> programmatically, and must keep its state.
+      const liveK = lastClientLobbyState?.k;
+      if (liveK === "joining" || liveK === "linking" || liveK === "connected") {
+        resetJoinEntry(); // abort the in-flight join + reset client state so only manual runs now
+      }
       if (pendingClientManualState) {
         manualState = pendingClientManualState;
         pendingClientManualState = null;
