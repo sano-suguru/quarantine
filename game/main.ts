@@ -72,6 +72,10 @@ let lastPlaceAt = -1e9;
 // Read by the Worker-clock tick to push registry meta (so a backgrounded public host isn't pruned).
 let coopHostHandle: HostRoom | null = null;
 let coopPublic = false;
+// OPEN RAIDS poll interval id (0 = not polling). Module scope so endCoop() can stop it.
+let coopPollTimer = 0;
+// Manual-SDP client fallback UI state buffered until <details> opens. Module scope for endCoop() reset.
+let pendingClientManualState: ManualLobbyDisplayState | null = null;
 
 // personal options overlay (#settings): client-local, separate from the host-authoritative
 // pause. While open, local input is zeroed (so you don't act blind behind the overlay) and
@@ -443,10 +447,7 @@ function wireCoop(): void {
   const sendLabel = el("lobby-send-label");
   const recvLabel = el("lobby-recv-label");
 
-  let hostHandle: HostRoom | null = null;
-  let coopPollTimer = 0; // OPEN RAIDS poll interval id (0 = not polling)
   let lastClientLobbyState: ClientLobby | null = null;
-  let pendingClientManualState: ManualLobbyDisplayState | null = null;
 
   // status with an optional "connecting" pulse dot (CSS .busy::after)
   const setStatus = (text: string, busy = false): void => {
@@ -566,8 +567,7 @@ function wireCoop(): void {
     manual.ontoggle = null;
   };
   const closeLobby = (): void => {
-    hostHandle?.close(); // closes the signaling socket → Room DO unlists a public room
-    hostHandle = null;
+    coopHostHandle?.close(); // closes the signaling socket → Room DO unlists a public room
     coopHostHandle = null;
     coopPublic = false;
     Net.mode = "single";
@@ -639,7 +639,7 @@ function wireCoop(): void {
     setStatus(
       isPublic ? "public raid open — others can find you" : "private room — share the code",
     );
-    hostHandle = hostRoom(
+    coopHostHandle = hostRoom(
       code,
       (link) => host.add(link),
       (s) => {
@@ -647,9 +647,8 @@ function wireCoop(): void {
         if (s.error) setStatus(`signaling: ${s.error} — use manual connect below`);
       },
     );
-    coopHostHandle = hostHandle; // the host tick pushes registry meta through this
     // seed the listing now; buffered in hostRoom and flushed the instant the signaling WS opens
-    hostHandle.setMeta({
+    coopHostHandle.setMeta({
       public: isPublic,
       phase: "lobby",
       day: 1,
