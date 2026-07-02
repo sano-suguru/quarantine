@@ -24,6 +24,14 @@ import {
   updateHUD,
 } from "./game";
 import { Input } from "./input";
+import {
+  type ClientLobbyDisplayState,
+  clientLobbyWaitModel,
+  hostLobbyWaitModel,
+  type LobbyWaitModel,
+  type LobbyWaitSlot,
+  manualLobbyWaitModel,
+} from "./lobbyWait";
 import { Client } from "./net/client";
 import { Host } from "./net/host";
 import { sampleLocalInput } from "./net/localInput";
@@ -52,12 +60,7 @@ let reconnecting = false;
 // the lobby status text, squad, and the failure-only manual.open side-effect in one place.
 // Scope is the lobby only: once the host deploys, startClientGame hides the lobby and Net.mode +
 // state.running become the source of truth.
-type ClientLobby =
-  | { k: "joining" } // relay handshake (pre-link)
-  | { k: "linking" } // P2P open wait (the p2pOpenTimeout window)
-  | { k: "connected" } // link open; waiting for the host to deploy
-  | { k: "failed"; msg: string } // connect failure → reveal the manual <details> fallback
-  | { k: "lost"; msg: string }; // opened then dropped in-lobby / version mismatch → no manual
+type ClientLobby = ClientLobbyDisplayState;
 // Q-to-place: a small local cooldown so a held/mashed key doesn't fire several reliable place
 // requests before the host's snapshot reflects the first (each would consume another queued item).
 let lastPlaceAt = -1e9;
@@ -428,6 +431,7 @@ function wireCoop(): void {
   const status = el("lobby-status");
   const deploy = el("lobby-deploy");
   const manual = el<HTMLDetailsElement>("lobby-manual");
+  const wait = el("lobby-wait");
   // manual-fallback elements
   const out = el<HTMLTextAreaElement>("lobby-out");
   const inEl = el<HTMLTextAreaElement>("lobby-in");
@@ -455,20 +459,59 @@ function wireCoop(): void {
     const [r, g, b] = PLAYER_COLORS[pid % PLAYER_COLORS.length] ?? [0.49, 1, 0.31];
     return `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
   };
-  const makeChip = ({ pid, label }: { pid: number; label: string }): HTMLElement => {
+  const makeSlotChip = ({ pid, label, state }: LobbyWaitSlot): HTMLElement => {
     const chip = document.createElement("span");
     chip.className = "squad-chip";
+    chip.classList.toggle("empty", state === "empty");
+    chip.classList.toggle("unknown", state === "unknown");
     const dot = document.createElement("span");
     dot.className = "squad-dot";
-    dot.style.background = chipColor(pid);
+    if (pid !== undefined && state === "filled") dot.style.background = chipColor(pid);
     const name = document.createElement("span");
     name.textContent = label;
     chip.append(dot, name);
     return chip;
   };
-  // #lobby-squad carries .squad-row (added above), so chips render directly into it.
-  const setSquad = (members: { pid: number; label: string }[]): void => {
-    renderList(squad, members, (m) => `${m.pid}:${m.label}`, makeChip);
+  const renderLobbySlots = (slots: readonly LobbyWaitSlot[]): void => {
+    renderList(
+      squad,
+      slots,
+      (slot, i) => `${i}:${slot.label}:${slot.state}:${slot.pid ?? "x"}`,
+      makeSlotChip,
+    );
+  };
+  const renderLobbyWait = (model: LobbyWaitModel): void => {
+    wait.className = `lobby-wait tone-${model.tone}`;
+    const stepper = document.createElement("div");
+    stepper.className = "lobby-stepper";
+    model.steps.forEach((step, i) => {
+      const item = document.createElement("div");
+      item.className = `lobby-step is-${step.state}`;
+      const node = document.createElement("div");
+      node.className = "lobby-step-node";
+      node.textContent = step.state === "done" ? "✓" : String(i + 1);
+      const title = document.createElement("div");
+      title.className = "lobby-step-title";
+      title.textContent = step.label;
+      const detail = document.createElement("div");
+      detail.className = "lobby-step-detail";
+      detail.textContent = step.detail;
+      item.append(node, title, detail);
+      stepper.append(item);
+    });
+
+    const card = document.createElement("div");
+    card.className = "lobby-wait-card";
+    const title = document.createElement("div");
+    title.className = "lobby-wait-title";
+    title.textContent = model.headline;
+    const detail = document.createElement("div");
+    detail.className = "lobby-wait-detail";
+    detail.textContent = model.detail;
+    card.append(title, detail);
+
+    wait.replaceChildren(stepper, card);
+    renderLobbySlots(model.slots);
   };
 
   // Single owner of the client lobby's status/squad/manual derivation. Every client connection
@@ -476,12 +519,12 @@ function wireCoop(): void {
   // failure-only "open the manual fallback" side-effect lives in exactly one place (the `failed`
   // case). `lost` (opened-then-dropped / version mismatch) deliberately does NOT open manual.
   const setClientLobby = (s: ClientLobby): void => {
+    if (!manual.open) renderLobbyWait(clientLobbyWaitModel(s));
     switch (s.k) {
       case "joining":
         setStatus("connecting via relay…", true); // squad already cleared by openLobby
         break;
       case "linking":
-        setSquad([{ pid: 1, label: "You" }]);
         setStatus("establishing P2P link…", true);
         break;
       case "connected":
@@ -507,6 +550,7 @@ function wireCoop(): void {
     roomJoin.style.display = kind === "join" ? "flex" : "none";
     deploy.style.display = "none";
     squad.replaceChildren();
+    wait.replaceChildren();
     setStatus("");
     out.value = "";
     inEl.value = "";
@@ -561,14 +605,17 @@ function wireCoop(): void {
         day: gs.day,
         players: (Net.host?.connectedPids().length ?? 0) + 1, // host + decided clients
       });
+      refreshSquad();
     };
 
     const refreshSquad = (): void => {
-      // host is player 0; each connected peer gets its pid's color/number
-      setSquad([
-        { pid: 0, label: "You (host)" },
-        ...host.connectedPids().map((pid) => ({ pid, label: `P${pid + 1}` })),
-      ]);
+      if (manual.open) return;
+      renderLobbyWait(
+        hostLobbyWaitModel({
+          isPublic: coopPublic,
+          peerPids: host.connectedPids(),
+        }),
+      );
     };
     refreshSquad();
     deploy.style.display = "inline-block";
@@ -609,12 +656,17 @@ function wireCoop(): void {
       guide.textContent = manual.open
         ? "Manual connect — share your code, paste their reply."
         : "Share the room code with your squad, then Deploy.";
-      if (!manual.open || manualReady) return;
+      if (!manual.open) {
+        refreshSquad();
+        return;
+      }
+      if (manualReady) return;
       manualReady = true;
       sendBlock.style.order = "-1"; // your code first, their reply below
       sendLabel.textContent = "Your code — send to a friend";
       recvLabel.textContent = "Their reply — paste it here";
       go.textContent = "Connect";
+      renderLobbyWait(manualLobbyWaitModel({ k: "codes", role: "host" }));
       void (async () => {
         try {
           const { link, offer, accept } = await createHostLink();
@@ -626,14 +678,32 @@ function wireCoop(): void {
             const c = inEl.value.trim();
             if (!c) return;
             try {
+              renderLobbyWait(manualLobbyWaitModel({ k: "linking", role: "host" }));
               await accept(c);
               setStatus("manual peer linked ✓");
+              renderLobbyWait(manualLobbyWaitModel({ k: "connected", role: "host" }));
             } catch {
               setStatus("that reply code didn't parse");
+              renderLobbyWait(
+                manualLobbyWaitModel({
+                  k: "error",
+                  role: "host",
+                  step: "codes",
+                  msg: "That reply code didn't parse.",
+                }),
+              );
             }
           };
         } catch (err) {
           setStatus(`manual offer failed: ${err}`);
+          renderLobbyWait(
+            manualLobbyWaitModel({
+              k: "error",
+              role: "host",
+              step: "codes",
+              msg: `Manual offer failed: ${err}`,
+            }),
+          );
         }
       })();
     };
@@ -681,6 +751,7 @@ function wireCoop(): void {
             coopRoomCode = null; // don't try to reconnect to a room we were refused from
             setClientLobby({
               k: "lost",
+              step: "host",
               msg: "room is full — the squad is already at capacity (4).",
             });
             roomGo.disabled = false;
@@ -697,6 +768,7 @@ function wireCoop(): void {
           roomGo.disabled = false;
           setClientLobby({
             k: "failed",
+            step: "link",
             msg: failMsg(
               "couldn't connect (network/NAT). Try a personal network, or manual connect below.",
             ),
@@ -713,9 +785,10 @@ function wireCoop(): void {
           roomGo.disabled = false;
           setClientLobby(
             opened
-              ? { k: "lost", msg: "disconnected from host." }
+              ? { k: "lost", step: "host", msg: "disconnected from host." }
               : {
                   k: "failed",
+                  step: "link",
                   msg: failMsg("connection failed (network/NAT) — try manual connect below."),
                 },
           );
@@ -724,6 +797,7 @@ function wireCoop(): void {
         roomGo.disabled = false;
         setClientLobby({
           k: "failed",
+          step: "room",
           msg: `${err instanceof Error ? err.message : err} — try manual connect below`,
         });
       }
@@ -744,43 +818,81 @@ function wireCoop(): void {
         : "Enter the host's room code to connect.";
       // Switching to manual abandons the room-code attempt — cancel its timeout so it can't fire
       // setClientLobby({failed}) over the manual flow (clearTimeout(undefined) is a safe no-op).
-      if (manual.open) clearTimeout(failTimer);
-      if (!manual.open || manualReady) return;
+      if (!manual.open) {
+        wait.replaceChildren();
+        squad.replaceChildren();
+        return;
+      }
+      clearTimeout(failTimer);
+      if (manualReady) return;
       manualReady = true;
       sendBlock.style.order = ""; // host's code (recv) first, your reply (send) below
       sendBlock.style.display = "none"; // reply revealed once generated
       recvLabel.textContent = "Host's code — paste it here";
       sendLabel.textContent = "Your reply — send it back to the host";
       go.textContent = "Generate reply";
+      renderLobbyWait(manualLobbyWaitModel({ k: "codes", role: "client" }));
       go.onclick = async () => {
         const offer = inEl.value.trim();
+        renderLobbyWait(manualLobbyWaitModel({ k: "codes", role: "client" }));
         if (!offer) return;
         try {
           const { link, answer } = await createClientLink(offer);
+          renderLobbyWait(manualLobbyWaitModel({ k: "linking", role: "client" }));
           Net.mode = "client";
           Net.client = new Client(link, undefined, {
             // manual SDP bypasses the signaling version gate → re-check on Hello
             onVersionMismatch: () => {
               setClientLobby({
                 k: "lost",
+                step: "host",
                 msg: "host is on a different version — update to play together",
               });
+              renderLobbyWait(
+                manualLobbyWaitModel({
+                  k: "error",
+                  role: "client",
+                  step: "host",
+                  msg: "Host is on a different version — update to play together.",
+                }),
+              );
               link.close();
             },
             // host turned us away: room is full (the client closes its own link on this event)
             onRoomFull: () => {
               setClientLobby({
                 k: "lost",
+                step: "host",
                 msg: "room is full — the squad is already at capacity (4).",
               });
+              renderLobbyWait(
+                manualLobbyWaitModel({
+                  k: "error",
+                  role: "client",
+                  step: "host",
+                  msg: "Room is full — the squad is already at capacity (4).",
+                }),
+              );
             },
           });
-          link.onOpen(() => setClientLobby({ k: "connected" }));
+          link.onOpen(() => {
+            setClientLobby({ k: "connected" });
+            renderLobbyWait(manualLobbyWaitModel({ k: "connected", role: "client" }));
+          });
           out.value = answer;
           sendBlock.style.display = "flex";
           setStatus("reply ready — send it to the host, then wait");
+          renderLobbyWait(manualLobbyWaitModel({ k: "linking", role: "client" }));
         } catch {
           setStatus("that host code didn't parse");
+          renderLobbyWait(
+            manualLobbyWaitModel({
+              k: "error",
+              role: "client",
+              step: "codes",
+              msg: "That host code didn't parse.",
+            }),
+          );
         }
       };
     };
