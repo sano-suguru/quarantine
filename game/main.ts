@@ -41,6 +41,7 @@ import { sampleLocalInput } from "./net/localInput";
 import { Net } from "./net/net";
 import { emptyInput } from "./net/playerInput";
 import { listRooms, type RoomInfo, selectQuickMatch, versionMatches } from "./net/registry";
+import { bumpCoopEpoch } from "./net/session";
 import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
 import { createClientLink, createHostLink, getTurnStatus, NETLOG } from "./net/transport";
@@ -128,14 +129,49 @@ async function reconnectClient(code: string): Promise<void> {
     await delayMs(ladder[i] ?? 1000);
   }
   // gave up: end the client session and return to title (method C: no host = no session)
-  overlay.classList.remove("show");
+  endCoop(); // closes the suspended link, clears the overlay, resets Net + session vars
+  toTitle();
+}
+
+/**
+ * The single terminal teardown for a co-op session. Every way of leaving co-op for good — lobby
+ * Back, game-over restart, tab close, reconnect give-up, or starting a solo run — routes here.
+ * Bumps the session epoch first so any in-flight join/quickMatch/reconnect sees itself as stale and
+ * bails (closing whatever link it obtained). Then disposes host/client links, closes the signaling
+ * handle, stops timers, and resets every session var to the single-player baseline. Idempotent.
+ */
+function endCoop(): void {
+  bumpCoopEpoch();
+  Net.host?.dispose();
+  Net.client?.dispose();
+  coopHostHandle?.close();
+  coopHostHandle = null;
+  coopPublic = false;
+  if (coopPollTimer) {
+    clearInterval(coopPollTimer);
+    coopPollTimer = 0;
+  }
   reconnecting = false;
-  coopRoomCode = null;
+  el("reconnect").classList.remove("show");
   Net.mode = "single";
   Net.host = null;
   Net.client = null;
   hostStarted = false;
-  toTitle();
+  coopRoomCode = null;
+  pendingClientManualState = null;
+}
+
+/** Solo Start: tear down any lingering co-op session, then build the single-player world. */
+function startSingleRun(): void {
+  endCoop();
+  startGame();
+}
+
+/** Host Deploy: build the world and start the authoritative sim/broadcast for connected peers. */
+function startHostRun(host: Host): void {
+  startGame(); // builds the fresh world + shows the HUD (hides the lobby)
+  host.start(); // spawn a player for everyone already connected
+  hostStarted = true; // frame loop now sims + broadcasts
 }
 
 function main(): void {
@@ -143,11 +179,11 @@ function main(): void {
   Renderer.init(canvas);
   Input.init(canvas);
 
-  el("startBtn").onclick = () => {
-    coopRoomCode = null; // solo: no room to reconnect to (don't arm the client watchdog)
-    startGame();
+  el("startBtn").onclick = startSingleRun;
+  el("restartBtn").onclick = () => {
+    endCoop(); // game-over → title must fully drop any co-op mode/links (was leaking a ghost peer)
+    toTitle();
   };
-  el("restartBtn").onclick = toTitle;
   el("deployBtn").onclick = shopDeploy;
   el("arsenalBtn").onclick = openArsenal;
   el("arsenalBackBtn").onclick = closeArsenal;
@@ -567,14 +603,7 @@ function wireCoop(): void {
     manual.ontoggle = null;
   };
   const closeLobby = (): void => {
-    coopHostHandle?.close(); // closes the signaling socket → Room DO unlists a public room
-    coopHostHandle = null;
-    coopPublic = false;
-    Net.mode = "single";
-    Net.host = null;
-    Net.client = null;
-    hostStarted = false;
-    coopRoomCode = null; // disarm the reconnect watchdog
+    endCoop(); // disposes host/client links (host: no ghost peer; client: host sees us drop) + resets
     hide("lobby");
     openCoopHub(); // back to the hub (you entered the lobby from there)
   };
@@ -628,11 +657,7 @@ function wireCoop(): void {
     refreshSquad();
     deploy.style.display = "inline-block";
     deploy.textContent = "Deploy raid";
-    deploy.onclick = () => {
-      startGame(); // builds the fresh world + shows the HUD (hides this lobby)
-      host.start(); // spawn a player for everyone already connected
-      hostStarted = true; // frame loop now sims + broadcasts
-    };
+    deploy.onclick = () => startHostRun(host);
 
     const code = makeRoomCode();
     roomCode.value = code;
