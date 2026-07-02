@@ -1,6 +1,6 @@
 # Co-op Lobby Entry-Control Visibility & Single Connection Flow — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make the co-op JOIN lobby's entry controls (room-code input + JOIN button, manual-SDP body) a pure function of lobby state so nothing is ever "dead but visible", and guarantee only one client connection flow is live at a time.
 
@@ -45,7 +45,7 @@ Task order isolates the two independent companion fixes (Tasks 1–2) first, the
 1. **Post-offer, pre-open:** `joinRoom()` closes its WS only on `link.onOpen`. If the attempt is abandoned (Task 4) or the NAT timeout fires before the P2P link opens, disposing the `PeerLink` never closed the still-open WS. Fix: also close the WS on `link.onClose`.
 2. **Pre-offer (the `joining` window, up to `roomAnswerTimeoutMs` = 3s while the host mints its ICE offer):** there is no `PeerLink` yet, so `resetJoinEntry()` disposing `Net.client` can't reach the socket at all. The epoch already guarantees *correctness* here (a late resolve hits `becomeClient(stale)` → `null` + link close; a late reject hits the Task-2 catch guard — no double client, no persistent ghost), but the socket lingers up to 3s. Fix: thread an `AbortSignal` so `resetJoinEntry()` can close the pending socket *immediately*, fully honoring I2's "abandon-on-open".
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append this test inside the `describe("joinRoom", …)` block in `game/net/signaling.test.ts` (after the "room never answers" test, before the closing `});`):
 
@@ -68,12 +68,12 @@ Append this test inside the `describe("joinRoom", …)` block in `game/net/signa
   });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun run test -- game/net/signaling.test.ts -t "aborted before an offer"`
 Expected: FAIL — current `joinRoom(code)` ignores the second arg, so the promise never rejects (the assertion times out / does not resolve to `"AbortError"`).
 
-- [ ] **Step 3: Implement the cancellable `joinRoom()`**
+- [x] **Step 3: Implement the cancellable `joinRoom()`**
 
 Replace the entire `joinRoom` function (`game/net/signaling.ts` ~123-170) with:
 
@@ -143,17 +143,17 @@ export function joinRoom(code: string, signal?: AbortSignal): Promise<PeerLink> 
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes (and the existing joinRoom tests still pass)**
+- [x] **Step 4: Run the test to verify it passes (and the existing joinRoom tests still pass)**
 
 Run: `bun run test -- game/net/signaling.test.ts`
 Expected: PASS — all three `joinRoom` tests green (nohost reject, no-answer timeout, abort).
 
-- [ ] **Step 5: Typecheck + lint**
+- [x] **Step 5: Typecheck + lint**
 
 Run: `bun run typecheck && bun run lint`
 Expected: both pass. (`DOMException` is a browser/Node global present in the DOM lib the game tsconfig uses; the new param is optional so `main.ts:1215` and the reconnect path are unaffected.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add game/net/signaling.ts game/net/signaling.test.ts
@@ -181,7 +181,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 
 **Why:** The `onRoomFull`, `failTimer`, `link.onOpen`, and `link.onClose` callbacks each early-return on `!isCoopEpochCurrent(epoch)`, but the `catch` does not. Task 4 bumps the epoch to abandon a room-code attempt when manual opens; without this guard, a `joinRoom()` that rejects *after* that switch would call `setClientLobby({ failed | lost })` and clobber the manual flow. The resolve path is already safe (`becomeClient(epoch, …)` returns `null` and closes the link on a stale epoch).
 
-- [ ] **Step 1: Add the epoch guard as the first line of `catch`**
+- [x] **Step 1: Add the epoch guard as the first line of `catch`**
 
 Change the start of the `catch` block from:
 
@@ -200,12 +200,12 @@ to:
         const msg = err instanceof Error ? err.message : String(err);
 ```
 
-- [ ] **Step 2: Typecheck + lint**
+- [x] **Step 2: Typecheck + lint**
 
 Run: `bun run typecheck && bun run lint`
 Expected: both pass.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add game/main.ts
@@ -237,7 +237,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 
 **Why:** Entry-control visibility is currently scattered (`openLobby` sets `roomJoin`; the client `manual.ontoggle` sets `roomJoin`; nothing hides them on connect). Centralize into one state-derived writer so no control is ever dead-but-visible.
 
-- [ ] **Step 1: Add the `id` to the manual body in index.html**
+- [x] **Step 1: Add the `id` to the manual body in index.html**
 
 Change `index.html:191` from:
 
@@ -251,7 +251,7 @@ to:
     <div id="lobby-manual-body" class="lobby-wrap" style="margin-top:10px;">
 ```
 
-- [ ] **Step 2: Grab the `manualBody` handle**
+- [x] **Step 2: Grab the `manualBody` handle**
 
 In `game/main.ts`, right after `const manual = el<HTMLDetailsElement>("lobby-manual");` (~488), add:
 
@@ -259,7 +259,7 @@ In `game/main.ts`, right after `const manual = el<HTMLDetailsElement>("lobby-man
   const manualBody = el("lobby-manual-body"); // the manual SDP entry controls (hidden once connected)
 ```
 
-- [ ] **Step 3: Add hoisted state**
+- [x] **Step 3: Add hoisted state**
 
 Immediately after `let lastClientLobbyState: ClientLobby | null = null;` (~498), add:
 
@@ -268,7 +268,7 @@ Immediately after `let lastClientLobbyState: ClientLobby | null = null;` (~498),
   let lastManualState: ManualLobbyDisplayState | null = null; // owned by the setManualState funnels
 ```
 
-- [ ] **Step 4: Add `syncEntryVisibility()`**
+- [x] **Step 4: Add `syncEntryVisibility()`**
 
 Insert this helper just above `const setClientLobby = (s: ClientLobby): void => {` (~575):
 
@@ -285,7 +285,7 @@ Insert this helper just above `const setClientLobby = (s: ClientLobby): void => 
   };
 ```
 
-- [ ] **Step 5: Drive it from `setClientLobby`**
+- [x] **Step 5: Drive it from `setClientLobby`**
 
 Append a `syncEntryVisibility()` call as the **last** statement of `setClientLobby`, so every client transition re-derives visibility. This is what makes the `failed` case (which sets `manual.open = true` programmatically) hide `#lobby-room-join` synchronously rather than relying on the async `toggle` event. Change the end of `setClientLobby`:
 
@@ -297,7 +297,7 @@ Append a `syncEntryVisibility()` call as the **last** statement of `setClientLob
   };
 ```
 
-- [ ] **Step 6: Make `openLobby` set `lobbyKind` + reset `lastManualState` and delegate to sync**
+- [x] **Step 6: Make `openLobby` set `lobbyKind` + reset `lastManualState` and delegate to sync**
 
 In `openLobby` (~602-616): remove the direct `roomJoin.style.display` write (line 607) and, after `manual.ontoggle = null;`, set `lobbyKind`, reset `lastManualState`, and call sync. Change:
 
@@ -343,7 +343,7 @@ to:
 
 (`roomHost` is intentionally still written directly — it is out of scope for `syncEntryVisibility`, which owns only `roomJoin` + `manualBody`.)
 
-- [ ] **Step 7: Have both `setManualState` funnels own `lastManualState` + sync**
+- [x] **Step 7: Have both `setManualState` funnels own `lastManualState` + sync**
 
 Client `setManualState` (~973-976) — change:
 
@@ -376,7 +376,7 @@ Host `setManualState` (~701-704) — apply the identical change:
     };
 ```
 
-- [ ] **Step 8: Replace the client `manual.ontoggle`'s ad-hoc `roomJoin` write with a sync call**
+- [x] **Step 8: Replace the client `manual.ontoggle`'s ad-hoc `roomJoin` write with a sync call**
 
 Client `manual.ontoggle` (~977-978) — remove the direct `roomJoin.style.display` line and call sync instead. Change:
 
@@ -394,7 +394,7 @@ to:
       guide.textContent = manual.open
 ```
 
-- [ ] **Step 9: Add a sync call to the host `manual.ontoggle`**
+- [x] **Step 9: Add a sync call to the host `manual.ontoggle`**
 
 Host `manual.ontoggle` (~705-713) sets `roomHost.style.display` (keep that — it owns `roomHost`) but must also re-derive `manualBody`/`roomJoin` visibility. Add a `syncEntryVisibility()` call right after the `roomHost.style.display` write. Change:
 
@@ -413,17 +413,17 @@ to:
       guide.textContent = manual.open
 ```
 
-- [ ] **Step 10: Typecheck + lint**
+- [x] **Step 10: Typecheck + lint**
 
 Run: `bun run typecheck && bun run lint`
 Expected: both pass. In particular, `lobbyKind`, `lastManualState`, and `manualBody` are all now read by `syncEntryVisibility()` (no `noUnusedLocals` error), and no stray `roomJoin.style.display` writes remain outside `syncEntryVisibility`.
 
-- [ ] **Step 11: Verify the sole-writer invariant**
+- [x] **Step 11: Verify the sole-writer invariant**
 
 Run: `grep -n "roomJoin.style.display\|manualBody.style.display" game/main.ts`
 Expected: exactly the two lines **inside** `syncEntryVisibility()` and nowhere else.
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 ```bash
 git add index.html game/main.ts
@@ -451,7 +451,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 
 **Why:** The room-code and manual client paths can otherwise run concurrently. Opening the manual fallback (or re-entering the lobby) must abandon the room-code attempt so a late resolve/reject can't resurrect it or leak a second `Net.client`. The abandon rides the session epoch — the codebase's only cross-`await` cancellation primitive — plus the Task-1 `AbortSignal` so the pre-offer signaling socket is closed immediately (not left up to `roomAnswerTimeoutMs`).
 
-- [ ] **Step 1: Add hoisted `joinAbort` + `resetJoinEntry()`**
+- [x] **Step 1: Add hoisted `joinAbort` + `resetJoinEntry()`**
 
 First, add the controller handle next to the other hoisted lobby state. After `let lastManualState: ManualLobbyDisplayState | null = null;` (added in Task 3, ~498-500), add:
 
@@ -480,7 +480,7 @@ Then insert `resetJoinEntry` just above `const openJoinLobby = (prefill?: string
   };
 ```
 
-- [ ] **Step 2: Wire the `join()` closure to the abort controller**
+- [x] **Step 2: Wire the `join()` closure to the abort controller**
 
 In the `join()` closure (~859-868), create a fresh `AbortController` per attempt and pass its signal to `joinRoom`. Change:
 
@@ -513,7 +513,7 @@ to:
 
 (Aborting an already-settled attempt's signal is a harmless no-op, so `joinAbort` may safely linger after a successful/failed attempt until the next `join()` overwrites it or `resetJoinEntry()` nulls it.)
 
-- [ ] **Step 3: Call `resetJoinEntry()` first in `openJoinLobby`, before `openLobby`**
+- [x] **Step 3: Call `resetJoinEntry()` first in `openJoinLobby`, before `openLobby`**
 
 In `openJoinLobby` (~838-849), replace the inline resets (`roomGo.disabled = false;` and `lastClientLobbyState = null;`) with a single `resetJoinEntry()` call placed **before** `openLobby("join")`. Ordering is load-bearing: `endCoop()` does not clear `lastClientLobbyState`, so a prior `connected` value survives a Back; `openLobby` calls `syncEntryVisibility()`, which would read that stale `connected` as `busy` and hide the fresh JOIN row. Resetting first guarantees a clean idle state.
 
@@ -550,7 +550,7 @@ to:
     roomInput.focus();
 ```
 
-- [ ] **Step 4: Abandon-on-open in the client `manual.ontoggle` (guarded to live flows only)**
+- [x] **Step 4: Abandon-on-open in the client `manual.ontoggle` (guarded to live flows only)**
 
 In the client `manual.ontoggle`, the open branch begins after the early `if (!manual.open) { … return; }`. Add the guarded abandon at the **top of the open branch**, immediately before the existing `clearTimeout(failTimer);`. The guard is required so the `failed` fallback — which sets `manual.open = true` programmatically and fires this same handler — is **not** reset to blank idle (only `joining`/`linking`/`connected` represent a live attempt worth abandoning).
 
@@ -575,17 +575,17 @@ to:
       clearTimeout(failTimer);
 ```
 
-- [ ] **Step 5: Typecheck + lint**
+- [x] **Step 5: Typecheck + lint**
 
 Run: `bun run typecheck && bun run lint`
 Expected: both pass. `resetJoinEntry` is referenced by `openJoinLobby` and the client `manual.ontoggle`; `joinAbort` is read in `resetJoinEntry` and written in `join()` (no `noUnusedLocals`).
 
-- [ ] **Step 6: Sanity-check the epoch import + `Net`/`coopRoomCode` symbols**
+- [x] **Step 6: Sanity-check the epoch import + `Net`/`coopRoomCode` symbols**
 
 Run: `grep -n "bumpCoopEpoch\|coopRoomCode" game/main.ts | head`
 Expected: `bumpCoopEpoch` is imported (top-of-file import from `./net/session`) and used in `resetJoinEntry`; `coopRoomCode` is the existing mutable lobby-scope binding (also assigned in `becomeClient`/`abandonClientAttempt`).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add game/main.ts
