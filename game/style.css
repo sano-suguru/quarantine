@@ -406,18 +406,6 @@ body {
   text-transform: uppercase;
   padding: 10px 12px;
 }
-.lobby-ta {
-  width: 100%;
-  box-sizing: border-box;
-  height: 48px;
-  resize: none;
-  background: #06080a;
-  color: #9fdcb8;
-  border: 1px solid #243a30;
-  border-radius: 4px;
-  font: 11px monospace;
-  padding: 6px;
-}
 .lobby-btn {
   font-size: 13px;
   letter-spacing: 0.12em;
@@ -431,28 +419,6 @@ body {
   background: #3a4a40;
   color: var(--ink);
   box-shadow: 0 0 0 1px #2a3a30;
-}
-.lobby-manual {
-  margin-top: 16px;
-  width: min(460px, 88vw);
-  text-align: left;
-  color: var(--ink);
-}
-.lobby-manual > summary {
-  cursor: pointer;
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink);
-  opacity: 0.7;
-  list-style: none;
-}
-.lobby-manual > summary:hover {
-  opacity: 1;
-}
-.lobby-manual[open] > summary {
-  color: var(--toxic);
-  opacity: 1;
 }
 /* co-op hub (D): CO-OP cta is deliberately secondary so solo DEPLOY stays the hero */
 .btn.coop-cta {
