@@ -848,8 +848,6 @@ function wireCoop(): void {
       manualState = state;
       if (manual.open) renderLobbyWait(manualLobbyWaitModel(manualState));
     };
-    let opened = false;
-    let terminal = false;
     manual.ontoggle = (): void => {
       roomJoin.style.display = manual.open ? "none" : "flex";
       guide.textContent = manual.open
@@ -874,6 +872,8 @@ function wireCoop(): void {
           const offer = inEl.value.trim();
           setManualState({ k: "codes", role: "client" });
           if (!offer) return;
+          let opened = false;
+          let terminal = false;
           try {
             const { link, answer } = await createClientLink(offer);
             setManualState({ k: "linking", role: "client" });
@@ -887,12 +887,14 @@ function wireCoop(): void {
                   step: "host",
                   msg: "host is on a different version — update to play together",
                 });
-                setManualState({
-                  k: "error",
-                  role: "client",
-                  step: "host",
-                  msg: "Host is on a different version — update to play together.",
-                });
+                if (manual.open) {
+                  setManualState({
+                    k: "error",
+                    role: "client",
+                    step: "host",
+                    msg: "Host is on a different version — update to play together.",
+                  });
+                }
                 link.close();
               },
               // host turned us away: room is full (the client closes its own link on this event)
@@ -903,32 +905,36 @@ function wireCoop(): void {
                   step: "host",
                   msg: "room is full — the squad is already at capacity (4).",
                 });
-                setManualState({
-                  k: "error",
-                  role: "client",
-                  step: "host",
-                  msg: "Room is full — the squad is already at capacity (4).",
-                });
+                if (manual.open) {
+                  setManualState({
+                    k: "error",
+                    role: "client",
+                    step: "host",
+                    msg: "Room is full — the squad is already at capacity (4).",
+                  });
+                }
               },
             });
             link.onOpen(() => {
               opened = true;
               setClientLobby({ k: "connected" });
-              setManualState({ k: "connected", role: "client" });
+              if (manual.open) setManualState({ k: "connected", role: "client" });
             });
             link.onClose(() => {
               if (terminal) return; // version mismatch / room full already rendered a terminal error
               const step = opened ? "host" : "link";
+              const msg =
+                step === "host"
+                  ? "Manual link disconnected. Re-open manual connect to retry."
+                  : "Manual link closed before it opened. Re-open manual connect to retry.";
+              setClientLobby({ k: "lost", step, msg });
+              if (!manual.open) return;
               setManualState({
                 k: "error",
                 role: "client",
                 step,
-                msg:
-                  step === "host"
-                    ? "Manual link disconnected. Re-open manual connect to retry."
-                    : "Manual link closed before it opened. Re-open manual connect to retry.",
+                msg,
               });
-              if (!manual.open) return;
               setStatus(
                 step === "host"
                   ? "manual link disconnected — re-open manual connect to retry"
