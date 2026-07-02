@@ -884,7 +884,8 @@ function wireCoop(): void {
             settled = true;
             clearTimeout(failTimer); // roomfull can arrive before/around open → don't let the
             // NAT-timeout later clobber this terminal message with a "failed"
-            coopRoomCode = null; // don't try to reconnect to a room we were refused from
+            abandonClientAttempt(epoch); // reset client mode + dispose the refused link (nulls
+            // coopRoomCode too, so we don't reconnect to a room we were turned away from)
             setClientLobby({
               k: "lost",
               step: "host",
