@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  clientLobbyWaitModel,
-  clientManualFallbackWaitModel,
-  hostLobbyWaitModel,
-  manualLobbyWaitModel,
-} from "./lobbyWait";
+import { clientLobbyWaitModel, hostLobbyWaitModel } from "./lobbyWait";
 
 describe("hostLobbyWaitModel", () => {
   it("shows Deploy as actionable immediately when hosting with zero peers", () => {
@@ -47,7 +42,6 @@ describe("clientLobbyWaitModel", () => {
       ["raid", "future"],
     ]);
     expect(model.tone).toBe("busy");
-    expect(model.showManualFallback).toBe(false);
   });
 
   it("shows host waiting after the P2P link opens", () => {
@@ -69,11 +63,11 @@ describe("clientLobbyWaitModel", () => {
     ]);
   });
 
-  it("opens manual fallback only for recoverable failures", () => {
+  it("marks the failing step as an error for both recoverable and terminal failures", () => {
     const failed = clientLobbyWaitModel({
       k: "failed",
       step: "link",
-      msg: "connection failed (network/NAT) — try manual connect below.",
+      msg: "connection failed (network/NAT) — check the code or try a personal device/network.",
     });
     const lost = clientLobbyWaitModel({
       k: "lost",
@@ -82,77 +76,8 @@ describe("clientLobbyWaitModel", () => {
     });
 
     expect(failed.steps.find((s) => s.id === "link")?.state).toBe("error");
-    expect(failed.showManualFallback).toBe(true);
+    expect(failed.tone).toBe("warn");
     expect(lost.steps.find((s) => s.id === "host")?.state).toBe("error");
-    expect(lost.showManualFallback).toBe(false);
-  });
-
-  it("keeps the failed step warning-visible when recoverable failure opens manual fallback", () => {
-    const model = clientManualFallbackWaitModel({
-      k: "failed",
-      step: "link",
-      msg: "connection failed (network/NAT) — try manual connect below.",
-    });
-
-    expect(model.steps.map((s) => [s.id, s.label, s.state])).toEqual([
-      ["codes", "Codes", "done"],
-      ["link", "Link", "error"],
-      ["host", "Host", "future"],
-      ["raid", "Raid", "future"],
-    ]);
-    expect(model.tone).toBe("warn");
-    expect(model.steps.some((s) => s.label === "Room")).toBe(false);
-  });
-});
-
-describe("manualLobbyWaitModel", () => {
-  it("uses Codes instead of Room for manual SDP exchange", () => {
-    const model = manualLobbyWaitModel({ k: "codes", role: "client" });
-
-    expect(model.steps.map((s) => [s.id, s.label])).toEqual([
-      ["codes", "Codes"],
-      ["link", "Link"],
-      ["host", "Host"],
-      ["raid", "Raid"],
-    ]);
-    expect(model.steps.find((s) => s.id === "codes")?.state).toBe("busy");
-    expect(model.steps.some((s) => s.label === "Room")).toBe(false);
-    expect(model.slots.map((s) => [s.label, s.state])).toEqual([
-      ["You", "filled"],
-      ["Host", "unknown"],
-      ["Squad", "unknown"],
-      ["Squad", "unknown"],
-    ]);
-  });
-
-  it("shows host waiting after manual link opens", () => {
-    const model = manualLobbyWaitModel({ k: "connected", role: "client" });
-
-    expect(model.steps.map((s) => [s.id, s.state])).toEqual([
-      ["codes", "done"],
-      ["link", "done"],
-      ["host", "current"],
-      ["raid", "future"],
-    ]);
-    expect(model.headline).toBe("Manual link connected. Waiting for host to deploy.");
-  });
-
-  it("prompts the manual host to deploy after the peer link opens", () => {
-    const model = manualLobbyWaitModel({ k: "connected", role: "host" });
-
-    expect(model.steps.map((s) => [s.id, s.state])).toEqual([
-      ["codes", "done"],
-      ["link", "done"],
-      ["host", "current"],
-      ["raid", "future"],
-    ]);
-    expect(model.headline).toBe("Manual peer connected. Deploy when ready.");
-    expect(model.detail).toBe("Press Deploy raid when your squad is ready.");
-    expect(model.slots.map((s) => [s.label, s.state])).toEqual([
-      ["You (host)", "filled"],
-      ["Manual peer", "filled"],
-      ["Open slot", "empty"],
-      ["Open slot", "empty"],
-    ]);
+    expect(lost.tone).toBe("warn");
   });
 });

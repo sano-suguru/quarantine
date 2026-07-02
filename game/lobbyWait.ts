@@ -1,4 +1,4 @@
-export type LobbyWaitStepId = "room" | "squad" | "deploy" | "raid" | "link" | "host" | "codes";
+export type LobbyWaitStepId = "room" | "squad" | "deploy" | "raid" | "link" | "host";
 export type LobbyWaitStepState = "done" | "current" | "future" | "busy" | "error" | "info";
 export type LobbyWaitTone = "ready" | "busy" | "warn";
 export type LobbyWaitSlotState = "filled" | "empty" | "unknown";
@@ -17,14 +17,13 @@ export interface LobbyWaitSlot {
 }
 
 export interface LobbyWaitModel {
-  role: "host" | "client" | "manual-host" | "manual-client";
+  role: "host" | "client";
   tone: LobbyWaitTone;
   headline: string;
   detail: string;
   steps: LobbyWaitStep[];
   slots: LobbyWaitSlot[];
   primaryAction?: string;
-  showManualFallback: boolean;
 }
 
 export interface HostLobbyWaitInput {
@@ -39,14 +38,6 @@ export type ClientLobbyDisplayState =
   | { k: "failed"; step: "room" | "link"; msg: string }
   | { k: "lost"; step: "room" | "link" | "host"; msg: string };
 
-export type ManualLobbyDisplayState =
-  | { k: "codes"; role: "host" | "client" }
-  | { k: "linking"; role: "host" | "client" }
-  | { k: "connected"; role: "host" | "client" }
-  | { k: "error"; role: "host" | "client"; step: "codes" | "link" | "host"; msg: string };
-
-type ClientRecoverableFailureState = Extract<ClientLobbyDisplayState, { k: "failed" }>;
-
 const hostSteps = (squad: LobbyWaitStepState, deploy: LobbyWaitStepState): LobbyWaitStep[] => [
   { id: "room", label: "Room", detail: "created", state: "done" },
   { id: "squad", label: "Squad", detail: "players join", state: squad },
@@ -60,17 +51,6 @@ const clientSteps = (
   host: LobbyWaitStepState,
 ): LobbyWaitStep[] => [
   { id: "room", label: "Room", detail: "found", state: room },
-  { id: "link", label: "Link", detail: "P2P ready", state: link },
-  { id: "host", label: "Host", detail: "deploys", state: host },
-  { id: "raid", label: "Raid", detail: "auto-start", state: "future" },
-];
-
-const manualSteps = (
-  codes: LobbyWaitStepState,
-  link: LobbyWaitStepState,
-  host: LobbyWaitStepState,
-): LobbyWaitStep[] => [
-  { id: "codes", label: "Codes", detail: "exchange", state: codes },
   { id: "link", label: "Link", detail: "P2P ready", state: link },
   { id: "host", label: "Host", detail: "deploys", state: host },
   { id: "raid", label: "Raid", detail: "auto-start", state: "future" },
@@ -92,25 +72,6 @@ const clientSlots = (): LobbyWaitSlot[] => [
   { label: "Squad", state: "unknown" },
 ];
 
-const manualSlots = (role: "host" | "client", connected = false): LobbyWaitSlot[] =>
-  role === "host"
-    ? [
-        { label: "You (host)", state: "filled", pid: 0 },
-        {
-          label: "Manual peer",
-          state: connected ? "filled" : "unknown",
-          pid: connected ? 1 : undefined,
-        },
-        { label: "Open slot", state: "empty" },
-        { label: "Open slot", state: "empty" },
-      ]
-    : [
-        { label: "You", state: "filled" },
-        { label: "Host", state: connected ? "filled" : "unknown" },
-        { label: "Squad", state: "unknown" },
-        { label: "Squad", state: "unknown" },
-      ];
-
 export function hostLobbyWaitModel(input: HostLobbyWaitInput): LobbyWaitModel {
   const players = input.peerPids.length + 1;
   return {
@@ -126,7 +87,6 @@ export function hostLobbyWaitModel(input: HostLobbyWaitInput): LobbyWaitModel {
     steps: hostSteps("info", "current"),
     slots: hostSlots(input.peerPids),
     primaryAction: "Deploy raid",
-    showManualFallback: false,
   };
 }
 
@@ -140,7 +100,6 @@ export function clientLobbyWaitModel(state: ClientLobbyDisplayState): LobbyWaitM
         detail: "Keep this screen open while the room answers.",
         steps: clientSteps("busy", "future", "future"),
         slots: [{ label: "You", state: "filled" } as LobbyWaitSlot],
-        showManualFallback: false,
       };
     case "linking":
       return {
@@ -150,7 +109,6 @@ export function clientLobbyWaitModel(state: ClientLobbyDisplayState): LobbyWaitM
         detail: "This can take a moment on strict networks.",
         steps: clientSteps("done", "busy", "future"),
         slots: [{ label: "You", state: "filled" } as LobbyWaitSlot],
-        showManualFallback: false,
       };
     case "connected":
       return {
@@ -160,20 +118,18 @@ export function clientLobbyWaitModel(state: ClientLobbyDisplayState): LobbyWaitM
         detail: "The raid starts automatically when the host deploys.",
         steps: clientSteps("done", "done", "current"),
         slots: clientSlots(),
-        showManualFallback: false,
       };
     case "failed":
       return {
         role: "client",
         tone: "warn",
         headline: state.msg,
-        detail: "Manual connect is available below for recoverable network failures.",
+        detail: "Check the code, or try a personal device/network, then join again.",
         steps:
           state.step === "room"
             ? clientSteps("error", "future", "future")
             : clientSteps("done", "error", "future"),
         slots: [{ label: "You", state: "filled" }],
-        showManualFallback: true,
       };
     case "lost":
       return {
@@ -188,87 +144,6 @@ export function clientLobbyWaitModel(state: ClientLobbyDisplayState): LobbyWaitM
               ? clientSteps("done", "error", "future")
               : clientSteps("done", "done", "error"),
         slots: clientSlots(),
-        showManualFallback: false,
-      };
-  }
-}
-
-export function clientManualFallbackWaitModel(
-  state: ClientRecoverableFailureState,
-): LobbyWaitModel {
-  return manualLobbyWaitModel(clientManualFallbackState(state));
-}
-
-export function clientManualFallbackState(
-  state: ClientRecoverableFailureState,
-): ManualLobbyDisplayState {
-  return {
-    k: "error",
-    role: "client",
-    step: state.step === "room" ? "codes" : "link",
-    msg: state.msg,
-  };
-}
-
-export function manualLobbyWaitModel(state: ManualLobbyDisplayState): LobbyWaitModel {
-  const role = state.role === "host" ? "manual-host" : "manual-client";
-  switch (state.k) {
-    case "codes":
-      return {
-        role,
-        tone: "busy",
-        headline:
-          state.role === "host"
-            ? "Share your code, then paste their reply."
-            : "Paste the host code to generate a reply.",
-        detail: "Manual connect uses copied codes instead of a room relay.",
-        steps: manualSteps("busy", "future", "future"),
-        slots: manualSlots(state.role),
-        showManualFallback: false,
-      };
-    case "linking":
-      return {
-        role,
-        tone: "busy",
-        headline: "Exchanging manual peer link.",
-        detail:
-          state.role === "host"
-            ? "Paste their reply to complete the peer link."
-            : "Send the reply back, then wait for the link to open.",
-        steps: manualSteps("done", "busy", "future"),
-        slots: manualSlots(state.role),
-        showManualFallback: false,
-      };
-    case "connected":
-      return {
-        role,
-        tone: "ready",
-        headline:
-          state.role === "host"
-            ? "Manual peer connected. Deploy when ready."
-            : "Manual link connected. Waiting for host to deploy.",
-        detail:
-          state.role === "host"
-            ? "Press Deploy raid when your squad is ready."
-            : "The raid starts automatically when the host deploys.",
-        steps: manualSteps("done", "done", "current"),
-        slots: manualSlots(state.role, true),
-        showManualFallback: false,
-      };
-    case "error":
-      return {
-        role,
-        tone: "warn",
-        headline: state.msg,
-        detail: "Check the copied code and try the manual exchange again.",
-        steps:
-          state.step === "codes"
-            ? manualSteps("error", "future", "future")
-            : state.step === "link"
-              ? manualSteps("done", "error", "future")
-              : manualSteps("done", "done", "error"),
-        slots: manualSlots(state.role),
-        showManualFallback: false,
       };
   }
 }
