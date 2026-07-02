@@ -17,6 +17,12 @@ bunx wrangler dev      # serves ws://127.0.0.1:8787
 The game's default `CONFIG.net.signalUrl` is `127.0.0.1:8787`, so `bun run dev` (the game)
 in a few browser tabs can Host/Join by room code against this local relay.
 
+> **Port 8787 is not optional.** The game only ever dials `127.0.0.1:8787`; a relay on any other
+> port is invisible to it and every Join hangs on "connecting via relay…". `bun run signal`
+> therefore preflights the port (`scripts/ensure-signal-port.ts`) and passes `--port 8787`, so a
+> stale/zombie relay squatting 8787 fails loudly with the offending PID instead of silently
+> binding a fallback port. If you hit that error, `kill <pid>` (add `-9` if it survives) and retry.
+
 ## Deploy (via GitHub Actions — not local `wrangler deploy`)
 
 Deployment is done by the **`.github/workflows/deploy-worker.yml`** workflow, not by

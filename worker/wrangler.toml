@@ -2,6 +2,13 @@ name = "quarantine"
 main = "room.ts"
 compatibility_date = "2026-06-01"
 
+# Local dev relay port. The game dials CONFIG.net.signalUrl (127.0.0.1:8787), so the relay MUST
+# come up here — never a wrangler fallback port. `bun run signal` also preflights the port (see
+# scripts/ensure-signal-port.ts) and passes `--port 8787` so a busy port fails loudly instead of
+# silently binding elsewhere. Ignored in production (Cloudflare serves the deployed Worker).
+[dev]
+port = 8787
+
 # Durable Object that relays WebRTC signaling per room code.
 [[durable_objects.bindings]]
 name = "ROOM"
