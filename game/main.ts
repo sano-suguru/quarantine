@@ -939,6 +939,7 @@ function wireCoop(): void {
           );
         });
       } catch (err) {
+        if (!isCoopEpochCurrent(epoch)) return; // manual took over / lobby left — don't clobber it
         roomGo.disabled = false;
         const msg = err instanceof Error ? err.message : String(err);
         if (msg === "host is on a different version — update to play together") {
