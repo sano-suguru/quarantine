@@ -70,10 +70,19 @@ export class Host {
   readonly links: PeerLink[] = [];
   private peers: HostPeer[] = [];
   private started = false;
+  private disposed = false;
   // when set, broadcasts are suppressed until this time (?netlog test hook to force snap starvation)
   private broadcastPausedUntil = 0;
 
   add(link: PeerLink): void {
+    if (this.disposed) {
+      try {
+        link.close(); // a stale createHostLink()/signaling callback landed after teardown — refuse it
+      } catch {
+        /* already closing — ignore */
+      }
+      return;
+    }
     const peer: HostPeer = {
       link,
       pid: -1,
@@ -168,6 +177,31 @@ export class Host {
         this.peers = this.peers.filter((x) => x !== peer); // pre-game / undecided drop
       }
     });
+  }
+
+  /**
+   * Terminal teardown: drop every peer and close every link. Idempotent and re-entrancy-safe —
+   * peers/links are cleared BEFORE close() so the onClose handler (guarded by peers.includes) is a
+   * no-op when the real link fires it synchronously. Also cancels any pending rejoin claim timers.
+   */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const peer of this.peers) {
+      if (peer.claimTimer) clearTimeout(peer.claimTimer);
+      peer.claimTimer = null;
+    }
+    const links = [...this.links];
+    this.peers = [];
+    this.links.length = 0;
+    this.started = false;
+    for (const link of links) {
+      try {
+        link.close();
+      } catch {
+        /* already closing — teardown must not throw */
+      }
+    }
   }
 
   /** Assign a fresh slot + nonce, send Hello, and (if running) spawn the player. Rejects when the
