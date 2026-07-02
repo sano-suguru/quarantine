@@ -27,13 +27,9 @@ import { Input } from "./input";
 import {
   type ClientLobbyDisplayState,
   clientLobbyWaitModel,
-  clientManualFallbackState,
-  clientManualFallbackWaitModel,
   hostLobbyWaitModel,
   type LobbyWaitModel,
   type LobbyWaitSlot,
-  type ManualLobbyDisplayState,
-  manualLobbyWaitModel,
 } from "./lobbyWait";
 import { Client } from "./net/client";
 import { Host } from "./net/host";
@@ -44,13 +40,7 @@ import { listRooms, type RoomInfo, selectQuickMatch, versionMatches } from "./ne
 import { bumpCoopEpoch, coopEpoch, isCoopEpochCurrent } from "./net/session";
 import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
-import {
-  createClientLink,
-  createHostLink,
-  getTurnStatus,
-  NETLOG,
-  type PeerLink,
-} from "./net/transport";
+import { getTurnStatus, NETLOG, type PeerLink } from "./net/transport";
 import { getSettings, setAimAssist } from "./settings";
 import { sysCamera } from "./systems/camera";
 import { sysFx } from "./systems/fx";
@@ -60,16 +50,15 @@ import { assertNever, el, hide, isEditableTarget, renderList, show } from "./ui"
 // (no day countdown / no spawns) until the host presses Start — see wireCoop()/frame().
 let hostStarted = false;
 
-// client reconnect (P4): the room code to rejoin on a drop (null = solo / host / manual-SDP,
-// none of which can auto-reconnect), and a re-entrancy guard so the watchdog fires one loop.
+// client reconnect (P4): the room code to rejoin on a drop (null = solo / host, neither of
+// which can auto-reconnect), and a re-entrancy guard so the watchdog fires one loop.
 let coopRoomCode: string | null = null;
 let reconnecting = false;
 
-// Client-side lobby connection lifecycle (room-code + manual-SDP join). Makes the
-// previously-implicit joining/linking/connected/failure states explicit so setClientLobby owns
-// the lobby status text, squad, and the failure-only manual.open side-effect in one place.
-// Scope is the lobby only: once the host deploys, startClientGame hides the lobby and Net.mode +
-// state.running become the source of truth.
+// Client-side lobby connection lifecycle (room-code join). Makes the previously-implicit
+// joining/linking/connected/failure states explicit so setClientLobby owns the lobby status text
+// and squad in one place. Scope is the lobby only: once the host deploys, startClientGame hides the
+// lobby and Net.mode + state.running become the source of truth.
 type ClientLobby = ClientLobbyDisplayState;
 // Q-to-place: a small local cooldown so a held/mashed key doesn't fire several reliable place
 // requests before the host's snapshot reflects the first (each would consume another queued item).
@@ -81,8 +70,6 @@ let coopHostHandle: HostRoom | null = null;
 let coopPublic = false;
 // OPEN RAIDS poll interval id (0 = not polling). Module scope so endCoop() can stop it.
 let coopPollTimer = 0;
-// Manual-SDP client fallback UI state buffered until <details> opens. Module scope for endCoop() reset.
-let pendingClientManualState: ManualLobbyDisplayState | null = null;
 
 // personal options overlay (#settings): client-local, separate from the host-authoritative
 // pause. While open, local input is zeroed (so you don't act blind behind the overlay) and
@@ -170,7 +157,6 @@ function endCoop(): void {
   Net.client = null;
   hostStarted = false;
   coopRoomCode = null;
-  pendingClientManualState = null;
 }
 
 /** Solo Start: tear down any lingering co-op session, then build the single-player world. */
@@ -242,7 +228,7 @@ function main(): void {
   };
 
   addEventListener("keydown", (e) => {
-    // Typing into a text field (lobby room-code input, manual-SDP textareas) must not
+    // Typing into a text field (the lobby room-code input) must not
     // trigger game hotkeys — e.g. M would otherwise toggle mute mid-type.
     if (isEditableTarget(e.target)) return;
     const state = getState();
@@ -396,8 +382,8 @@ function main(): void {
       }
       if (live) sysCamera(st, dt);
       // reconnect watchdog: both channels silent past snapStarvationMs = a dead link → reconnect.
-      // Armed only for room-code sessions (manual-SDP has no code to rejoin with) and while a run
-      // is live; the host keeps broadcasting through pause/shop so quiet snaps mean a real drop.
+      // Armed only while a run is live (a client always has a room code to rejoin with);
+      // the host keeps broadcasting through pause/shop so quiet snaps mean a real drop.
       if (
         coopRoomCode &&
         !reconnecting &&
@@ -460,9 +446,8 @@ function main(): void {
 }
 
 /* ------------------------- co-op lobby ------------------------- */
-// Room-code auto-connect is the primary path (offer/answer brokered by the signaling
-// relay, see net/signaling.ts). Manual SDP copy-paste is kept as a zero-dependency
-// fallback, tucked into a <details>. The game world only appears on Deploy (host) /
+// Room-code auto-connect is the only client path (offer/answer brokered by the signaling
+// relay, see net/signaling.ts). The game world only appears on Deploy (host) /
 // first snapshot (client) — the lobby never shows the live world.
 
 /** A short, human-friendly room code (no ambiguous I/O/0/1/L). */
@@ -485,20 +470,10 @@ function wireCoop(): void {
   squad.classList.add("squad-row"); // flex layout for the chips renderList drops in directly
   const status = el("lobby-status");
   const deploy = el("lobby-deploy");
-  const manual = el<HTMLDetailsElement>("lobby-manual");
-  const manualBody = el("lobby-manual-body"); // the manual SDP entry controls (hidden once connected)
   const wait = el("lobby-wait");
-  // manual-fallback elements
-  const out = el<HTMLTextAreaElement>("lobby-out");
-  const inEl = el<HTMLTextAreaElement>("lobby-in");
-  const go = el("lobby-go");
-  const sendBlock = el("lobby-send");
-  const sendLabel = el("lobby-send-label");
-  const recvLabel = el("lobby-recv-label");
 
   let lastClientLobbyState: ClientLobby | null = null;
   let lobbyKind: "host" | "join" = "join"; // set in openLobby(); gates the room-code entry row
-  let lastManualState: ManualLobbyDisplayState | null = null; // owned by the setManualState funnels
   let joinAbort: AbortController | null = null; // in-flight room-code attempt (abort to abandon it)
 
   // status with an optional "connecting" pulse dot (CSS .busy::after)
@@ -572,24 +547,18 @@ function wireCoop(): void {
     renderLobbySlots(model.slots);
   };
 
-  // Single owner of the client lobby's status/squad/manual derivation. Every client connection
-  // event calls setClientLobby({...}) rather than poking setStatus/manual.open directly, so the
-  // failure-only "open the manual fallback" side-effect lives in exactly one place (the `failed`
-  // case). `lost` (opened-then-dropped / version mismatch) deliberately does NOT open manual.
-  // Sole writer of the entry controls' visibility (I1): a pure function of lobby state. The room-code
-  // row shows only in Join mode, only while manual is closed, and only when idle or in a retryable
-  // state (null / failed / lost) — hidden while actively connecting or connected. The manual body's
-  // entry controls are spent once a manual peer/link is connected.
+  // Sole writer of the room-code entry-row visibility (I1): a pure function of lobby state. The row
+  // shows only in Join mode, and only when idle or in a retryable state (null / failed / lost) —
+  // hidden while actively connecting or connected.
   const syncEntryVisibility = (): void => {
     const k = lastClientLobbyState?.k;
     const busy = k === "joining" || k === "linking" || k === "connected";
-    roomJoin.style.display = lobbyKind === "join" && !manual.open && !busy ? "flex" : "none";
-    manualBody.style.display = lastManualState?.k === "connected" ? "none" : "";
+    roomJoin.style.display = lobbyKind === "join" && !busy ? "flex" : "none";
   };
 
   const setClientLobby = (s: ClientLobby): void => {
     lastClientLobbyState = s;
-    if (!manual.open) renderLobbyWait(clientLobbyWaitModel(s));
+    renderLobbyWait(clientLobbyWaitModel(s));
     switch (s.k) {
       case "joining":
         setStatus("connecting via relay…", true); // squad already cleared by openLobby
@@ -601,10 +570,7 @@ function wireCoop(): void {
         setStatus("connected — waiting for host to deploy");
         break;
       case "failed":
-        setStatus(s.msg);
-        pendingClientManualState = clientManualFallbackState(s);
-        manual.open = true;
-        renderLobbyWait(clientManualFallbackWaitModel(s));
+        setStatus(s.msg); // no fallback panel — the message + an enabled Join button drive the retry
         break;
       case "lost":
         setStatus(s.msg);
@@ -624,13 +590,8 @@ function wireCoop(): void {
     squad.replaceChildren();
     wait.replaceChildren();
     setStatus("");
-    out.value = "";
-    inEl.value = "";
-    manual.open = false;
-    manual.ontoggle = null;
     lobbyKind = kind;
-    lastManualState = null; // manual body starts shown; setManualState will hide it on connect
-    syncEntryVisibility(); // sole writer of roomJoin + manualBody visibility (replaces the old direct write)
+    syncEntryVisibility(); // sole writer of the room-code entry-row visibility
   };
   const closeLobby = (): void => {
     endCoop(); // disposes host/client links (host: no ghost peer; client: host sees us drop) + resets
@@ -641,10 +602,6 @@ function wireCoop(): void {
   el("lobby-room-copy").onclick = () => {
     roomCode.select();
     navigator.clipboard?.writeText(roomCode.value).catch(() => {});
-  };
-  el("lobby-copy").onclick = () => {
-    out.select();
-    navigator.clipboard?.writeText(out.value).catch(() => {});
   };
 
   // ---- HOST (public/private) ----
@@ -676,7 +633,6 @@ function wireCoop(): void {
     };
 
     const refreshSquad = (): void => {
-      if (manual.open) return;
       renderLobbyWait(
         hostLobbyWaitModel({
           isPublic: coopPublic,
@@ -701,7 +657,7 @@ function wireCoop(): void {
       code,
       (link) => host.add(link),
       (s) => {
-        if (s.error) setStatus(`signaling: ${s.error} — use manual connect below`);
+        if (s.error) setStatus(`signaling: ${s.error} — try again`);
       },
     );
     // seed the listing now; buffered in hostRoom and flushed the instant the signaling WS opens
@@ -711,103 +667,10 @@ function wireCoop(): void {
       day: 1,
       players: (Net.host?.connectedPids().length ?? 0) + 1,
     });
-
-    // manual fallback: opening <details> hides the room code (so the mode is unambiguous)
-    // and lazily builds an offer on first open.
-    let manualReady = false;
-    let manualState: ManualLobbyDisplayState = { k: "codes", role: "host" };
-    const setManualState = (state: ManualLobbyDisplayState): void => {
-      manualState = state;
-      lastManualState = state; // sole owner of lastManualState (drives manual-body visibility)
-      if (manual.open) renderLobbyWait(manualLobbyWaitModel(manualState));
-      syncEntryVisibility();
-    };
-    manual.ontoggle = (): void => {
-      roomHost.style.display = manual.open ? "none" : "flex";
-      syncEntryVisibility(); // keep manualBody/roomJoin derived from state (host: roomJoin stays hidden)
-      guide.textContent = manual.open
-        ? "Manual connect — share your code, paste their reply."
-        : "Share the room code with your squad, then Deploy.";
-      if (!manual.open) {
-        refreshSquad();
-        return;
-      }
-      if (!manualReady) {
-        manualReady = true;
-        sendBlock.style.order = "-1"; // your code first, their reply below
-        sendLabel.textContent = "Your code — send to a friend";
-        recvLabel.textContent = "Their reply — paste it here";
-        go.textContent = "Connect";
-        void (async () => {
-          const epoch = coopEpoch(); // refuse this offer if the host session ended during the await
-          try {
-            const { link, offer, accept } = await createHostLink();
-            if (!isCoopEpochCurrent(epoch)) {
-              link.close(); // host left/tore down before the offer resolved
-              return;
-            }
-            host.add(link); // Host.dispose() also rejects+closes if we were disposed after this check
-            let opened = false;
-            link.onOpen(() => {
-              if (!isCoopEpochCurrent(epoch)) return;
-              opened = true;
-              setManualState({ k: "connected", role: "host" });
-              setStatus("manual peer linked ✓"); // squad refresh is driven by host.onRoster
-            });
-            link.onClose(() => {
-              if (!isCoopEpochCurrent(epoch)) return;
-              const step = opened ? "host" : "link";
-              setStatus(
-                step === "host"
-                  ? "manual peer disconnected — re-open manual connect to try again"
-                  : "manual peer link closed before it opened — re-open manual connect to try again",
-              );
-              setManualState({
-                k: "error",
-                role: "host",
-                step,
-                msg:
-                  step === "host"
-                    ? "Manual peer disconnected. Re-open manual connect to try again."
-                    : "Manual peer link closed before it opened. Re-open manual connect to try again.",
-              });
-            });
-            out.value = offer;
-            go.onclick = async () => {
-              const c = inEl.value.trim();
-              if (!c) return;
-              try {
-                setManualState({ k: "linking", role: "host" });
-                await accept(c);
-                setStatus("manual peer linked ✓");
-                setManualState({ k: "connected", role: "host" });
-              } catch {
-                setStatus("that reply code didn't parse");
-                setManualState({
-                  k: "error",
-                  role: "host",
-                  step: "codes",
-                  msg: "That reply code didn't parse.",
-                });
-              }
-            };
-          } catch (err) {
-            setStatus(`manual offer failed: ${err}`);
-            setManualState({
-              k: "error",
-              role: "host",
-              step: "codes",
-              msg: `Manual offer failed: ${err}`,
-            });
-          }
-        })();
-      }
-      renderLobbyWait(manualLobbyWaitModel(manualState));
-    };
   };
 
-  // The single guarded "become a client" write-back. Every join path (room-code, quick match,
-  // manual SDP) routes here so a teardown mid-await can't resurrect a dead session: if the captured
+  // The single guarded "become a client" write-back. Every join path (room-code, quick match)
+  // routes here so a teardown mid-await can't resurrect a dead session: if the captured
   // epoch is stale, close the freshly-obtained link and bail instead of wiring it into Net.
   const becomeClient = (
     epoch: number,
@@ -824,7 +687,7 @@ function wireCoop(): void {
       return null;
     }
     Net.mode = "client";
-    coopRoomCode = code; // arm the reconnect watchdog (null for manual SDP: no room to rejoin)
+    coopRoomCode = code; // arm the reconnect watchdog with the room to rejoin on a drop
     const client = new Client(link, undefined, hooks);
     Net.client = client;
     return client;
@@ -883,9 +746,9 @@ function wireCoop(): void {
     // Note: resetJoinEntry() above re-enables roomGo and clears lastClientLobbyState for this fresh
     // entry (the re-entry guard is left set after a successful connect; Back doesn't clear it).
 
-    // The room-code attempt's P2P-open timeout. Lifted to the lobby scope (not local to join) so
-    // switching to the manual fallback can cancel it — otherwise a pending timer fires
-    // setClientLobby({failed}) over the manual flow, clobbering its status and re-opening <details>.
+    // The room-code attempt's P2P-open timeout. Lifted to the lobby scope (not local to join) so a
+    // Back / fresh lobby re-entry can cancel it — otherwise a pending timer fires
+    // setClientLobby({failed}) over a superseded flow, clobbering its status.
     let failTimer: ReturnType<typeof setTimeout> | undefined;
 
     const join = async (): Promise<void> => {
@@ -911,9 +774,8 @@ function wireCoop(): void {
               /* sessionStorage unavailable — reconnect just falls back to a fresh slot */
             }
           },
-          // host turned us away: room is full. Terminal (manual connect can't get in either), so
-          // do NOT open the manual fallback — surface a clear message and re-enable Join so the
-          // player can try a different code.
+          // host turned us away: room is full. Terminal — surface a clear message and re-enable Join
+          // so the player can try a different code.
           onRoomFull: () => {
             if (settled || !isCoopEpochCurrent(epoch)) return; // stale/already-settled — ignore
             settled = true;
@@ -948,7 +810,7 @@ function wireCoop(): void {
             k: "failed",
             step: "link",
             msg: failMsg(
-              "couldn't connect (network/NAT). Try a personal network, or manual connect below.",
+              "couldn't connect (network/NAT). Check the code, or try a personal device/network.",
             ),
           });
         }, CONFIG.net.p2pOpenTimeoutMs);
@@ -970,12 +832,14 @@ function wireCoop(): void {
               : {
                   k: "failed",
                   step: "link",
-                  msg: failMsg("connection failed (network/NAT) — try manual connect below."),
+                  msg: failMsg(
+                    "connection failed (network/NAT) — check the code or try a personal device/network.",
+                  ),
                 },
           );
         });
       } catch (err) {
-        if (!isCoopEpochCurrent(epoch)) return; // manual took over / lobby left — don't clobber it
+        if (!isCoopEpochCurrent(epoch)) return; // lobby left / superseded — don't clobber it
         roomGo.disabled = false;
         const msg = err instanceof Error ? err.message : String(err);
         if (msg === "host is on a different version — update to play together") {
@@ -993,7 +857,7 @@ function wireCoop(): void {
         setClientLobby({
           k: "failed",
           step: "room",
-          msg: `${msg} — try manual connect below`,
+          msg: `${msg} — check the code and try again`,
         });
       }
     };
@@ -1002,142 +866,6 @@ function wireCoop(): void {
       if (e.key === "Enter") void join();
     };
     if (prefill) void join(); // came from an Open Raids row → connect straight away
-
-    // manual fallback: opening <details> hides the room-code input (mode is unambiguous)
-    // and lazily wires the paste-host-code → generate-reply flow on first open.
-    let manualReady = false;
-    let manualState: ManualLobbyDisplayState = { k: "codes", role: "client" };
-    const setManualState = (state: ManualLobbyDisplayState): void => {
-      manualState = state;
-      lastManualState = state; // sole owner of lastManualState (drives manual-body visibility)
-      if (manual.open) renderLobbyWait(manualLobbyWaitModel(manualState));
-      syncEntryVisibility();
-    };
-    manual.ontoggle = (): void => {
-      syncEntryVisibility(); // roomJoin tracks manual.open via the sole writer
-      guide.textContent = manual.open
-        ? "Manual connect — paste the host's code to get a reply."
-        : "Enter the host's room code to connect.";
-      // Switching to manual abandons the room-code attempt — cancel its timeout so it can't fire
-      // setClientLobby({failed}) over the manual flow (clearTimeout(undefined) is a safe no-op).
-      if (!manual.open) {
-        if (lastClientLobbyState) renderLobbyWait(clientLobbyWaitModel(lastClientLobbyState));
-        else {
-          wait.replaceChildren();
-          squad.replaceChildren();
-        }
-        return;
-      }
-      clearTimeout(failTimer);
-      // A live room-code attempt is abandoned when the player switches to manual (I2). Guard to live
-      // states only: the `failed` fallback opens <details> programmatically, and must keep its state.
-      const liveK = lastClientLobbyState?.k;
-      if (liveK === "joining" || liveK === "linking" || liveK === "connected") {
-        resetJoinEntry(); // abort the in-flight join + reset client state so only manual runs now
-      }
-      if (pendingClientManualState) {
-        manualState = pendingClientManualState;
-        pendingClientManualState = null;
-      }
-      if (!manualReady) {
-        manualReady = true;
-        sendBlock.style.order = ""; // host's code (recv) first, your reply (send) below
-        sendBlock.style.display = "none"; // reply revealed once generated
-        recvLabel.textContent = "Host's code — paste it here";
-        sendLabel.textContent = "Your reply — send it back to the host";
-        go.textContent = "Generate reply";
-        go.onclick = async () => {
-          const offer = inEl.value.trim();
-          setManualState({ k: "codes", role: "client" });
-          if (!offer) return;
-          const epoch = coopEpoch(); // cancel our write-backs if the player leaves during the await
-          let opened = false;
-          let terminal = false;
-          try {
-            const { link, answer } = await createClientLink(offer);
-            const client = becomeClient(epoch, link, null, {
-              // manual SDP bypasses the signaling version gate → re-check on Hello
-              onVersionMismatch: () => {
-                if (!isCoopEpochCurrent(epoch)) return;
-                terminal = true;
-                setManualState({
-                  k: "error",
-                  role: "client",
-                  step: "host",
-                  msg: "Host is on a different version — update to play together.",
-                });
-                setClientLobby({
-                  k: "lost",
-                  step: "host",
-                  msg: "host is on a different version — update to play together",
-                });
-                abandonClientAttempt(epoch); // close the link + drop the dead client mode
-              },
-              // host turned us away: room is full (the client closes its own link on this event)
-              onRoomFull: () => {
-                if (!isCoopEpochCurrent(epoch)) return;
-                terminal = true;
-                setManualState({
-                  k: "error",
-                  role: "client",
-                  step: "host",
-                  msg: "Room is full — the squad is already at capacity (4).",
-                });
-                setClientLobby({
-                  k: "lost",
-                  step: "host",
-                  msg: "room is full — the squad is already at capacity (4).",
-                });
-                abandonClientAttempt(epoch); // drop the dead client mode (link self-closes on roomfull)
-              },
-            });
-            if (!client) return; // player left during the await → becomeClient closed the link
-            link.onOpen(() => {
-              if (!isCoopEpochCurrent(epoch)) return;
-              opened = true;
-              setManualState({ k: "connected", role: "client" });
-              setClientLobby({ k: "connected" });
-            });
-            link.onClose(() => {
-              if (!isCoopEpochCurrent(epoch)) return;
-              if (terminal) return; // version mismatch / room full already rendered a terminal error
-              const step = opened ? "host" : "link";
-              const msg =
-                step === "host"
-                  ? "Manual link disconnected. Re-open manual connect to retry."
-                  : "Manual link closed before it opened. Re-open manual connect to retry.";
-              setManualState({
-                k: "error",
-                role: "client",
-                step,
-                msg,
-              });
-              setClientLobby({ k: "lost", step, msg });
-              if (manual.open) {
-                setStatus(
-                  step === "host"
-                    ? "manual link disconnected — re-open manual connect to retry"
-                    : "manual link closed before it opened — re-open manual connect to retry",
-                );
-              }
-            });
-            out.value = answer;
-            sendBlock.style.display = "flex";
-            setStatus("reply ready — send it to the host, then wait");
-            setManualState({ k: "linking", role: "client" });
-          } catch {
-            setStatus("that host code didn't parse");
-            setManualState({
-              k: "error",
-              role: "client",
-              step: "codes",
-              msg: "That host code didn't parse.",
-            });
-          }
-        };
-      }
-      renderLobbyWait(manualLobbyWaitModel(manualState));
-    };
   };
 
   // ---- co-op hub: quick match + a live scan of open public raids ----
