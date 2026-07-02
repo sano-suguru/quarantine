@@ -841,6 +841,11 @@ function wireCoop(): void {
     guide.textContent = "Enter the host's room code to connect.";
     roomInput.value = prefill ?? "";
     roomInput.focus();
+    // Re-enable the Join button on every fresh entry — its re-entry guard (roomGo.disabled) is left
+    // set after a SUCCESSFUL connect, and leaving via Back doesn't clear it, so a second visit's
+    // click would otherwise be swallowed. This is the single re-enable point for the guard, mirroring
+    // openCoopHub for the quick-match button.
+    roomGo.disabled = false;
     lastClientLobbyState = null;
 
     // The room-code attempt's P2P-open timeout. Lifted to the lobby scope (not local to join) so
