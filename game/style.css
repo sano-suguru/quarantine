@@ -721,6 +721,11 @@ body {
   box-shadow: 0 0 0 1px rgba(125, 255, 79, 0.2);
   text-align: left;
 }
+.lobby-wait.tone-ready .lobby-wait-card {
+  /* ready state affirms the default-ready styling; present for task contract */
+  background: rgba(125, 255, 79, 0.07);
+  box-shadow: 0 0 0 1px rgba(125, 255, 79, 0.24);
+}
 .lobby-wait.tone-busy .lobby-wait-card {
   background: rgba(159, 220, 184, 0.07);
   box-shadow: 0 0 0 1px rgba(159, 220, 184, 0.2);
