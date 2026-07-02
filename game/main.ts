@@ -110,6 +110,7 @@ const delayMs = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, 
 async function reconnectClient(code: string): Promise<void> {
   if (reconnecting) return;
   reconnecting = true;
+  const epoch = coopEpoch(); // a lobby/tab close during the backoff must abort the rebind
   Net.client?.suspend();
   const overlay = el("reconnect");
   const sub = el("reconnect-sub");
@@ -118,6 +119,10 @@ async function reconnectClient(code: string): Promise<void> {
   for (let i = 0; i < ladder.length; i++) {
     sub.textContent = `attempt ${i + 1} of ${ladder.length}…`;
     const res = await rejoinRoom(code);
+    if (!isCoopEpochCurrent(epoch)) {
+      if (res.status === "open") res.link.close(); // teardown won mid-attempt — drop the fresh link
+      return; // endCoop() already reset reconnecting + the overlay
+    }
     if (res.status === "open") {
       Net.client?.rebind(res.link, loadRejoinToken(code));
       overlay.classList.remove("show");
@@ -133,6 +138,7 @@ async function reconnectClient(code: string): Promise<void> {
       break;
     // retryable (timeout/unreachable): the host may be briefly unreachable (NAT blip) — back off
     await delayMs(ladder[i] ?? 1000);
+    if (!isCoopEpochCurrent(epoch)) return; // teardown during the backoff — stop retrying
   }
   // gave up: end the client session and return to title (method C: no host = no session)
   endCoop(); // closes the suspended link, clears the overlay, resets Net + session vars
