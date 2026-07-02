@@ -1,6 +1,6 @@
 # Remove Manual SDP Fallback — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Delete the legacy manual SDP copy-paste co-op fallback, leaving room-code auto-connect as the single client path.
 
@@ -38,7 +38,7 @@
 - Consumes: existing `syncEntryVisibility`, `resetJoinEntry`, `joinAbort`, `setClientLobby`, `openLobby`, `roomJoin`, `roomHost`, `lobbyKind`, `lastClientLobbyState`.
 - Produces: a lobby with no manual UI. `syncEntryVisibility` becomes `roomJoin.style.display = lobbyKind === "join" && !busy ? "flex" : "none";` (no `manualBody`, no `!manual.open`).
 
-- [ ] **Step 1: Remove the manual block from index.html**
+- [x] **Step 1: Remove the manual block from index.html**
 
 Delete `index.html` lines 188–203 inclusive (the `<!-- fallback: … -->` comment through `</details>`), leaving the surrounding `</div>` (204) intact:
 
@@ -61,7 +61,7 @@ Delete `index.html` lines 188–203 inclusive (the `<!-- fallback: … -->` comm
   </details>
 ```
 
-- [ ] **Step 2: Remove the manual-model imports from main.ts**
+- [x] **Step 2: Remove the manual-model imports from main.ts**
 
 In the `./lobbyWait` import block, drop `clientManualFallbackState`, `clientManualFallbackWaitModel`, `ManualLobbyDisplayState`, `manualLobbyWaitModel`. Keep the rest:
 
@@ -77,11 +77,11 @@ import {
 
 Also drop `createClientLink` and `createHostLink` from the `./net/transport` import (their only main.ts call sites are the manual blocks removed below). Leave the other names in that import (`getTurnStatus`, `NETLOG`, `type PeerLink`, …) untouched.
 
-- [ ] **Step 3: Remove `pendingClientManualState` (module scope) + its endCoop reset**
+- [x] **Step 3: Remove `pendingClientManualState` (module scope) + its endCoop reset**
 
 Delete the declaration (the `// Manual-SDP client fallback UI state…` comment + `let pendingClientManualState: ManualLobbyDisplayState | null = null;`) and the `pendingClientManualState = null;` line inside `endCoop()`.
 
-- [ ] **Step 4: Remove the manual element handles**
+- [x] **Step 4: Remove the manual element handles**
 
 Delete these lines in `wireCoop`:
 
@@ -99,7 +99,7 @@ Delete these lines in `wireCoop`:
 
 Also delete `let lastManualState: ManualLobbyDisplayState | null = null;`.
 
-- [ ] **Step 5: Simplify `syncEntryVisibility`**
+- [x] **Step 5: Simplify `syncEntryVisibility`**
 
 Replace the two style writes so it derives only the room-code row (drop `manualBody` and the `!manual.open` term). Also update its doc comment to drop the manual-body sentence:
 
@@ -111,7 +111,7 @@ Replace the two style writes so it derives only the room-code row (drop `manualB
   };
 ```
 
-- [ ] **Step 6: Simplify `setClientLobby`**
+- [x] **Step 6: Simplify `setClientLobby`**
 
 Change `if (!manual.open) renderLobbyWait(clientLobbyWaitModel(s));` to `renderLobbyWait(clientLobbyWaitModel(s));`, and replace the `failed` case's manual side-effect with a plain status write:
 
@@ -121,11 +121,11 @@ Change `if (!manual.open) renderLobbyWait(clientLobbyWaitModel(s));` to `renderL
         break;
 ```
 
-- [ ] **Step 7: Simplify `openLobby`**
+- [x] **Step 7: Simplify `openLobby`**
 
 Remove `out.value = "";`, `inEl.value = "";`, `manual.open = false;`, `manual.ontoggle = null;`, and `lastManualState = null;`. Keep `lobbyKind = kind;` and the trailing `syncEntryVisibility();` (reword its comment to `// sole writer of the room-code entry-row visibility`).
 
-- [ ] **Step 8: Remove the `lobby-copy` handler**
+- [x] **Step 8: Remove the `lobby-copy` handler**
 
 Delete:
 
@@ -136,11 +136,11 @@ Delete:
   };
 ```
 
-- [ ] **Step 9: Remove the host manual block + its refreshSquad guard**
+- [x] **Step 9: Remove the host manual block + its refreshSquad guard**
 
 In `openHostLobby`: delete the `if (manual.open) return;` first line of `refreshSquad` (so it always renders). Reword the signaling-error line from `` `signaling: ${s.error} — use manual connect below` `` to `` `signaling: ${s.error} — try again` ``. Then delete the entire host manual block — from the `// manual fallback: opening <details>…` comment through the `manual.ontoggle`'s closing `};` (the `let manualReady`/`let manualState`/`setManualState`/`manual.ontoggle` region), leaving `openHostLobby`'s closing `};` intact.
 
-- [ ] **Step 10: Remove the client manual block + reword failure copy**
+- [x] **Step 10: Remove the client manual block + reword failure copy**
 
 In `openJoinLobby`'s `join()` catch, reword the two fallback strings:
 - `` failMsg("connection failed (network/NAT) — try manual connect below.") `` → `` failMsg("connection failed (network/NAT) — check the code or try a personal device/network.") ``
@@ -150,7 +150,7 @@ In `openJoinLobby`'s `join()` catch, reword the two fallback strings:
 
 Then delete the entire client manual block — from the `// manual fallback: opening <details>…` comment through the `manual.ontoggle`'s closing `};` (the `let manualReady`/`let manualState`/`setManualState`/`manual.ontoggle` region), leaving `openJoinLobby`'s closing `};` intact.
 
-- [ ] **Step 11: Typecheck + lint**
+- [x] **Step 11: Typecheck + lint**
 
 Run: `bun run typecheck && bun run lint`
 Expected: both PASS. `noUnusedLocals`/`noUnusedParameters` will flag any manual symbol left behind — if it errors, remove the flagged orphan. Confirm no manual refs remain:
@@ -158,7 +158,7 @@ Expected: both PASS. `noUnusedLocals`/`noUnusedParameters` will flag any manual 
 Run: `grep -in "manual" game/main.ts index.html`
 Expected: no output.
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 ```bash
 git add game/main.ts index.html
@@ -190,15 +190,15 @@ MSG
 - Consumes: nothing from Task 1 (Task 1 already stopped importing these symbols).
 - Produces: `LobbyWaitModel` with no `showManualFallback` field; wait-slot role union without `"manual-host"`/`"manual-client"`.
 
-- [ ] **Step 1: Remove the manual exports from lobbyWait.ts**
+- [x] **Step 1: Remove the manual exports from lobbyWait.ts**
 
 Delete `export type ManualLobbyDisplayState`, `export function manualLobbyWaitModel`, `export function clientManualFallbackWaitModel`, `export function clientManualFallbackState`, and the module-private `manualSteps`/`manualSlots` helpers. Remove the `showManualFallback: boolean;` field from `LobbyWaitModel` and every object literal that sets it (`showManualFallback: false`/`true`). Remove `"manual-host" | "manual-client"` from the wait-slot role union (leaving `"host" | "client"`), and delete the `detail: "Manual connect is available below…"` line that only made sense with a fallback.
 
-- [ ] **Step 2: Remove the manual test cases from lobbyWait.test.ts**
+- [x] **Step 2: Remove the manual test cases from lobbyWait.test.ts**
 
 Delete the `describe`/`it` blocks that exercise `manualLobbyWaitModel`, `clientManualFallbackState`, and `clientManualFallbackWaitModel`, plus any `showManualFallback` assertions in the remaining client/host cases. Remove the now-unused imports of those symbols from the test's import block.
 
-- [ ] **Step 3: Typecheck + lint + test**
+- [x] **Step 3: Typecheck + lint + test**
 
 Run: `bun run typecheck && bun run lint && bun run test -- game/lobbyWait.test.ts`
 Expected: all PASS. Confirm the model is clean:
@@ -206,7 +206,7 @@ Expected: all PASS. Confirm the model is clean:
 Run: `grep -in "manual\|showManualFallback" game/lobbyWait.ts game/lobbyWait.test.ts`
 Expected: no output.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add game/lobbyWait.ts game/lobbyWait.test.ts
@@ -229,7 +229,7 @@ MSG
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Run the full automated gate**
+- [x] **Step 1: Run the full automated gate**
 
 Run: `bun run typecheck && bun run lint && bun run test && bun run build`
 Expected: typecheck/lint clean, all tests pass, build succeeds.
