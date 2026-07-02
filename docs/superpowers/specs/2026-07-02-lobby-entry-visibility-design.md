@@ -73,6 +73,7 @@ the host). Visibility-only centralization cannot fix that — it needs **flow ar
 ```ts
 let lobbyKind: "host" | "join" = "join";              // set in openLobby()
 let lastManualState: ManualLobbyDisplayState | null = null; // set by both setManualState funnels
+let joinAbort: AbortController | null = null;         // in-flight room-code attempt (abort to abandon)
 // (lastClientLobbyState already exists)
 ```
 
@@ -82,6 +83,8 @@ let lastManualState: ManualLobbyDisplayState | null = null; // set by both setMa
 const resetJoinEntry = (): void => {
   bumpCoopEpoch();          // invalidate the in-flight join()'s epoch-guarded awaits/callbacks so a
                             // late joinRoom()/onOpen can't resurrect the abandoned attempt
+  joinAbort?.abort();       // close a still-pending (pre-offer) room-code signaling socket now
+  joinAbort = null;
   Net.client?.dispose();    // drop any link becomeClient() already wired (host sees the drop)
   Net.client = null;
   Net.mode = "single";
@@ -94,8 +97,10 @@ const resetJoinEntry = (): void => {
 Rationale: the session **epoch** (`game/net/session.ts`) is this codebase's *only* cross-`await`
 cancellation primitive — every lobby/join flow captures `coopEpoch()` and re-checks
 `isCoopEpochCurrent()`. Bumping it is the consistent way to make an external actor (the manual
-toggle, or a fresh lobby entry) invalidate an in-flight attempt. Disposing `Net.client` covers the
-case where `becomeClient()` already wired a link before the abandon.
+toggle, or a fresh lobby entry) invalidate an in-flight attempt. `joinAbort` (an `AbortController`
+per room-code attempt) additionally closes the pending signaling socket in the pre-offer window the
+epoch alone can't reach. Disposing `Net.client` covers the case where `becomeClient()` already wired
+a link before the abandon.
 
 **Callers:**
 - `openJoinLobby` — called as its **first statement, before `openLobby("join")`**, replacing the
@@ -153,16 +158,26 @@ respects the epoch, and if abandoning actually releases the relay slot. Two spot
    `failTimer` fires) **before** the P2P link opens, disposing/closing the `PeerLink` never closes
    the still-open signaling socket, so the worker keeps counting the client as a live room occupant
    (`worker/room.ts` removes clients only on WS close) — leaking one of the 3 client slots and
-   risking a false "room is full". Close the socket on link-close too (both callbacks are supported —
-   `onOpen`/`onClose` push into arrays, and `link.close()` → `pc.close()` fires `closeCbs`):
+   risking a false "room is full". Two sub-cases:
+   - **Post-offer, pre-open:** a `PeerLink` exists; close the socket on link-close too (both callbacks
+     are supported — `onOpen`/`onClose` push into arrays, and `link.close()` → `pc.close()` fires
+     `closeCbs`):
 
-   ```ts
-   link.onOpen(() => ws.close());   // P2P up: signaling no longer needed
-   link.onClose(() => ws.close());  // abandoned/failed before open: release the relay slot
-   ```
+     ```ts
+     link.onOpen(() => ws.close());   // P2P up: signaling no longer needed
+     link.onClose(() => ws.close());  // abandoned/failed before open: release the relay slot
+     ```
+   - **Pre-offer (`joining`):** there is no `PeerLink` yet (up to `roomAnswerTimeoutMs` = 3s while the
+     host mints its ICE offer), so `resetJoinEntry` can't reach the socket. The epoch already
+     guarantees *correctness* here (a late resolve hits `becomeClient(stale)` → `null` + link close;
+     a late reject hits the guarded `catch` — no double client, no persistent ghost), but the socket
+     would linger up to 3s. To fully honor I2's *immediate* abandon-on-open, thread an optional
+     `AbortSignal` through `joinRoom(code, signal?)`; `resetJoinEntry` holds an `AbortController` per
+     attempt and aborts it (closing the pending socket + rejecting with `AbortError`, swallowed by the
+     `catch` epoch guard).
 
    This also repairs a **pre-existing latent leak** on the NAT-timeout path, independent of this
-   feature.
+   feature. `joinRoom`'s abort path is unit-testable via the existing `FakeWebSocket` harness.
 
 ### `syncEntryVisibility()` — the sole writer of both controls' visibility (I1)
 
@@ -232,8 +247,9 @@ manual `connected` (one-shot).
 - `game/main.ts` — add `lobbyKind`, `lastManualState`, `resetJoinEntry()`, `syncEntryVisibility()`;
   wire the callers; remove the two replaced ad-hoc `roomJoin.style.display` writes; `manualBody`
   handle; add the epoch guard to the `join()` `catch`. ~30 lines net.
-- `game/net/signaling.ts` — close the relay WebSocket on `link.onClose` too (release the room slot
-  when a join is abandoned/fails before P2P open). ~1 line.
+- `game/net/signaling.ts` — close the relay WebSocket on `link.onClose` too, and make `joinRoom`
+  cancellable via an optional `AbortSignal` (release the room slot when a join is abandoned/fails
+  before P2P open — post-offer via link-close, pre-offer via abort). ~15 lines + a unit test.
 - `index.html` — add `id="lobby-manual-body"` to the `.lobby-wrap` inside `#lobby-manual`.
 - No CSS change.
 
