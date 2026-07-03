@@ -161,12 +161,18 @@ export function loadSamples(ctx: AudioContext, destination: AudioNode): void {
       throw new Error(`[sfx] required samples failed to load: ${missing.join(", ")}`);
     }
   });
+  // Log boot asset failures for diagnostics AND mark the rejection handled so it never surfaces as
+  // an unhandledrejection. resume() can be reached from the title Options (mute/aim toggles) before
+  // — or without — the Start click, which is the only path that awaits whenSamplesReady(); without
+  // this, a failed required decode would leak an unhandled rejection. Mirrors renderer.init().
+  void loadPromise.catch((e) => console.error("[sfx]", e));
 }
 
 /**
- * Play the sample for `key` if loaded. Returns false when no sample is available so the
- * caller plays its procedural fallback instead. `pan` (-1..1) and `vol` (0..1) match the
- * synth's positional groan/screech model. Routes through the shared sample bus (mute +
+ * Play the sample for `key` if loaded. Returns false when the sample isn't available; callers no
+ * longer synth a per-shot procedural fallback — the load gate guarantees every REQUIRED key is
+ * decoded before a run starts, so the boolean is advisory only. `pan` (-1..1) and `vol` (0..1)
+ * match the positional groan/screech model. Routes through the shared sample bus (mute +
  * sfxVolume + compressor live there). Caps polyphony to avoid BufferSource pile-ups and
  * clipping in a full horde — over the cap, the oldest sample is stopped.
  */
