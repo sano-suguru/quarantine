@@ -7,7 +7,7 @@ import { approach, rand } from "../engine/math";
 import { localPlayer } from "../engine/players";
 import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
 import { applyFireFeel } from "../systems/feel";
-import { fxHurt, fxImpact, fxKill, goreIntensity } from "../systems/fx";
+import { fxActionBurst, fxHurt, fxImpact, fxKill, goreIntensity } from "../systems/fx";
 import { integrateMovement } from "../systems/player";
 import type { Bullet } from "../types";
 import { advanceGhosts } from "./ghost";
@@ -275,6 +275,10 @@ export class Client {
       if (p && pl.hitFlash > p.hitFlash + 0.01) {
         fxHurt(st, pl.x, pl.y);
         if (pl.id === st.localId) Audio.hurt();
+      }
+      if (p && p.healT > 0.05 && pl.healT <= 0.05) {
+        fxActionBurst(st, pl.x, pl.y, [0.3, 1, 0.45], false);
+        if (pl.id === st.localId) Audio.heal();
       }
     }
     const nextDIds = new Set(next.deployables.map((d) => d.id));

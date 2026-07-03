@@ -46,7 +46,7 @@ import { ammoTransfer } from "./ammo";
 import { killZombie } from "./bullets";
 import { lootCache } from "./caches";
 import { applyFireFeel, decayFeelTimers } from "./feel";
-import { fxDust, fxImpact, goreIntensity } from "./fx";
+import { fxActionBurst, fxDust, fxImpact, fxMote, goreIntensity } from "./fx";
 
 /** Seconds of standing-still searching needed to loot a cache. Night searches take longer
  *  (CONFIG.cache.nightSearchMul) — the extra exposure is the risk of looting during the horde. */
@@ -92,8 +92,21 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   // healing roots the player: HP ticks up, but no moving or shooting (vulnerable)
   const healing = p.healT > 0;
   if (healing) {
+    const before = p.healT;
     p.healT -= dt;
     p.hp = Math.min(p.maxHp, p.hp + (CONFIG.heal.amount / CONFIG.heal.duration) * dt);
+    // rising motes while it fills
+    if (
+      Math.floor(before / CONFIG.actionFeel.heal.moteEveryS) !==
+      Math.floor(p.healT / CONFIG.actionFeel.heal.moteEveryS)
+    ) {
+      fxMote(state, p.x, p.y, [0.3, 1, 0.45]);
+    }
+    // completion: green burst + up-chime (this edge; healT crosses 0)
+    if (before > 0 && p.healT <= 0) {
+      fxActionBurst(state, p.x, p.y, [0.3, 1, 0.45], false);
+      Audio.heal();
+    }
   }
 
   const moving = inp.moveX !== 0 || inp.moveY !== 0;

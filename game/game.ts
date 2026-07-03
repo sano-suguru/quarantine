@@ -25,7 +25,7 @@ import { Renderer, SHAPE } from "./engine/renderer";
 import { addSalvage, buyUnlock, loadMeta } from "./meta";
 import { Net } from "./net/net";
 import { newState } from "./state";
-import { deriveActionChannel } from "./systems/actionFeel";
+import { actionMotion, deriveActionChannel } from "./systems/actionFeel";
 import { sysAI } from "./systems/ai";
 import { sysAssist } from "./systems/assist";
 import { sysBullets } from "./systems/bullets";
@@ -58,6 +58,13 @@ const SPRITE_FACE_OFFSET = Math.PI / 2;
 // Hit-flash strength for sprites: on a hit the tint is multiplied by (1 + fl*this), i.e. an
 // overbright pop (a texture multiply can't lerp to pure white like the SDF fill does). Feel knob.
 const SPRITE_FLASH = 1.5;
+
+// medkit overlay prop (viz-part shaped): a white case with a green cross. Posed by drawRigParts.
+const MEDKIT_PROP: WeaponDef["viz"] = [
+  { shape: "rect", dx: 0, dy: 0, len: 9, wid: 7, rot: 0, color: [0.9, 0.9, 0.92] },
+  { shape: "rect", dx: 0, dy: 0, len: 6, wid: 2, rot: 0, color: [0.2, 0.85, 0.35] },
+  { shape: "rect", dx: 0, dy: 0, len: 2, wid: 6, rot: 0, color: [0.2, 0.85, 0.35] },
+];
 
 /* -------------------------- UPDATE / DRAW ----------------------- */
 let hbT = 0; // heartbeat timer
@@ -713,8 +720,10 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
     ? TOXIC
     : (PLAYER_COLORS[pl.id % PLAYER_COLORS.length] as [number, number, number]);
   const ch = deriveActionChannel(pl, state);
-  const px = pl.x + pl.recoilX;
-  const py = pl.y + pl.recoilY;
+  const mot = actionMotion(ch.kind, ch.phase, state.time, CONFIG.actionFeel);
+  // lean toward the aim focus; bob perpendicular to it
+  const px = pl.x + pl.recoilX + Math.cos(pl.aim) * mot.lean - Math.sin(pl.aim) * mot.bob;
+  const py = pl.y + pl.recoilY + Math.sin(pl.aim) * mot.lean + Math.cos(pl.aim) * mot.bob;
   const layer = R.spriteLayer("player");
   // No SDF fallback: the "player" sprite is a REQUIRED_SPRITES asset (guarded by
   // spriteAssets.test.ts), so layer < 0 only happens for the first frames before the atlas
@@ -768,10 +777,18 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
     const prog = 1 - pl.reloadT / wd.reload;
     R.rect(pl.x, pl.y - pl.r - 12, 34 * prog, 4, 0, 1, 0.75, 0.2, 1);
   }
-  // healing: green aura + progress bar (you're rooted and exposed while it fills)
+  // healing: breathing green aura + a medkit prop raised at the off-hand + rooted bob + bar
   if (pl.healT > 0) {
+    const af = CONFIG.actionFeel;
     const prog = 1 - pl.healT / CONFIG.heal.duration;
-    R.glow(px, py, pl.r * 3.4, 0.3, 1, 0.45, 0.4);
+    const pulse =
+      af.heal.auraBase +
+      af.heal.auraPulse * (0.5 + 0.5 * Math.sin(state.time * af.heal.auraPulseHz * Math.PI * 2));
+    R.glow(px, py, pl.r * 3.4, 0.3, 1, 0.45, pulse);
+    // medkit prop at the off-hand (lateral to aim): a white box + a green cross, via drawRigParts
+    const ox = px - Math.sin(pl.aim) * af.propOffset;
+    const oy = py + Math.cos(pl.aim) * af.propOffset;
+    drawRigParts(R, MEDKIT_PROP, ox, oy, pl.aim, 1, 1);
     R.rect(pl.x, pl.y - pl.r - 12, 34 * prog, 4, 0, 0.3, 1, 0.45, 1);
   }
   // teammates: overhead HP bar + id tag so their state is readable at a glance
