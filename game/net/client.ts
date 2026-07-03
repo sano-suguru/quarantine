@@ -281,6 +281,15 @@ export class Client {
         if (pl.id === st.localId) Audio.heal();
       }
     }
+    for (let i = 0; i < next.caches.length; i++) {
+      const pc = prev.caches[i];
+      const nc = next.caches[i];
+      if (pc && nc && !pc.looted && nc.looted) {
+        // cache positions aren't in the snapshot; use the live state's cache list (index-matched)
+        const cache = st.caches[i];
+        if (cache) fxActionBurst(st, cache.x, cache.y, [0.9, 0.8, 0.4], false);
+      }
+    }
     const nextDIds = new Set(next.deployables.map((d) => d.id));
     for (const d of prev.deployables) {
       if (!nextDIds.has(d.id)) {

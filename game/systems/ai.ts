@@ -116,14 +116,18 @@ export function sysAI(state: State, dt: number): void {
     const lungeMul = z.lungeT > 0 ? z.lunge : 1;
     // lure: a player rummaging a cache at night draws nearby zombies in faster (the "noise").
     // Final multiplier so every type gets the same relative bump regardless of lunge state.
+    // Gated to night because searching is now set day+night (for the rummage motion draw);
+    // without this gate, day scavenging would gain a zombie lure it never had.
     let lureMul = 0;
-    for (const pl of state.players) {
-      if (!pl.searching) continue;
-      const lx = pl.x - z.x;
-      const ly = pl.y - z.y;
-      if (lx * lx + ly * ly <= lureR2) {
-        lureMul = CONFIG.cache.lureSpeedSurge;
-        break;
+    if (state.phase === "night") {
+      for (const pl of state.players) {
+        if (!pl.searching) continue;
+        const lx = pl.x - z.x;
+        const ly = pl.y - z.y;
+        if (lx * lx + ly * ly <= lureR2) {
+          lureMul = CONFIG.cache.lureSpeedSurge;
+          break;
+        }
       }
     }
     const spd = z.speed * mod.speedMul * emerge * roamMul * lungeMul * (1 + lureMul);

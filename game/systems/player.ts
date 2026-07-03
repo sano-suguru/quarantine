@@ -337,12 +337,19 @@ function interact(
   if (cache && !moving && !healing) {
     cache.searchT += dt;
     searched.add(cache); // mark; sysPlayer resets only caches nobody searched
-    // at night the rummaging is "noise" — flag this player so sysAI surges nearby zombies
-    if (state.phase === "night") p.searching = true;
+    p.searching = true; // drives the rummage motion (draw) for all phases
+    // ongoing dust while rummaging
+    if (
+      Math.floor((cache.searchT - dt) / CONFIG.actionFeel.search.dustEveryS) !==
+      Math.floor(cache.searchT / CONFIG.actionFeel.search.dustEveryS)
+    ) {
+      fxDust(state, cache.x, cache.y, 2);
+    }
     if (cache.searchT >= effectiveSearchTime(state.phase)) {
       lootCache(state, cache.x, cache.y, cache.tier);
       cache.looted = true;
       cache.searchT = 0;
+      fxActionBurst(state, cache.x, cache.y, [0.9, 0.8, 0.4], false);
       Audio.pickup();
     }
   }

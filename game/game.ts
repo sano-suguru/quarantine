@@ -986,8 +986,11 @@ function drawCaches(R: typeof Renderer): void {
     R.rect(c.x, c.y + bob, 22, 17, 0, 0.55, 0.46, 0.28, 1);
     R.rect(c.x, c.y + bob, 22, 4, 0, 0.4, 0.33, 0.2, 1); // lid line
     R.ring(c.x, c.y + bob, 13, 0.9, 0.8, 0.4, 0.7);
-    // search progress bar
+    // rattling lid + search progress bar while being rummaged
     if (c.searchT > 0) {
+      const af = CONFIG.actionFeel.search;
+      const rattle = Math.sin(state.time * af.digHz * Math.PI * 2) * af.lidRattle;
+      R.rect(c.x + rattle, c.y + bob - 6, 22, 4, 0, 0.4, 0.33, 0.2, 1); // rattling lid
       const f = Math.min(1, c.searchT / effectiveSearchTime(state.phase));
       R.rect(c.x, c.y - 20, 30, 4, 0, 0.05, 0.05, 0.05, 0.8);
       R.rect(c.x - (30 * (1 - f)) / 2, c.y - 20, 30 * f, 4, 0, 0.3, 1, 0.45, 1);
