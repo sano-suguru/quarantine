@@ -20,6 +20,15 @@ export const SPRITE_ASSETS: { key: string; url: string }[] = Object.keys(modules
 
 const INDEX = new Map(SPRITE_ASSETS.map((a, i) => [a.key, i]));
 
+/**
+ * Sprites the game hard-depends on. The player has NO runtime SDF fallback (an invisible
+ * operable character is worse than a hard failure), so a missing/renamed asset must be caught at
+ * build time rather than degrading silently — `spriteAssets.test.ts` asserts each of these
+ * resolves. Enemies additionally keep their SDF fallback, but we still require the assets so a
+ * silently-dropped PNG fails CI instead of shipping.
+ */
+export const REQUIRED_SPRITES = ["player", "zombie", "runner", "brute"] as const;
+
 export function spriteIndex(key: string): number {
   return INDEX.get(key) ?? -1;
 }

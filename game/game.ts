@@ -738,9 +738,22 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
     : (PLAYER_COLORS[pl.id % PLAYER_COLORS.length] as [number, number, number]);
   const px = pl.x + pl.recoilX;
   const py = pl.y + pl.recoilY;
-  R.glow(px, py, pl.r * 3, col[0], col[1], col[2], 0.55);
-  R.circle(px, py, pl.r, col[0], col[1], col[2], 1);
-  R.ring(px, py, pl.r * 0.6, 0.05, 0.18, 0.05, 0.9);
+  const layer = R.spriteLayer("player");
+  // No SDF fallback: the "player" sprite is a REQUIRED_SPRITES asset (guarded by
+  // spriteAssets.test.ts), so layer < 0 only happens for the first frames before the atlas
+  // finishes decoding — skip the body draw then rather than flash a placeholder circle.
+  if (layer >= 0) {
+    // Teammates keep a faint palette halo so they stay identifiable at a glance in co-op; the
+    // local player gets none (the textured sprite carries its own colors — a body-tint halo read
+    // as a green glow around your own character).
+    if (!isLocal) R.glow(px, py, pl.r * 2.6, col[0], col[1], col[2], 0.3);
+    // white tint = true illustration; layer a transient overbright on hit (a texture multiply
+    // can't lerp to pure white like the SDF fill, but the pop reads). Rotated so the sprite's
+    // front (its bottom, local -y) points along the aim from any direction.
+    const flash = 1 + (pl.hitFlash > 0 ? Math.min(1, pl.hitFlash * 3) : 0) * SPRITE_FLASH;
+    const sz = pl.r * 2 * SPRITE_SCALE;
+    R.spriteQuad(px, py, sz, sz, pl.aim + SPRITE_FACE_OFFSET, layer, flash, flash, flash, 1);
+  }
   if (pl.hitFlash > 0) R.glow(px, py, pl.r * 3.4, 1, 0.2, 0.2, Math.min(0.9, pl.hitFlash * 3));
   const heldWd = WEAPONS[pl.weapon];
   if (heldWd) drawWeaponRig(R, px, py, pl.aim, heldWd, pl.switchT);
