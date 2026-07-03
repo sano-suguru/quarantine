@@ -289,7 +289,18 @@ export class Client {
       if (p && p.hp <= 0 && p.assistT > 0 && pl.hp > 0) {
         fxActionBurst(st, pl.x, pl.y, [0.4, 1, 0.6], true);
       }
-      if (p && pl.hp > p.hp + 1 && p.hp > 0 && pl.hp < pl.maxHp + 1 && pl.healT <= 0.05) {
+      // mate-heal mote: an external hp bump (a teammate's medkit) while this player is NOT
+      // self-healing at EITHER end of the interval. Requiring prev healT<=0.05 too excludes
+      // the self-heal *completion* tick (prev still had healT>0.05), which otherwise emitted a
+      // stray mote alongside the completion burst. No pickup/upgrade raises a live player's hp.
+      if (
+        p &&
+        pl.hp > p.hp + 1 &&
+        p.hp > 0 &&
+        pl.hp < pl.maxHp + 1 &&
+        p.healT <= 0.05 &&
+        pl.healT <= 0.05
+      ) {
         fxMote(st, pl.x, pl.y, [0.3, 1, 0.45]);
       }
     }
