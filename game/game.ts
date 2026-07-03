@@ -66,6 +66,12 @@ const MEDKIT_PROP: WeaponDef["viz"] = [
   { shape: "rect", dx: 0, dy: 0, len: 2, wid: 6, rot: 0, color: [0.2, 0.85, 0.35] },
 ];
 
+// hammer/tool overlay prop: a handle + a head.
+const TOOL_PROP: WeaponDef["viz"] = [
+  { shape: "rect", dx: 4, dy: 0, len: 12, wid: 2.5, rot: 0, color: [0.5, 0.4, 0.3] },
+  { shape: "rect", dx: 10, dy: 0, len: 5, wid: 6, rot: 0, color: [0.7, 0.72, 0.75] },
+];
+
 /* -------------------------- UPDATE / DRAW ----------------------- */
 let hbT = 0; // heartbeat timer
 let groanT = 2; // ambient groan timer
@@ -791,6 +797,13 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
     const oy = py + Math.cos(pl.aim) * af.propOffset;
     drawRigParts(R, MEDKIT_PROP, ox, oy, pl.aim, 1, 1);
     R.rect(pl.x, pl.y - pl.r - 12, 34 * prog, 4, 0, 0.3, 1, 0.45, 1);
+  }
+  if (ch.kind === "repair" || ch.kind === "mateHeal") {
+    const af = CONFIG.actionFeel;
+    const ox = px - Math.sin(pl.aim) * af.propOffset;
+    const oy = py + Math.cos(pl.aim) * af.propOffset;
+    const prop = ch.kind === "repair" ? TOOL_PROP : MEDKIT_PROP;
+    drawRigParts(R, prop, ox, oy, pl.aim + (1 - ch.phase) * 0.5, 1, 1); // slight swing rotation
   }
   // teammates: overhead HP bar + id tag so their state is readable at a glance
   if (!isLocal) {

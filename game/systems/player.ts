@@ -363,6 +363,7 @@ function interact(
       p.repairCd = CONFIG.siege.repairCd;
       p.swingT = CONFIG.actionFeel.swingDecay;
       p.swingKind = "mateHeal";
+      fxMote(state, mate.x, mate.y, [0.3, 1, 0.45]);
       Audio.heal();
     } else if (bar && p.money >= CONFIG.siege.repairCost) {
       // self-funded repair — the wall shelters the repairer too (private benefit, no
@@ -375,6 +376,10 @@ function interact(
       p.repairCd = CONFIG.siege.repairCd;
       p.swingT = CONFIG.actionFeel.swingDecay;
       p.swingKind = "repair";
+      const mx2 = (bar.x1 + bar.x2) / 2;
+      const my2 = (bar.y1 + bar.y2) / 2;
+      fxImpact(state, mx2, my2, p.aim, [0.85, 0.7, 0.35]); // sparks (intensity 0 = wall-spark look)
+      fxDust(state, mx2, my2, CONFIG.actionFeel.repair.dust);
       // completion: barricade just reached full → burst on the segment midpoint
       if (before < bar.maxHp && bar.hp >= bar.maxHp) {
         const mx = (bar.x1 + bar.x2) / 2;

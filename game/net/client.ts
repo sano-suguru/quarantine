@@ -7,7 +7,7 @@ import { approach, rand } from "../engine/math";
 import { localPlayer } from "../engine/players";
 import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
 import { applyFireFeel } from "../systems/feel";
-import { fxActionBurst, fxHurt, fxImpact, fxKill, goreIntensity } from "../systems/fx";
+import { fxActionBurst, fxHurt, fxImpact, fxKill, fxMote, goreIntensity } from "../systems/fx";
 import { integrateMovement } from "../systems/player";
 import type { Bullet } from "../types";
 import { advanceGhosts } from "./ghost";
@@ -283,6 +283,9 @@ export class Client {
       if (p && p.hp <= 0 && pl.hp > 0) {
         fxActionBurst(st, pl.x, pl.y, [0.4, 1, 0.6], true);
       }
+      if (p && pl.hp > p.hp + 1 && p.hp > 0 && pl.hp < pl.maxHp + 1) {
+        fxMote(st, pl.x, pl.y, [0.3, 1, 0.45]);
+      }
     }
     for (let i = 0; i < next.caches.length; i++) {
       const pc = prev.caches[i];
@@ -291,6 +294,16 @@ export class Client {
         // cache positions aren't in the snapshot; use the live state's cache list (index-matched)
         const cache = st.caches[i];
         if (cache) fxActionBurst(st, cache.x, cache.y, [0.9, 0.8, 0.4], false);
+      }
+    }
+    for (let i = 0; i < next.barricades.length; i++) {
+      const pb = prev.barricades[i];
+      const nb = next.barricades[i];
+      const bar = st.barricades[i];
+      if (pb && nb && bar && pb.hp < nb.hp && nb.hp >= bar.maxHp && pb.hp < bar.maxHp) {
+        const mx = (bar.x1 + bar.x2) / 2;
+        const my = (bar.y1 + bar.y2) / 2;
+        fxActionBurst(st, mx, my, [0.8, 0.7, 0.3], false);
       }
     }
     const nextDIds = new Set(next.deployables.map((d) => d.id));
