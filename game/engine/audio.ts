@@ -6,7 +6,13 @@
  * begin decoding at the same moment.
  */
 import { CONFIG } from "../config";
-import { loadSamples, playSample, setLoop, stopAllLoops } from "./audioAssets";
+import {
+  loadSamples,
+  playSample,
+  whenSamplesReady as samplesReady,
+  setLoop,
+  stopAllLoops,
+} from "./audioAssets";
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -245,6 +251,11 @@ function stopDread(): void {
   setTension(0);
 }
 
+/** Resolves when the required samples have decoded; rejects on failure. See audioAssets. */
+function whenSamplesReady(): Promise<void> {
+  return samplesReady();
+}
+
 export const Audio = {
   resume,
   shot,
@@ -276,4 +287,5 @@ export const Audio = {
   toggleMute,
   setMuted,
   isMuted,
+  whenSamplesReady,
 };

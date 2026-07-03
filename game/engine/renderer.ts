@@ -5,7 +5,7 @@ import gridFrag from "./shaders/grid.frag?raw";
 import gridVert from "./shaders/grid.vert?raw";
 import instanceFrag from "./shaders/instance.frag?raw";
 import instanceVert from "./shaders/instance.vert?raw";
-import { SPRITE_ASSETS, spriteIndex } from "./spriteAssets";
+import { SPRITE_ASSETS, spriteIndex, unreadyRequiredSprites } from "./spriteAssets";
 import { packSprites, uvRect } from "./spritePack";
 
 const FLOATS = 10;
@@ -76,6 +76,7 @@ let u_spriteRects: WebGLUniformLocation | null;
 let atlasTex: WebGLTexture;
 const spriteRects = new Float32Array(MAX_SPRITES * 4); // [u0,v0,uW,vH] * MAX_SPRITES, zero-init
 const spriteReady: boolean[] = []; // per index, true once its texels are uploaded
+let spritesReadyPromise: Promise<void> | null = null;
 
 interface Layer {
   vao: WebGLVertexArrayObject;
@@ -198,7 +199,10 @@ function init(cv: HTMLCanvasElement): void {
 
   resize();
   addEventListener("resize", resize);
-  void loadSprites();
+  spritesReadyPromise = loadSprites();
+  // Log boot asset failures for diagnostics AND mark the rejection handled so it never surfaces as
+  // an unhandledrejection between commits; main() separately surfaces it in the #loading overlay.
+  void spritesReadyPromise.catch((e) => console.error("[sprites]", e));
 }
 
 function resize(): void {
@@ -334,14 +338,13 @@ function loadImage(url: string): Promise<HTMLImageElement> {
  * still load at their stable index — one 404 must not silently drop the whole enemy roster to SDF.
  */
 async function loadSprites(): Promise<void> {
-  if (SPRITE_ASSETS.length === 0) return;
+  if (SPRITE_ASSETS.length === 0) {
+    throw new Error("[sprites] no sprite assets found (build/glob broken)");
+  }
   const settled = await Promise.allSettled(SPRITE_ASSETS.map((a) => loadImage(a.url)));
   const imgs = settled.map((res, i) => {
     if (res.status === "fulfilled") return res.value;
-    console.warn(
-      `[sprites] "${SPRITE_ASSETS[i]?.key}" failed to load; using SDF fallback`,
-      res.reason,
-    );
+    console.warn(`[sprites] "${SPRITE_ASSETS[i]?.key}" failed to load`, res.reason);
     return null;
   });
   // A failed load keeps its index (1x1 placeholder) so a neighbor's failure never shifts another
@@ -369,6 +372,12 @@ async function loadSprites(): Promise<void> {
     gl.texSubImage2D(gl.TEXTURE_2D, 0, r.x, r.y, gl.RGBA, gl.UNSIGNED_BYTE, im);
     spriteRects.set(uvRect(r, packed.atlas), i * 4);
     spriteReady[i] = true;
+  }
+  // Fail loud on required assets: a required key missing from the glob (index < 0) or whose texels
+  // never uploaded (spriteReady false) aborts to the load-error state rather than drawing invisibly.
+  const missing = unreadyRequiredSprites((i) => spriteReady[i] === true);
+  if (missing.length > 0) {
+    throw new Error(`[sprites] required sprites failed to load: ${missing.join(", ")}`);
   }
 }
 
@@ -612,6 +621,10 @@ function worldToScreenHalf(): { x: number; y: number } {
   return { x: viewHalfX, y: viewHalfY };
 }
 
+function spritesReady(): Promise<void> {
+  return spritesReadyPromise ?? Promise.reject(new Error("[sprites] renderer not initialized"));
+}
+
 export const Renderer = {
   init,
   begin,
@@ -623,6 +636,7 @@ export const Renderer = {
   sprite,
   spriteQuad,
   spriteLayer,
+  spritesReady,
   circle,
   rect,
   ring,

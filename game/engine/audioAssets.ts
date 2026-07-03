@@ -1,16 +1,19 @@
 /**
- * Sample-based SFX layer, layered behind the procedural Audio API (engine/audio.ts).
+ * Sample-based SFX layer. Every one-shot SFX and zombie voice in engine/audio.ts is sample-based
+ * and plays through here — there is NO synth fallback for a missing one-shot (the boot/Start load
+ * gate in main.ts guarantees the required samples are decoded before play). The only procedural
+ * audio left is the continuous dread/tension drone bed + heartbeat in audio.ts, a SEPARATE layer
+ * with no sample equivalent — not a fallback for these samples.
  *
- * Generated MP3s live in `game/audio/sfx/<key>[_n].mp3` and are auto-discovered at build
- * time — dropping a file in adds it to the registry with no code change. Playback is the
- * PREFERRED source; engine/audio.ts falls back to its synth when a key has no sample
- * (during async load, on fetch failure, or for keys never generated). Variants `<key>_1`,
- * `<key>_2`… of the same `key` are picked non-repeatingly to kill repetition fatigue.
+ * Generated MP3s live in `game/audio/sfx/<key>[_n].mp3` and are auto-discovered at build time —
+ * dropping a file in adds it to the registry with no code change (a required key is guarded by
+ * audioAssets.test.ts). Variants `<key>_1`, `<key>_2`… of the same `key` are picked
+ * non-repeatingly to kill repetition fatigue.
  *
- * Module scope is deliberately PURE: it only turns the glob into a key→URL map. No fetch,
- * no decodeAudioData, no AudioContext — so importing this (via systems → audio.ts in the
- * Vitest node environment) has zero side effects. All IO happens in loadSamples(), called
- * from Audio.resume() after the first user gesture.
+ * Module scope is deliberately PURE: it only turns the glob into a key→URL map. No fetch, no
+ * decodeAudioData, no AudioContext — so importing this (via systems → audio.ts in the Vitest node
+ * environment) has zero side effects. All IO happens in loadSamples(), called from Audio.resume()
+ * after the first user gesture.
  */
 import { CONFIG } from "../config";
 
@@ -43,6 +46,72 @@ const registry = new Map<string, string[]>();
   }
 }
 
+/**
+ * Samples the game hard-depends on. audio.ts plays these one-shots/loops with NO synth fallback,
+ * so a missing/renamed MP3 must fail the build (audioAssets.test.ts) rather than play silence.
+ * Covers the dynamic families explicitly: shot_<gun> for each firing weapon (knife is melee),
+ * groan_<walker|runner|brute>, kill_big/kill_small, the loops search/amb_day/amb_night, plus the
+ * flat one-shot keys.
+ */
+export const REQUIRED_SAMPLE_KEYS: readonly string[] = [
+  "shot_pistol",
+  "shot_smg",
+  "shot_shotgun",
+  "shot_rifle",
+  "shot_lmg",
+  "shot_magnum",
+  "groan_walker",
+  "groan_runner",
+  "groan_brute",
+  "kill_big",
+  "kill_small",
+  "search",
+  "amb_day",
+  "amb_night",
+  "hit",
+  "reload",
+  "reload_done",
+  "weapon_switch",
+  "hurt",
+  "dry_fire",
+  "pickup",
+  "melee",
+  "heal",
+  "click",
+  "dawn",
+  "repair",
+  "ui_select",
+  "ui_reject",
+  "wave_start",
+  "game_over",
+  "screech",
+  "light_die",
+];
+
+/** Number of decoded-able variants discovered for `key` (0 = not present in the glob). */
+export function sampleVariantCount(key: string): number {
+  return registry.get(key)?.length ?? 0;
+}
+
+// Shared across every resume() caller so they all await the SAME decode, not a per-call promise.
+let loadPromise: Promise<void> | null = null;
+
+/** Required keys that have NOT decoded ≥1 variant, per the `has` predicate. */
+export function missingRequiredSamples(has: (key: string) => boolean): string[] {
+  return REQUIRED_SAMPLE_KEYS.filter((k) => !has(k));
+}
+
+/**
+ * Resolves once every REQUIRED sample has decoded ≥1 variant; rejects if a required variant fails
+ * to fetch/decode or a required key has zero variants. Rejects immediately if called before
+ * loadSamples() has run (no AudioContext yet) — callers must Audio.resume() first.
+ */
+export function whenSamplesReady(): Promise<void> {
+  return (
+    loadPromise ?? Promise.reject(new Error("[sfx] samples not started (call Audio.resume first)"))
+  );
+}
+
 // --- runtime state (set up by loadSamples; null until the first gesture) ---
 let actx: AudioContext | null = null;
 let dest: AudioNode | null = null;
@@ -56,36 +125,54 @@ const active: AudioBufferSourceNode[] = [];
 const loops = new Map<string, { src: AudioBufferSourceNode; gain: GainNode }>();
 
 /**
- * Begin decoding every registered sample into AudioBuffers. Idempotent (resume() is called
- * from many UI paths), non-blocking, and failure-tolerant: a key that fails to load simply
- * stays absent so its method falls back to synth.
+ * Begin decoding every registered sample into AudioBuffers. Idempotent (resume() is called from
+ * many UI paths): the first call stores a shared `loadPromise`; later calls are no-ops that keep
+ * it. The promise resolves only after every REQUIRED key decodes ≥1 variant and rejects if a
+ * required key fails or is absent — non-required extras may still fail silently. whenSamplesReady()
+ * exposes it so the Start path can await decode before the run begins.
  */
 export function loadSamples(ctx: AudioContext, destination: AudioNode): void {
   if (loadStarted) return;
   loadStarted = true;
   actx = ctx;
   dest = destination;
+  const tasks: Promise<void>[] = [];
   for (const [key, list] of registry) {
-    void Promise.all(
-      list.map((url) =>
-        fetch(url)
-          .then((r) => r.arrayBuffer())
-          .then((ab) => ctx.decodeAudioData(ab)),
-      ),
-    )
-      .then((bufs) => {
-        buffers.set(key, bufs);
-      })
-      .catch(() => {
-        /* leave key unloaded → synth fallback in engine/audio.ts */
-      });
+    tasks.push(
+      Promise.all(
+        list.map((url) =>
+          fetch(url)
+            .then((r) => r.arrayBuffer())
+            .then((ab) => ctx.decodeAudioData(ab)),
+        ),
+      )
+        .then((bufs) => {
+          buffers.set(key, bufs);
+        })
+        // Swallow per-key failures here (required OR not); required-ness is enforced by the single
+        // missing-check below, so the thrown error can list the FULL set of unready required keys
+        // rather than aborting on the first rejection. Mirrors renderer.loadSprites' allSettled path.
+        .catch(() => {}),
+    );
   }
+  loadPromise = Promise.all(tasks).then(() => {
+    const missing = missingRequiredSamples((k) => (buffers.get(k)?.length ?? 0) > 0);
+    if (missing.length > 0) {
+      throw new Error(`[sfx] required samples failed to load: ${missing.join(", ")}`);
+    }
+  });
+  // Log boot asset failures for diagnostics AND mark the rejection handled so it never surfaces as
+  // an unhandledrejection. resume() can be reached from the title Options (mute/aim toggles) before
+  // — or without — the Start click, which is the only path that awaits whenSamplesReady(); without
+  // this, a failed required decode would leak an unhandled rejection. Mirrors renderer.init().
+  void loadPromise.catch((e) => console.error("[sfx]", e));
 }
 
 /**
- * Play the sample for `key` if loaded. Returns false when no sample is available so the
- * caller plays its procedural fallback instead. `pan` (-1..1) and `vol` (0..1) match the
- * synth's positional groan/screech model. Routes through the shared sample bus (mute +
+ * Play the sample for `key` if loaded. Returns false when the sample isn't available; callers no
+ * longer synth a per-shot procedural fallback — the load gate guarantees every REQUIRED key is
+ * decoded before a run starts, so the boolean is advisory only. `pan` (-1..1) and `vol` (0..1)
+ * match the positional groan/screech model. Routes through the shared sample bus (mute +
  * sfxVolume + compressor live there). Caps polyphony to avoid BufferSource pile-ups and
  * clipping in a full horde — over the cap, the oldest sample is stopped.
  */
