@@ -306,6 +306,13 @@ export class Client {
         fxActionBurst(st, mx, my, [0.8, 0.7, 0.3], false);
       }
     }
+    const prevDIds = new Set(prev.deployables.map((d) => d.id));
+    for (const d of next.deployables) {
+      if (!prevDIds.has(d.id)) {
+        const def = DEPLOYABLE_TYPES[d.defId];
+        fxActionBurst(st, d.x, d.y, (def?.color ?? GREY) as RGB, false);
+      }
+    }
     const nextDIds = new Set(next.deployables.map((d) => d.id));
     for (const d of prev.deployables) {
       if (!nextDIds.has(d.id)) {

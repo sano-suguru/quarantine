@@ -48,6 +48,10 @@ export function getState(): State {
 
 const TOXIC: [number, number, number] = [0.49, 1.0, 0.31];
 
+// draw-only: first time each deployable id was seen (for the spawn-in emerge). Works for SP
+// (id appears when placed) and co-op (id appears in a snapshot) — no synced spawn timer needed.
+const deployableSeen = new Map<number, number>();
+
 // Sprite zombies are drawn at this multiple of the hitbox diameter (rad*2), > 1 so the
 // illustration reads instead of minifying to mush at the collision size. Feel knob.
 const SPRITE_SCALE = 2.6;
@@ -921,6 +925,14 @@ function drawDeployables(R: typeof Renderer): void {
     const def = DEPLOYABLE_TYPES[d.defId];
     if (!def) continue;
     const [r, g, b] = def.color;
+    if (!deployableSeen.has(d.id)) deployableSeen.set(d.id, state.time);
+    const age = state.time - (deployableSeen.get(d.id) ?? state.time);
+    const emerge = Math.min(1, age / CONFIG.actionFeel.deploy.emerge); // 0..1
+    if (emerge < 1) {
+      const k = 1 - emerge;
+      R.ring(d.x, d.y, 30 * k + 8, r, g, b, 0.6 * k); // settling landing ring
+      R.glow(d.x, d.y, 24, r, g, b, 0.5 * k); // spawn-in flash, fades to nothing
+    }
     const visual = def.visual ?? (def.movement ? "drone" : def.emitter ? "crate" : "turret");
     if (visual === "drone") {
       // an airborne quad: a ground shadow stays put while the body bobs above it. The bob is
@@ -1001,6 +1013,10 @@ function drawDeployables(R: typeof Renderer): void {
       R.glow(mx, my, d.reloading ? 4 : 7, r, g, b, d.reloading ? 0.2 : 0.5);
       drawDeployableHp(R, d, d.x, d.y);
     }
+  }
+  if (deployableSeen.size > 64) {
+    const live = new Set(state.deployables.map((d) => d.id));
+    for (const id of deployableSeen.keys()) if (!live.has(id)) deployableSeen.delete(id);
   }
 }
 
@@ -1346,7 +1362,9 @@ export function deployPlace(): void {
     Audio.ui(true);
     return;
   }
-  Audio.ui(applyPlace(state, localPlayer(state)));
+  const placed = applyPlace(state, localPlayer(state));
+  if (placed) Audio.repair();
+  else Audio.ui(false);
 }
 
 /** Take a draft card. Client → request to host; host/single → apply authoritatively + re-render. */
