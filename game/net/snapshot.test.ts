@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CONFIG } from "../config";
 import { CARD_ORDER } from "../data/arsenal";
 import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { addPlayer } from "../engine/players";
@@ -128,7 +129,7 @@ describe("snapshot binary round-trip", () => {
       h = Math.imul(h, 0x01000193);
     }
     expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
-      `"len=301 fnv=ad84b711"`,
+      `"len=303 fnv=d5880647"`,
     );
   });
 
@@ -207,6 +208,19 @@ describe("snapshot binary round-trip", () => {
     for (let i = 0; i < 60; i++) spawnZombie(s, "walker", 1, 1);
     const buf = encode(captureSnapshot(s, 1));
     expect(buf.byteLength).toBeLessThan(16 * 1024);
+  });
+
+  it("round-trips searching / swingT / swingKind", () => {
+    const s = newState();
+    const p = s.players[0] as State["players"][number];
+    p.searching = true;
+    p.swingT = CONFIG.actionFeel.swingDecay * 0.6;
+    p.swingKind = "mateHeal";
+    const out = decode(encode(captureSnapshot(s, 1)));
+    const rp = out.players[0] as (typeof out.players)[number];
+    expect(rp.searching).toBe(true);
+    expect(rp.swingKind).toBe("mateHeal");
+    expect(rp.swingT).toBeCloseTo(CONFIG.actionFeel.swingDecay * 0.6, 1);
   });
 });
 

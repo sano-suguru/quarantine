@@ -1,6 +1,7 @@
 import { CONFIG } from "../config";
 import { circlePush, circlePushFromSegment } from "../engine/geometry";
 import { allocId } from "../state";
+import { fxActionBurst } from "../systems/fx";
 import type { Deployable, DeployableDef, Player, State } from "../types";
 
 /**
@@ -169,4 +170,5 @@ export function placeDeployable(state: State, defId: string, x: number, y: numbe
     d.emitAt = (Math.floor(state.time / def.emitter.interval) + 1) * def.emitter.interval;
   if (def.destructible) d.hp = def.destructible.maxHp;
   state.deployables.push(d);
+  fxActionBurst(state, x, y, def.color, false);
 }

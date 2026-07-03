@@ -49,6 +49,8 @@ export function makePlayer(id: number, x: number, y: number, name = `P${id + 1}`
     deployQueue: [],
     healT: 0,
     repairCd: 0,
+    swingT: 0,
+    swingKind: "",
     money: 0,
     wlevel: {},
     dmgMul: 1,
@@ -101,6 +103,8 @@ export function revivePlayer(
     p.y = HOME_SPAWN.y;
   }
   p.healT = 0;
+  p.swingT = 0;
+  p.swingKind = "";
   p.reloadT = 0;
   p.switchT = 0;
   p.dryT = 0;

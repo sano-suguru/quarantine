@@ -1,6 +1,7 @@
 import { CONFIG } from "../config";
 import { revivePlayer } from "../engine/players";
 import type { Player, State } from "../types";
+import { fxActionBurst } from "./fx";
 
 /**
  * Co-op peer revive (free, proximity-auto, no button). A downed teammate's revive gauge
@@ -35,6 +36,7 @@ export function sysAssist(state: State, dt: number): void {
     target.assistT += dt;
     tended.add(target);
     if (target.assistT >= CONFIG.assist.reviveTime) {
+      fxActionBurst(state, target.x, target.y, [0.4, 1, 0.6], true);
       revivePlayer(state, target, {
         inPlace: true,
         hp: Math.round(target.maxHp * CONFIG.assist.reviveHpFrac),

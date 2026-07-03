@@ -25,6 +25,7 @@ import { Renderer, SHAPE } from "./engine/renderer";
 import { addSalvage, buyUnlock, loadMeta } from "./meta";
 import { Net } from "./net/net";
 import { newState } from "./state";
+import { actionMotion, deriveActionChannel } from "./systems/actionFeel";
 import { sysAI } from "./systems/ai";
 import { sysAssist } from "./systems/assist";
 import { sysBullets } from "./systems/bullets";
@@ -47,6 +48,10 @@ export function getState(): State {
 
 const TOXIC: [number, number, number] = [0.49, 1.0, 0.31];
 
+// draw-only: first time each deployable id was seen (for the spawn-in emerge). Works for SP
+// (id appears when placed) and co-op (id appears in a snapshot) — no synced spawn timer needed.
+const deployableSeen = new Map<number, number>();
+
 // Sprite zombies are drawn at this multiple of the hitbox diameter (rad*2), > 1 so the
 // illustration reads instead of minifying to mush at the collision size. Feel knob.
 const SPRITE_SCALE = 2.6;
@@ -57,6 +62,19 @@ const SPRITE_FACE_OFFSET = Math.PI / 2;
 // Hit-flash strength for sprites: on a hit the tint is multiplied by (1 + fl*this), i.e. an
 // overbright pop (a texture multiply can't lerp to pure white like the SDF fill does). Feel knob.
 const SPRITE_FLASH = 1.5;
+
+// medkit overlay prop (viz-part shaped): a white case with a green cross. Posed by drawRigParts.
+const MEDKIT_PROP: WeaponDef["viz"] = [
+  { shape: "rect", dx: 0, dy: 0, len: 9, wid: 7, rot: 0, color: [0.9, 0.9, 0.92] },
+  { shape: "rect", dx: 0, dy: 0, len: 6, wid: 2, rot: 0, color: [0.2, 0.85, 0.35] },
+  { shape: "rect", dx: 0, dy: 0, len: 2, wid: 6, rot: 0, color: [0.2, 0.85, 0.35] },
+];
+
+// hammer/tool overlay prop: a handle + a head.
+const TOOL_PROP: WeaponDef["viz"] = [
+  { shape: "rect", dx: 4, dy: 0, len: 12, wid: 2.5, rot: 0, color: [0.5, 0.4, 0.3] },
+  { shape: "rect", dx: 10, dy: 0, len: 5, wid: 6, rot: 0, color: [0.7, 0.72, 0.75] },
+];
 
 /* -------------------------- UPDATE / DRAW ----------------------- */
 let hbT = 0; // heartbeat timer
@@ -492,6 +510,8 @@ export function draw(): void {
     const a = pt.life / pt.maxLife;
     if (pt.kind === "shard")
       R.rect(pt.x, pt.y, pt.r * 2, pt.r, pt.rot, pt.color[0], pt.color[1], pt.color[2], a);
+    else if (pt.kind === "smoke")
+      R.circle(pt.x, pt.y, pt.r, pt.color[0], pt.color[1], pt.color[2], a * 0.5);
   }
 
   // --- zombies ---
@@ -586,6 +606,7 @@ export function draw(): void {
     if (pl.hp <= 0 || pl.absent) drawDownedPlayer(R, pl);
     else drawPlayer(R, pl, pl.id === state.localId);
   }
+  drawReviveLinks(R);
 
   // --- additive particles (sparks / rings) ---
   for (const pt of state.particles) {
@@ -643,31 +664,25 @@ export function draw(): void {
   R.flush(camX, camY);
 }
 
-/** Draw the held-weapon silhouette from its data-driven `viz` parts, posed by the draw-anim timer.
- *  Generic per-shape dispatch only — no per-weapon branches (CLAUDE.md). The whole rig dips toward
- *  the body and dims at switch start, then extends out and aligns to aim as switchT → 0. */
-function drawWeaponRig(
+/** Render a viz-part list (rect/circle/ring/hex/tri) at an origin, posed along `ang`. Shared by
+ *  the weapon rig and overlay props — dispatch is shared, pose (origin/angle) is the caller's. */
+function drawRigParts(
   R: typeof Renderer,
-  px: number,
-  py: number,
-  aim: number,
-  wd: WeaponDef,
-  switchT: number,
+  parts: WeaponDef["viz"],
+  ox: number,
+  oy: number,
+  ang: number,
+  aMul: number,
+  fwdScale: number,
 ): void {
-  const raise = switchT > 0 ? 1 - switchT / wd.drawTime : 1; // 0 = just switched, 1 = ready
-  const e = 1 - (1 - raise) * (1 - raise); // ease-out
-  const DOWN = 0.6; // rad the rig dips off-aim mid-draw (sign may need flipping in dev — Y is flipped)
-  const ang = aim + (1 - e) * DOWN; // dip while drawing → align when ready
-  const fwdScale = 0.3 + 0.7 * e; // pulled in → full extension
-  const aMul = 0.6 + 0.4 * e; // dimmed → full
   const ca = Math.cos(ang);
   const sa = Math.sin(ang);
-  for (const part of wd.viz) {
+  for (const part of parts) {
     const fwd = part.dx * fwdScale;
     const lat = part.dy;
-    const wx = px + ca * fwd - sa * lat;
-    const wy = py + sa * fwd + ca * lat;
-    const [cr, cg, cb] = part.color ?? wd.color;
+    const wx = ox + ca * fwd - sa * lat;
+    const wy = oy + sa * fwd + ca * lat;
+    const [cr, cg, cb] = part.color ?? [1, 1, 1];
     const a = (part.alpha ?? 1) * aMul;
     const rot = ang + part.rot;
     switch (part.shape) {
@@ -690,13 +705,38 @@ function drawWeaponRig(
   }
 }
 
+/** Draw the held-weapon silhouette from its data-driven `viz` parts, posed by the draw-anim timer.
+ *  Generic per-shape dispatch only — no per-weapon branches (CLAUDE.md). The whole rig dips toward
+ *  the body mid-action, then extends and aligns to aim as rigPhase → 1 (reload or switch). */
+function drawWeaponRig(
+  R: typeof Renderer,
+  px: number,
+  py: number,
+  aim: number,
+  wd: WeaponDef,
+  rigPhase: number, // 0 = lowered/mid-action, 1 = ready
+): void {
+  const e = 1 - (1 - rigPhase) * (1 - rigPhase);
+  const DOWN = 0.6; // rad the rig dips off-aim mid-draw (sign may need flipping in dev — Y is flipped)
+  const ang = aim + (1 - e) * DOWN; // dip while drawing → align when ready
+  const fwdScale = 0.3 + 0.7 * e; // pulled in → full extension
+  const aMul = 0.6 + 0.4 * e; // dimmed → full
+  // parts default to wd.color when they carry no per-part color (drawRigParts falls back to
+  // white, so pre-fill the weapon color here to preserve the original look)
+  const parts = wd.viz.map((p) => ({ ...p, color: p.color ?? wd.color }));
+  drawRigParts(R, parts, px, py, ang, aMul, fwdScale);
+}
+
 /** draw one player: body, gun, muzzle/reload/heal feedback; teammates get an overhead HP bar */
 function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
   const col = isLocal
     ? TOXIC
     : (PLAYER_COLORS[pl.id % PLAYER_COLORS.length] as [number, number, number]);
-  const px = pl.x + pl.recoilX;
-  const py = pl.y + pl.recoilY;
+  const ch = deriveActionChannel(pl, state);
+  const mot = actionMotion(ch.kind, ch.phase, state.time, CONFIG.actionFeel);
+  // lean toward the aim focus; bob perpendicular to it
+  const px = pl.x + pl.recoilX + Math.cos(pl.aim) * mot.lean - Math.sin(pl.aim) * mot.bob;
+  const py = pl.y + pl.recoilY + Math.sin(pl.aim) * mot.lean + Math.cos(pl.aim) * mot.bob;
   const layer = R.spriteLayer("player");
   // No SDF fallback: the "player" sprite is a REQUIRED_SPRITES asset (guarded by
   // spriteAssets.test.ts), so layer < 0 only happens for the first frames before the atlas
@@ -715,7 +755,11 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
   }
   if (pl.hitFlash > 0) R.glow(px, py, pl.r * 3.4, 1, 0.2, 0.2, Math.min(0.9, pl.hitFlash * 3));
   const heldWd = WEAPONS[pl.weapon];
-  if (heldWd) drawWeaponRig(R, px, py, pl.aim, heldWd, pl.switchT);
+  if (heldWd) {
+    // reload and switch both lower→raise the rig; other kinds leave it ready (phase 1)
+    const rigPhase = ch.kind === "switch" || ch.kind === "reload" ? ch.phase : 1;
+    drawWeaponRig(R, px, py, pl.aim, heldWd, rigPhase);
+  }
   if (pl.muzzle > 0) {
     const wd = WEAPONS[pl.weapon];
     if (wd?.melee) {
@@ -746,11 +790,28 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
     const prog = 1 - pl.reloadT / wd.reload;
     R.rect(pl.x, pl.y - pl.r - 12, 34 * prog, 4, 0, 1, 0.75, 0.2, 1);
   }
-  // healing: green aura + progress bar (you're rooted and exposed while it fills)
+  // healing: breathing green aura + a medkit prop raised at the off-hand + rooted bob + bar
   if (pl.healT > 0) {
+    const af = CONFIG.actionFeel;
     const prog = 1 - pl.healT / CONFIG.heal.duration;
-    R.glow(px, py, pl.r * 3.4, 0.3, 1, 0.45, 0.4);
+    const pulse =
+      af.heal.auraBase +
+      af.heal.auraPulse * (0.5 + 0.5 * Math.sin(state.time * af.heal.auraPulseHz * Math.PI * 2));
+    R.glow(px, py, pl.r * 3.4, 0.3, 1, 0.45, pulse);
+    // medkit prop at the off-hand (lateral to aim): a white box + a green cross, via drawRigParts
+    const ox = px - Math.sin(pl.aim) * af.propOffset;
+    const oy = py + Math.cos(pl.aim) * af.propOffset;
+    drawRigParts(R, MEDKIT_PROP, ox, oy, pl.aim, 1, 1);
     R.rect(pl.x, pl.y - pl.r - 12, 34 * prog, 4, 0, 0.3, 1, 0.45, 1);
+  }
+  // swing prop (repair=tool, mateHeal=medkit). ch.kind is never "mateHeal" while healT>0
+  // (deriveActionChannel returns "heal"), so this never double-draws the heal prop.
+  if (ch.kind === "repair" || ch.kind === "mateHeal") {
+    const af = CONFIG.actionFeel;
+    const ox = px - Math.sin(pl.aim) * af.propOffset;
+    const oy = py + Math.cos(pl.aim) * af.propOffset;
+    const prop = ch.kind === "repair" ? TOOL_PROP : MEDKIT_PROP;
+    drawRigParts(R, prop, ox, oy, pl.aim + (1 - ch.phase) * 0.5, 1, 1); // slight swing rotation
   }
   // teammates: overhead HP bar + id tag so their state is readable at a glance
   if (!isLocal) {
@@ -776,6 +837,36 @@ function drawDownedPlayer(R: typeof Renderer, pl: Player): void {
     const yb = pl.y - pl.r - 10;
     R.rect(pl.x, yb, w, 4, 0, 0.05, 0.05, 0.05, 0.8);
     R.rect(pl.x - (w * (1 - f)) / 2, yb, w * f, 4, 0, 0.3, 1, 0.45, 1);
+  }
+}
+
+/** Co-op: for each downed teammate being revived, draw a tending aura on the body + a faint beam
+ *  from the nearest standing teammate (the reviver). Purely derived — no synced reviver id. */
+function drawReviveLinks(R: typeof Renderer): void {
+  if (state.players.length < 2) return;
+  const af = CONFIG.actionFeel.revive;
+  const reach2 = CONFIG.siege.interactRadius * CONFIG.siege.interactRadius;
+  for (const t of state.players) {
+    if (t.hp > 0 || t.absent || t.assistT <= 0) continue;
+    const prog = Math.min(1, t.assistT / CONFIG.assist.reviveTime);
+    const pulse = af.beamAlpha * (0.6 + 0.4 * Math.sin(state.time * af.auraPulseHz * Math.PI * 2));
+    R.glow(t.x, t.y, t.r * 3, 0.4, 1, 0.6, pulse); // tending aura on the body
+    // nearest standing teammate = the reviver; draw a faint beam
+    let rv: Player | null = null;
+    let best = reach2;
+    for (const h of state.players) {
+      if (h === t || h.hp <= 0 || h.absent) continue;
+      const d = (h.x - t.x) ** 2 + (h.y - t.y) ** 2;
+      if (d < best) {
+        best = d;
+        rv = h;
+      }
+    }
+    if (rv) {
+      const mx = (rv.x + t.x) / 2;
+      const my = (rv.y + t.y) / 2;
+      R.glow(mx, my, 8 + 10 * prog, 0.4, 1, 0.6, pulse * 0.8);
+    }
   }
 }
 
@@ -838,6 +929,14 @@ function drawDeployables(R: typeof Renderer): void {
     const def = DEPLOYABLE_TYPES[d.defId];
     if (!def) continue;
     const [r, g, b] = def.color;
+    if (!deployableSeen.has(d.id)) deployableSeen.set(d.id, state.time);
+    const age = state.time - (deployableSeen.get(d.id) ?? state.time);
+    const emerge = Math.min(1, age / CONFIG.actionFeel.deploy.emerge); // 0..1
+    if (emerge < 1) {
+      const k = 1 - emerge;
+      R.ring(d.x, d.y, 30 * k + 8, r, g, b, 0.6 * k); // settling landing ring
+      R.glow(d.x, d.y, 24, r, g, b, 0.5 * k); // spawn-in flash, fades to nothing
+    }
     const visual = def.visual ?? (def.movement ? "drone" : def.emitter ? "crate" : "turret");
     if (visual === "drone") {
       // an airborne quad: a ground shadow stays put while the body bobs above it. The bob is
@@ -919,6 +1018,10 @@ function drawDeployables(R: typeof Renderer): void {
       drawDeployableHp(R, d, d.x, d.y);
     }
   }
+  if (deployableSeen.size > 64) {
+    const live = new Set(state.deployables.map((d) => d.id));
+    for (const id of deployableSeen.keys()) if (!live.has(id)) deployableSeen.delete(id);
+  }
 }
 
 /** A small HP bar above a damaged deployable (hidden at full / for indestructible units). */
@@ -947,8 +1050,11 @@ function drawCaches(R: typeof Renderer): void {
     R.rect(c.x, c.y + bob, 22, 17, 0, 0.55, 0.46, 0.28, 1);
     R.rect(c.x, c.y + bob, 22, 4, 0, 0.4, 0.33, 0.2, 1); // lid line
     R.ring(c.x, c.y + bob, 13, 0.9, 0.8, 0.4, 0.7);
-    // search progress bar
+    // rattling lid + search progress bar while being rummaged
     if (c.searchT > 0) {
+      const af = CONFIG.actionFeel.search;
+      const rattle = Math.sin(state.time * af.digHz * Math.PI * 2) * af.lidRattle;
+      R.rect(c.x + rattle, c.y + bob - 6, 22, 4, 0, 0.4, 0.33, 0.2, 1); // rattling lid
       const f = Math.min(1, c.searchT / effectiveSearchTime(state.phase));
       R.rect(c.x, c.y - 20, 30, 4, 0, 0.05, 0.05, 0.05, 0.8);
       R.rect(c.x - (30 * (1 - f)) / 2, c.y - 20, 30 * f, 4, 0, 0.3, 1, 0.45, 1);
@@ -1066,6 +1172,7 @@ function buildWeaponSlots(): void {
 
 export function startGame(): void {
   state = newState();
+  deployableSeen.clear();
   state.running = true;
   lastWeapon = "";
   resetAtmosphere();
@@ -1260,7 +1367,9 @@ export function deployPlace(): void {
     Audio.ui(true);
     return;
   }
-  Audio.ui(applyPlace(state, localPlayer(state)));
+  const placed = applyPlace(state, localPlayer(state));
+  if (placed) Audio.repair();
+  else Audio.ui(false);
 }
 
 /** Take a draft card. Client → request to host; host/single → apply authoritatively + re-render. */
@@ -1524,6 +1633,7 @@ export function startClientGame(): void {
   // snapshot would wipe the live game — no-op here so only the first client boot builds state.
   if (state.running && Net.mode === "client") return;
   state = newState();
+  deployableSeen.clear();
   state.running = true;
   lastWeapon = "";
   resetAtmosphere();

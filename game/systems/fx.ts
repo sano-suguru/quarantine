@@ -241,6 +241,65 @@ export function fxPickup(state: State, x: number, y: number, glow: RGB): void {
   }
 }
 
+/** one slow, rising mote — an ongoing "something is happening" cue (heal / tending aura) */
+export function fxMote(state: State, x: number, y: number, color: RGB): void {
+  spawn(
+    state,
+    x + rand(-6, 6),
+    y + rand(-4, 4),
+    rand(-8, 8),
+    rand(-40, -18),
+    rand(0.4, 0.8),
+    rand(1.5, 3),
+    color,
+    "spark",
+    1.5,
+  );
+}
+
+/** a few short-lived dust puffs kicked outward (rummaging / hammering debris) */
+export function fxDust(state: State, x: number, y: number, n: number): void {
+  const dust: RGB = [0.45, 0.4, 0.34];
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, 6.28);
+    const sp = rand(30, 90);
+    spawn(
+      state,
+      x,
+      y,
+      Math.cos(a) * sp,
+      Math.sin(a) * sp,
+      rand(0.2, 0.4),
+      rand(2, 4),
+      dust,
+      "smoke",
+      3,
+    );
+  }
+}
+
+/** a completion burst: an expanding ring + a spark spray in `color` (loot / repair / revive done) */
+export function fxActionBurst(state: State, x: number, y: number, color: RGB, big: boolean): void {
+  spawn(state, x, y, 0, 0, big ? 0.34 : 0.24, big ? 30 : 18, color, "ring", 0);
+  const n = big ? 14 : 9;
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, 6.28);
+    const sp = rand(70, big ? 220 : 160);
+    spawn(
+      state,
+      x,
+      y,
+      Math.cos(a) * sp,
+      Math.sin(a) * sp,
+      rand(0.2, 0.45),
+      rand(1.5, 3),
+      color,
+      "spark",
+      6,
+    );
+  }
+}
+
 /** red spray when the player is mauled */
 export function fxHurt(state: State, x: number, y: number): void {
   const blood: RGB = [0.8, 0.12, 0.12];

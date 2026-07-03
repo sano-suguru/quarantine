@@ -3,11 +3,12 @@ import { effWeapon } from "../data/arsenal";
 import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { ENEMY_TYPES } from "../data/enemies";
 import { Audio } from "../engine/audio";
+import { segMid } from "../engine/geometry";
 import { approach, rand } from "../engine/math";
 import { localPlayer } from "../engine/players";
 import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
 import { applyFireFeel } from "../systems/feel";
-import { fxHurt, fxImpact, fxKill, goreIntensity } from "../systems/fx";
+import { fxActionBurst, fxHurt, fxImpact, fxKill, fxMote, goreIntensity } from "../systems/fx";
 import { integrateMovement } from "../systems/player";
 import type { Bullet } from "../types";
 import { advanceGhosts } from "./ghost";
@@ -275,6 +276,57 @@ export class Client {
       if (p && pl.hitFlash > p.hitFlash + 0.01) {
         fxHurt(st, pl.x, pl.y);
         if (pl.id === st.localId) Audio.hurt();
+      }
+      if (p && p.healT > 0.05 && pl.healT <= 0.05) {
+        fxActionBurst(st, pl.x, pl.y, [0.3, 1, 0.45], false);
+        if (pl.id === st.localId) Audio.heal();
+      }
+      // peer-revive completion only: anchor to the assist gauge (the host fires this burst in
+      // sysAssist). A tended teammate always shows assistT>0 in the prev snapshot, while the
+      // dawn batch-respawn (revivePlayer, no tending) has assistT==0 — so this no longer
+      // bursts at dawn, matching the host. (Rare: an interrupt→immediate-resume revive can
+      // show assistT==0 in prev and drop the burst — cosmetic only, never a false fire.)
+      if (p && p.hp <= 0 && p.assistT > 0 && pl.hp > 0) {
+        fxActionBurst(st, pl.x, pl.y, [0.4, 1, 0.6], true);
+      }
+      // mate-heal mote: an external hp bump (a teammate's medkit) while this player is NOT
+      // self-healing at EITHER end of the interval. Requiring prev healT<=0.05 too excludes
+      // the self-heal *completion* tick (prev still had healT>0.05), which otherwise emitted a
+      // stray mote alongside the completion burst. No pickup/upgrade raises a live player's hp.
+      if (
+        p &&
+        pl.hp > p.hp + 1 &&
+        p.hp > 0 &&
+        pl.hp < pl.maxHp + 1 &&
+        p.healT <= 0.05 &&
+        pl.healT <= 0.05
+      ) {
+        fxMote(st, pl.x, pl.y, [0.3, 1, 0.45]);
+      }
+    }
+    for (let i = 0; i < next.caches.length; i++) {
+      const pc = prev.caches[i];
+      const nc = next.caches[i];
+      if (pc && nc && !pc.looted && nc.looted) {
+        // cache positions aren't in the snapshot; use the live state's cache list (index-matched)
+        const cache = st.caches[i];
+        if (cache) fxActionBurst(st, cache.x, cache.y, [0.9, 0.8, 0.4], false);
+      }
+    }
+    for (let i = 0; i < next.barricades.length; i++) {
+      const pb = prev.barricades[i];
+      const nb = next.barricades[i];
+      const bar = st.barricades[i];
+      if (pb && nb && bar && pb.hp < nb.hp && nb.hp >= bar.maxHp && pb.hp < bar.maxHp) {
+        const m = segMid(bar.x1, bar.y1, bar.x2, bar.y2);
+        fxActionBurst(st, m.x, m.y, [0.8, 0.7, 0.3], false);
+      }
+    }
+    const prevDIds = new Set(prev.deployables.map((d) => d.id));
+    for (const d of next.deployables) {
+      if (!prevDIds.has(d.id)) {
+        const def = DEPLOYABLE_TYPES[d.defId];
+        fxActionBurst(st, d.x, d.y, (def?.color ?? GREY) as RGB, false);
       }
     }
     const nextDIds = new Set(next.deployables.map((d) => d.id));

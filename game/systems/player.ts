@@ -3,7 +3,7 @@ import { effWeapon, meleeArc, meleeReach } from "../data/arsenal";
 import { resolveDeployableCollisions } from "../data/deployables";
 import { WEAPON_ORDER, WEAPONS } from "../data/weapons";
 import { Audio } from "../engine/audio";
-import { circlePushFromSegment } from "../engine/geometry";
+import { circlePushFromSegment, segMid } from "../engine/geometry";
 import { approach, clamp, len, rand } from "../engine/math";
 import type { PlayerInput } from "../net/playerInput";
 import { allocId } from "../state";
@@ -41,11 +41,12 @@ export function integrateMovement(
   }
 }
 
+import { decaySwing } from "./actionFeel";
 import { ammoTransfer } from "./ammo";
 import { killZombie } from "./bullets";
 import { lootCache } from "./caches";
 import { applyFireFeel, decayFeelTimers } from "./feel";
-import { fxImpact, goreIntensity } from "./fx";
+import { fxActionBurst, fxDust, fxImpact, fxMote, goreIntensity } from "./fx";
 
 /** Seconds of standing-still searching needed to loot a cache. Night searches take longer
  *  (CONFIG.cache.nightSearchMul) — the extra exposure is the risk of looting during the horde. */
@@ -91,8 +92,21 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   // healing roots the player: HP ticks up, but no moving or shooting (vulnerable)
   const healing = p.healT > 0;
   if (healing) {
+    const before = p.healT;
     p.healT -= dt;
     p.hp = Math.min(p.maxHp, p.hp + (CONFIG.heal.amount / CONFIG.heal.duration) * dt);
+    // rising motes while it fills
+    if (
+      Math.floor(before / CONFIG.actionFeel.heal.moteEveryS) !==
+      Math.floor(p.healT / CONFIG.actionFeel.heal.moteEveryS)
+    ) {
+      fxMote(state, p.x, p.y, [0.3, 1, 0.45]);
+    }
+    // completion: green burst + up-chime (this edge; healT crosses 0)
+    if (before > 0 && p.healT <= 0) {
+      fxActionBurst(state, p.x, p.y, [0.3, 1, 0.45], false);
+      Audio.heal();
+    }
   }
 
   const moving = inp.moveX !== 0 || inp.moveY !== 0;
@@ -140,6 +154,7 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
     if ((inp.reload || p.ammo <= 0) && p.reloadT <= 0 && p.ammo < wd.mag && reserve > 0) {
       p.reloadT = wd.reload;
       Audio.reload();
+      fxDust(state, p.x - Math.cos(p.aim) * p.r, p.y - Math.sin(p.aim) * p.r, 2);
     }
     if (p.reloadT > 0) {
       p.reloadT -= dt;
@@ -154,6 +169,7 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
 
   if (p.fireCd > 0) p.fireCd -= dt;
   if (p.switchT > 0) p.switchT -= dt;
+  p.swingT = decaySwing(p.swingT, dt);
   const wantFire = inp.firing && (wd.auto || !p.firedThisHold);
   if (wantFire && p.fireCd <= 0 && p.reloadT <= 0 && !healing) {
     if (wd.melee || p.ammo > 0) {
@@ -281,9 +297,8 @@ function interact(
   let barD = reach;
   for (const b of state.barricades) {
     if (b.hp >= b.maxHp) continue;
-    const mx = (b.x1 + b.x2) / 2;
-    const my = (b.y1 + b.y2) / 2;
-    const d = len(mx - p.x, my - p.y);
+    const m = segMid(b.x1, b.y1, b.x2, b.y2);
+    const d = len(m.x - p.x, m.y - p.y);
     if (d < barD) {
       barD = d;
       bar = b;
@@ -321,12 +336,19 @@ function interact(
   if (cache && !moving && !healing) {
     cache.searchT += dt;
     searched.add(cache); // mark; sysPlayer resets only caches nobody searched
-    // at night the rummaging is "noise" — flag this player so sysAI surges nearby zombies
-    if (state.phase === "night") p.searching = true;
+    p.searching = true; // drives the rummage motion (draw) for all phases
+    // ongoing dust while rummaging
+    if (
+      Math.floor((cache.searchT - dt) / CONFIG.actionFeel.search.dustEveryS) !==
+      Math.floor(cache.searchT / CONFIG.actionFeel.search.dustEveryS)
+    ) {
+      fxDust(state, cache.x, cache.y, 2);
+    }
     if (cache.searchT >= effectiveSearchTime(state.phase)) {
       lootCache(state, cache.x, cache.y, cache.tier);
       cache.looted = true;
       cache.searchT = 0;
+      fxActionBurst(state, cache.x, cache.y, [0.9, 0.8, 0.4], false);
       Audio.pickup();
     }
   }
@@ -338,6 +360,9 @@ function interact(
       p.medkits -= 1;
       mate.hp = Math.min(mate.maxHp, mate.hp + CONFIG.heal.amount);
       p.repairCd = CONFIG.siege.repairCd;
+      p.swingT = CONFIG.actionFeel.swingDecay;
+      p.swingKind = "mateHeal";
+      fxMote(state, mate.x, mate.y, [0.3, 1, 0.45]);
       Audio.heal();
     } else if (bar && p.money >= CONFIG.siege.repairCost) {
       // self-funded repair — the wall shelters the repairer too (private benefit, no
@@ -348,6 +373,15 @@ function interact(
       const restored = bar.hp - before;
       p.money += Math.round(CONFIG.econ.repairReward * (restored / CONFIG.siege.repairAmount));
       p.repairCd = CONFIG.siege.repairCd;
+      p.swingT = CONFIG.actionFeel.swingDecay;
+      p.swingKind = "repair";
+      const mid = segMid(bar.x1, bar.y1, bar.x2, bar.y2);
+      fxImpact(state, mid.x, mid.y, p.aim, [0.85, 0.7, 0.35]); // sparks (intensity 0 = wall-spark look)
+      fxDust(state, mid.x, mid.y, CONFIG.actionFeel.repair.dust);
+      // completion: barricade just reached full → burst on the segment midpoint
+      if (before < bar.maxHp && bar.hp >= bar.maxHp) {
+        fxActionBurst(state, mid.x, mid.y, [0.8, 0.7, 0.3], false);
+      }
       Audio.repair();
     }
   }

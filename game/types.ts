@@ -147,6 +147,12 @@ export interface Player {
   healT: number;
   /** cooldown between barricade repair presses */
   repairCd: number;
+  /** decaying "swing" ramp (seconds) for discrete held-E actions (repair/mate-heal): set to
+   *  CONFIG.actionFeel.swingDecay on each press, decays to 0. Drives continuous motion + net
+   *  re-derivation of an otherwise 1-tick event. Synced (u8). */
+  swingT: number;
+  /** which discrete action the current swing is (drives prop/particle choice). Synced (2 bits). */
+  swingKind: "" | "repair" | "mateHeal";
   /** credits this player has earned/banked this run (co-op individual wallet; in SP this is
    *  the whole economy). Spent on their own weapon upgrades, perks, repairs, deployables. */
   money: number;

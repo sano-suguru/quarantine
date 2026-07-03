@@ -188,9 +188,9 @@ describe("sysPlayer — move-weight ramp & weapon switch", () => {
 });
 
 /**
- * Night cache looting: the day-only gate is gone (searching used to silently no-op at night).
- * Night searches take CONFIG.cache.nightSearchMul× longer, and a night-searcher is flagged
- * (p.searching) so sysAI can lure nearby zombies toward the rummaging noise.
+ * Cache search: works day and night. Night searches take CONFIG.cache.nightSearchMul× longer.
+ * p.searching is set in both phases (drives the rummage motion draw); the sysAI lure is
+ * gated to night in ai.ts so day scavenging never gains a zombie lure.
  */
 describe("night cache search (slow + lure flag)", () => {
   it("effectiveSearchTime is longer at night by nightSearchMul", () => {
@@ -228,14 +228,14 @@ describe("night cache search (slow + lure flag)", () => {
     expect(cache.looted).toBe(true);
   });
 
-  it("flags the player as searching at night, not during the day", () => {
+  it("flags the player as searching both at night and during the day (drives rummage motion)", () => {
     const night = searcherOnCache("night");
     sysPlayer(night.s, 0.05);
     expect(night.p.searching).toBe(true);
 
     const day = searcherOnCache("day");
     sysPlayer(day.s, 0.05);
-    expect(day.p.searching).toBe(false);
+    expect(day.p.searching).toBe(true);
   });
 
   it("does not flag a moving player at night (search requires standing still)", () => {

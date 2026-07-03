@@ -90,6 +90,30 @@ export const CONFIG = {
       woundDarken: 0.18, // max darkening at 0 hp (small, so finisher targets stay visible in-cone)
     },
   },
+  // Action-feel: motion / prop / particle / payoff tuning for timed player actions.
+  // First-pass values — locked by playtest (feel-first). No magic numbers live in systems/draw.
+  actionFeel: {
+    swingDecay: 0.3, // seconds a repair/mate-heal "swing" ramp takes to fade (discrete tap → continuous)
+    lean: 6, // world-units the body leans toward the action focus at full phase
+    bob: 3, // world-units of periodic bob while an action runs
+    bobHz: 9, // bob oscillation frequency (Hz) — the "working" cadence
+    propOffset: 10, // lateral (off-hand) offset for overlay props, away from the weapon rig axis
+    heal: {
+      auraPulseHz: 2.2, // breathing rate of the heal aura
+      auraBase: 0.28, // aura alpha floor
+      auraPulse: 0.18, // aura alpha added at the top of each pulse
+      moteEveryS: 0.12, // seconds between rising heal motes
+      burst: 10, // motes in the completion burst
+    },
+    search: {
+      digHz: 6, // rummage bob frequency
+      lidRattle: 1.5, // crate-lid jitter amplitude (world units)
+      dustEveryS: 0.18, // seconds between dust puffs
+    },
+    repair: { dust: 4 }, // dust puffs per repair swing
+    revive: { auraPulseHz: 1.6, beamAlpha: 0.25 },
+    deploy: { emerge: 0.25 }, // seconds of the draw-only spawn-in scale/settle
+  },
   // drawTime (per-weapon, in WeaponDef) is the fire-lockout + lower→raise draw beat after a swap,
   // paired with the weapon_switch SFX + move ramp. Tune per weapon by playtest, not clip length.
   player: { radius: 16, speed: 200, maxHp: 100, moveRampRate: 1.5 },
