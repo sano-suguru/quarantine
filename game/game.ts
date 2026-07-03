@@ -25,6 +25,7 @@ import { Renderer, SHAPE } from "./engine/renderer";
 import { addSalvage, buyUnlock, loadMeta } from "./meta";
 import { Net } from "./net/net";
 import { newState } from "./state";
+import { deriveActionChannel } from "./systems/actionFeel";
 import { sysAI } from "./systems/ai";
 import { sysAssist } from "./systems/assist";
 import { sysBullets } from "./systems/bullets";
@@ -693,10 +694,9 @@ function drawWeaponRig(
   py: number,
   aim: number,
   wd: WeaponDef,
-  switchT: number,
+  rigPhase: number, // 0 = lowered/mid-action, 1 = ready
 ): void {
-  const raise = switchT > 0 ? 1 - switchT / wd.drawTime : 1; // 0 = just switched, 1 = ready
-  const e = 1 - (1 - raise) * (1 - raise); // ease-out
+  const e = 1 - (1 - rigPhase) * (1 - rigPhase);
   const DOWN = 0.6; // rad the rig dips off-aim mid-draw (sign may need flipping in dev — Y is flipped)
   const ang = aim + (1 - e) * DOWN; // dip while drawing → align when ready
   const fwdScale = 0.3 + 0.7 * e; // pulled in → full extension
@@ -712,6 +712,7 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
   const col = isLocal
     ? TOXIC
     : (PLAYER_COLORS[pl.id % PLAYER_COLORS.length] as [number, number, number]);
+  const ch = deriveActionChannel(pl, state);
   const px = pl.x + pl.recoilX;
   const py = pl.y + pl.recoilY;
   const layer = R.spriteLayer("player");
@@ -732,7 +733,11 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
   }
   if (pl.hitFlash > 0) R.glow(px, py, pl.r * 3.4, 1, 0.2, 0.2, Math.min(0.9, pl.hitFlash * 3));
   const heldWd = WEAPONS[pl.weapon];
-  if (heldWd) drawWeaponRig(R, px, py, pl.aim, heldWd, pl.switchT);
+  if (heldWd) {
+    // reload and switch both lower→raise the rig; other kinds leave it ready (phase 1)
+    const rigPhase = ch.kind === "switch" || ch.kind === "reload" ? ch.phase : 1;
+    drawWeaponRig(R, px, py, pl.aim, heldWd, rigPhase);
+  }
   if (pl.muzzle > 0) {
     const wd = WEAPONS[pl.weapon];
     if (wd?.melee) {

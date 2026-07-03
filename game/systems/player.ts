@@ -46,7 +46,7 @@ import { ammoTransfer } from "./ammo";
 import { killZombie } from "./bullets";
 import { lootCache } from "./caches";
 import { applyFireFeel, decayFeelTimers } from "./feel";
-import { fxImpact, goreIntensity } from "./fx";
+import { fxDust, fxImpact, goreIntensity } from "./fx";
 
 /** Seconds of standing-still searching needed to loot a cache. Night searches take longer
  *  (CONFIG.cache.nightSearchMul) — the extra exposure is the risk of looting during the horde. */
@@ -141,6 +141,7 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
     if ((inp.reload || p.ammo <= 0) && p.reloadT <= 0 && p.ammo < wd.mag && reserve > 0) {
       p.reloadT = wd.reload;
       Audio.reload();
+      fxDust(state, p.x - Math.cos(p.aim) * p.r, p.y - Math.sin(p.aim) * p.r, 2);
     }
     if (p.reloadT > 0) {
       p.reloadT -= dt;
