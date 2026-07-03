@@ -17,6 +17,7 @@
 - **Any wire-format change bumps `PROTOCOL_VERSION`** (`game/net/net.ts`, currently `13`) and extends the snapshot round-trip test.
 - **Swap-and-pop** array removal; **world-space** coords; tune via `CONFIG`, not systems.
 - All tuning lives under a new `CONFIG.actionFeel` tree — no magic numbers in systems or draw.
+- **Line numbers are a snapshot from plan-authoring time.** Several tasks edit the same regions of `game.ts`/`player.ts`/`client.ts` in sequence, so later tasks' cited line numbers *will* drift as earlier tasks land. Locate every edit by its quoted **anchor text** (or `grep`), never by raw line number.
 
 ## File Structure
 
@@ -471,6 +472,8 @@ git commit -m "feat(fx): mote/dust/action-burst emitters for action feel"
 
 `game/net/net.ts`: change `export const PROTOCOL_VERSION = 13;` → `14`.
 
+> **Note on ordering:** the `SnapPlayer` interface + `captureSnapshot`/`applySnapshot` objects are name-keyed, so field *position* there is free ("after assistT" is just for readability). But the **encode/decode byte stream is positional** — the swing byte must be written and read at the *same* offset. This plan puts it **immediately after the flag byte** (`snapshot.ts:573` encode / `:697` decode), which is the last field in the player record. Keep encode and decode in lockstep.
+
 - [ ] **Step 2: Add fields to `SnapPlayer`**
 
 In `snapshot.ts` `interface SnapPlayer`, after `assistT: number;`:
@@ -521,17 +524,17 @@ Then add `searching, swingT, swingKind` to the `players.push({ ... })` object li
     p.swingKind = sp.swingKind;
 ```
 
-- [ ] **Step 7: Decay `swingT` host-side.** In `sysPlayerOne` (`player.ts`), alongside the other timer decays (near `if (p.switchT > 0) p.switchT -= dt;`):
+- [ ] **Step 7: Decay `swingT` host-side.** In `sysPlayerOne` (`player.ts`), alongside the other timer decays (near `if (p.switchT > 0) p.switchT -= dt;`), use the tested pure helper so it isn't dead code:
 
 ```ts
-  p.swingT = Math.max(0, p.swingT - dt);
+  p.swingT = decaySwing(p.swingT, dt);
 ```
 
-(Import is not needed; `decaySwing` is equivalent but keep the sim dependency-free here.)
+Add the import to `player.ts`: `import { decaySwing } from "./actionFeel";`. (Pure `max(0, x - dt)` — deterministic, so single-player sim stays byte-identical.)
 
 - [ ] **Step 8: Write the round-trip test**
 
-Add to `game/net/snapshot.test.ts` (create the file with the standard imports if it doesn't exist — mirror an existing test's `encode(captureSnapshot(state))` → `decode` shape):
+`game/net/snapshot.test.ts` **already exists** (imports `captureSnapshot, decode, encode` from `./snapshot`, `newState` from `../state`). It does **not** import `CONFIG` — add `import { CONFIG } from "../config";` at the top. Then add this `it(...)` inside the existing top-level `describe`:
 
 ```ts
 it("round-trips searching / swingT / swingKind", () => {
@@ -720,7 +723,7 @@ Add `fxMote, fxActionBurst` to the `fx` import in `player.ts`.
 
 - [ ] **Step 4: Client re-derives the heal completion (co-op)**
 
-In `client.ts` `effects`, in the players loop (after the `hitFlash` block, ~line 275-278), add a heal-complete edge for remote players (local player already predicted it host-side... but the client doesn't run the host sim; so re-derive for ALL players from the `healT` edge):
+In `client.ts` `effects`, in the players loop (after the `hitFlash` block, ~line 275-278), add a heal-complete edge. The client never runs the sim, so `healT` for **every** player (including the local one) arrives only via the snapshot (`applySnapshot` sets `p.healT = sp.healT`; the client does *not* predict `healT`). So re-derive the burst from the synced `healT` edge for all players:
 
 ```ts
       if (p && p.healT > 0.05 && pl.healT <= 0.05) {
@@ -730,6 +733,8 @@ In `client.ts` `effects`, in the players loop (after the `hitFlash` block, ~line
 ```
 
 Import `fxActionBurst` in `client.ts` (it already imports from `../systems/fx`).
+
+> **Known limitation (accepted):** on a co-op **client**, the local player's own heal-complete chime/burst is re-derived from the snapshot, so it lags by ~`interpDelay` (≈100 ms) — the spec's "predict your own payoff immediately" isn't achieved for a client's self-heal (there's no local `healT` prediction path). This is accepted: the original complaint and the primary target is **single-player**, where heal fires host-side in `player.ts` immediately (Task 7 Step 3); co-op **host** is likewise immediate. Only a co-op client's *own* heal is slightly late. Predicting client-side `healT` is out of scope (would add a prediction path in `localInput`/`client.ts`); revisit only if it feels wrong in playtest.
 
 - [ ] **Step 5: Typecheck + lint + tests**
 
@@ -783,7 +788,39 @@ In `player.ts` `interact()`, the SEARCH block currently sets `p.searching = true
   }
 ```
 
-> **Preserve the AI lure:** `sysAI` (`ai.ts:121`) reads `p.searching` to surge zombies. That lure must stay night-only. Because `searching` is now set in all phases, gate the lure inside `sysAI` on `state.phase === "night"` if it isn't already. Verify `ai.ts:118-125`: if the surge is unconditional on `searching`, wrap it with `if (state.phase === "night" && pl.searching)`. (Single-player behavior must be unchanged at night and gains no day lure.)
+> **REQUIRED — gate the AI lure to night (single-player byte-identity):** `sysAI` reads `pl.searching` to surge nearby zombies (the "noise" lure). Verified: `ai.ts:119-128` has **no independent night gate** — the lure is night-only *today only because* `searching` is set night-only. Since this task sets `searching` in all phases, the lure loop **must** be wrapped in a night check, or the day scavenge phase gains a lure it never had (a feel change + a `single-player byte-for-byte unchanged` violation). This is mandatory, not conditional. Change `ai.ts:119-128` from:
+>
+> ```ts
+>     let lureMul = 0;
+>     for (const pl of state.players) {
+>       if (!pl.searching) continue;
+>       const lx = pl.x - z.x;
+>       const ly = pl.y - z.y;
+>       if (lx * lx + ly * ly <= lureR2) {
+>         lureMul = CONFIG.cache.lureSpeedSurge;
+>         break;
+>       }
+>     }
+> ```
+>
+> to (add the outer `if`):
+>
+> ```ts
+>     let lureMul = 0;
+>     if (state.phase === "night") {
+>       for (const pl of state.players) {
+>         if (!pl.searching) continue;
+>         const lx = pl.x - z.x;
+>         const ly = pl.y - z.y;
+>         if (lx * lx + ly * ly <= lureR2) {
+>           lureMul = CONFIG.cache.lureSpeedSurge;
+>           break;
+>         }
+>       }
+>     }
+> ```
+>
+> Verify no other reader of `pl.searching` exists that assumes night (`grep -rn "\.searching" game/` — expect only `sysAI` and the `player.ts` set/reset). (Single-player at night is unchanged; day gains no lure.)
 
 `p.searching` is reset each tick at the top of `sysPlayerOne` (`p.searching = false`) and set here — that logic already exists; confirm it still runs for the day path.
 
@@ -1103,20 +1140,31 @@ At module scope in `game.ts`, add:
 const deployableSeen = new Map<number, number>();
 ```
 
-In `drawDeployables`, at the top of the per-deployable loop, compute an emerge factor and scale the draw:
+**Do NOT scale the body geometry.** `drawDeployables` (game.ts:836-922) draws each unit as many parts at **absolute coordinates** (`d.x + Math.cos(d.aim) * arm`, `d.x + sx * 8`, `bx + px * 3`, …). Multiplying only the *size* args would shrink parts without shrinking their offsets → a "disassembled" scatter, not a scale-in. Instead the emerge is an **overlay only**: an expanding landing ring + a fading glow flash on top of the normally-drawn body. This matches the spec ("rises/settles with a landing ring + dust") without touching the multi-part geometry.
+
+In `drawDeployables`, at the top of the per-deployable loop (right after `const [r, g, b] = def.color;`), compute the emerge age and draw the overlay:
 
 ```ts
-  const emergeDur = CONFIG.actionFeel.deploy.emerge;
-  for (const d of state.deployables) {
     if (!deployableSeen.has(d.id)) deployableSeen.set(d.id, state.time);
     const age = state.time - (deployableSeen.get(d.id) ?? state.time);
-    const emerge = Math.min(1, age / emergeDur); // 0..1 scale-in
-    // ... use `emerge` to scale the body draw (multiply the sprite/shape size by (0.4 + 0.6*emerge))
-    // and add a one-shot landing ring while emerge < 1:
-    if (emerge < 1) R.ring(d.x, d.y, 30 * (1 - emerge) + 8, 0.7, 0.8, 0.5, 0.5 * (1 - emerge));
+    const emerge = Math.min(1, age / CONFIG.actionFeel.deploy.emerge); // 0..1
+    if (emerge < 1) {
+      const k = 1 - emerge;
+      R.ring(d.x, d.y, 30 * k + 8, r, g, b, 0.6 * k); // settling landing ring
+      R.glow(d.x, d.y, 24, r, g, b, 0.5 * k); // spawn-in flash, fades to nothing
+    }
 ```
 
-Apply `(0.4 + 0.6 * emerge)` to the size arguments of the deployable body draw calls in this function. (Prune stale ids opportunistically: `if (deployableSeen.size > 64) { for (const id of deployableSeen.keys()) if (!state.deployables.some((d) => d.id === id)) deployableSeen.delete(id); }` at the end of the function.)
+The body draw below is unchanged (drawn at full immediately — the overlay reads as the settle). Prune stale ids at the end of the function so the map can't grow unbounded across a long run:
+
+```ts
+  if (deployableSeen.size > 64) {
+    const live = new Set(state.deployables.map((d) => d.id));
+    for (const id of deployableSeen.keys()) if (!live.has(id)) deployableSeen.delete(id);
+  }
+```
+
+(Place the prune after the `for` loop, before the function's closing brace.)
 
 - [ ] **Step 2: Spawn burst on a new deployable id (host + client)**
 
