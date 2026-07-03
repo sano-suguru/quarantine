@@ -68,8 +68,7 @@ export function deriveActionChannel(p: Player, _state: State): ActionChannel {
     return { kind: "reload", phase: 1 - p.reloadT / wd.reload };
   }
   if (p.switchT > 0) {
-    const draw = wd.drawTime || 0.5;
-    return { kind: "switch", phase: 1 - p.switchT / draw };
+    return { kind: "switch", phase: 1 - p.switchT / wd.drawTime };
   }
   if (p.swingT > 0 && p.swingKind) {
     return { kind: p.swingKind, phase: p.swingT / CONFIG.actionFeel.swingDecay };
