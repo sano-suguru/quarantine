@@ -643,31 +643,25 @@ export function draw(): void {
   R.flush(camX, camY);
 }
 
-/** Draw the held-weapon silhouette from its data-driven `viz` parts, posed by the draw-anim timer.
- *  Generic per-shape dispatch only — no per-weapon branches (CLAUDE.md). The whole rig dips toward
- *  the body and dims at switch start, then extends out and aligns to aim as switchT → 0. */
-function drawWeaponRig(
+/** Render a viz-part list (rect/circle/ring/hex/tri) at an origin, posed along `ang`. Shared by
+ *  the weapon rig and overlay props — dispatch is shared, pose (origin/angle) is the caller's. */
+function drawRigParts(
   R: typeof Renderer,
-  px: number,
-  py: number,
-  aim: number,
-  wd: WeaponDef,
-  switchT: number,
+  parts: WeaponDef["viz"],
+  ox: number,
+  oy: number,
+  ang: number,
+  aMul: number,
+  fwdScale: number,
 ): void {
-  const raise = switchT > 0 ? 1 - switchT / wd.drawTime : 1; // 0 = just switched, 1 = ready
-  const e = 1 - (1 - raise) * (1 - raise); // ease-out
-  const DOWN = 0.6; // rad the rig dips off-aim mid-draw (sign may need flipping in dev — Y is flipped)
-  const ang = aim + (1 - e) * DOWN; // dip while drawing → align when ready
-  const fwdScale = 0.3 + 0.7 * e; // pulled in → full extension
-  const aMul = 0.6 + 0.4 * e; // dimmed → full
   const ca = Math.cos(ang);
   const sa = Math.sin(ang);
-  for (const part of wd.viz) {
+  for (const part of parts) {
     const fwd = part.dx * fwdScale;
     const lat = part.dy;
-    const wx = px + ca * fwd - sa * lat;
-    const wy = py + sa * fwd + ca * lat;
-    const [cr, cg, cb] = part.color ?? wd.color;
+    const wx = ox + ca * fwd - sa * lat;
+    const wy = oy + sa * fwd + ca * lat;
+    const [cr, cg, cb] = part.color ?? [1, 1, 1];
     const a = (part.alpha ?? 1) * aMul;
     const rot = ang + part.rot;
     switch (part.shape) {
@@ -688,6 +682,29 @@ function drawWeaponRig(
         break;
     }
   }
+}
+
+/** Draw the held-weapon silhouette from its data-driven `viz` parts, posed by the draw-anim timer.
+ *  Generic per-shape dispatch only — no per-weapon branches (CLAUDE.md). The whole rig dips toward
+ *  the body and dims at switch start, then extends out and aligns to aim as switchT → 0. */
+function drawWeaponRig(
+  R: typeof Renderer,
+  px: number,
+  py: number,
+  aim: number,
+  wd: WeaponDef,
+  switchT: number,
+): void {
+  const raise = switchT > 0 ? 1 - switchT / wd.drawTime : 1; // 0 = just switched, 1 = ready
+  const e = 1 - (1 - raise) * (1 - raise); // ease-out
+  const DOWN = 0.6; // rad the rig dips off-aim mid-draw (sign may need flipping in dev — Y is flipped)
+  const ang = aim + (1 - e) * DOWN; // dip while drawing → align when ready
+  const fwdScale = 0.3 + 0.7 * e; // pulled in → full extension
+  const aMul = 0.6 + 0.4 * e; // dimmed → full
+  // parts default to wd.color when they carry no per-part color (drawRigParts falls back to
+  // white, so pre-fill the weapon color here to preserve the original look)
+  const parts = wd.viz.map((p) => ({ ...p, color: p.color ?? wd.color }));
+  drawRigParts(R, parts, px, py, ang, aMul, fwdScale);
 }
 
 /** draw one player: body, gun, muzzle/reload/heal feedback; teammates get an overhead HP bar */
