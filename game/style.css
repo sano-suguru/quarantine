@@ -21,6 +21,8 @@ body {
   color: var(--ink);
   -webkit-user-select: none;
   user-select: none;
+  /* Reveal after the critical inline boot style hid <body> to avoid the dev FOUC (see index.html). */
+  visibility: visible;
 }
 #game {
   display: block;
