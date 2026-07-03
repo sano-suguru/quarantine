@@ -7,8 +7,7 @@ import { ENEMY_TYPES } from "./enemies";
 describe("enemy sprite coverage", () => {
   for (const [name, e] of Object.entries(ENEMY_TYPES)) {
     it(`enemy "${name}" (sprite "${e.sprite}") resolves to a packed atlas index`, () => {
-      expect(e.sprite).toBeDefined();
-      expect(spriteIndex(e.sprite!)).toBeGreaterThanOrEqual(0);
+      expect(spriteIndex(e.sprite)).toBeGreaterThanOrEqual(0);
     });
   }
 });
