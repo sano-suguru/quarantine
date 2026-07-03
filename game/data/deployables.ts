@@ -170,5 +170,5 @@ export function placeDeployable(state: State, defId: string, x: number, y: numbe
     d.emitAt = (Math.floor(state.time / def.emitter.interval) + 1) * def.emitter.interval;
   if (def.destructible) d.hp = def.destructible.maxHp;
   state.deployables.push(d);
-  fxActionBurst(state, x, y, (def.color ?? [0.6, 0.6, 0.6]) as [number, number, number], false);
+  fxActionBurst(state, x, y, def.color, false);
 }
