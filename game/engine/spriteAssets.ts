@@ -32,3 +32,16 @@ export const REQUIRED_SPRITES = ["player", "zombie", "runner", "brute"] as const
 export function spriteIndex(key: string): number {
   return INDEX.get(key) ?? -1;
 }
+
+/**
+ * Required sprites that are NOT usable yet: either missing from the glob (spriteIndex < 0) or
+ * their atlas texels haven't uploaded (`isReady(index)` false). Empty = all required sprites ready.
+ * The renderer's spritesReady() gate uses this so a broken/incomplete required set fails loud
+ * instead of drawing an invisible player/enemy.
+ */
+export function unreadyRequiredSprites(isReady: (index: number) => boolean): string[] {
+  return REQUIRED_SPRITES.filter((key) => {
+    const i = spriteIndex(key);
+    return i < 0 || !isReady(i);
+  });
+}

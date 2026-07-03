@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { REQUIRED_SPRITES, spriteIndex } from "./spriteAssets";
+import { REQUIRED_SPRITES, spriteIndex, unreadyRequiredSprites } from "./spriteAssets";
 
 // Build-time guard: the eager import.meta.glob resolves the sprite set at bundle time, so a
 // missing/renamed PNG silently drops its key (spriteIndex → -1) instead of erroring. The player
@@ -11,4 +11,19 @@ describe("required sprite assets", () => {
       expect(spriteIndex(key)).toBeGreaterThanOrEqual(0);
     });
   }
+});
+
+describe("unreadyRequiredSprites", () => {
+  it("returns empty when every required index reports ready", () => {
+    expect(unreadyRequiredSprites(() => true)).toEqual([]);
+  });
+
+  it("returns every required key when none report ready", () => {
+    expect(unreadyRequiredSprites(() => false)).toEqual([...REQUIRED_SPRITES]);
+  });
+
+  it("returns only the keys whose index is not ready", () => {
+    const bruteIdx = spriteIndex("brute");
+    expect(unreadyRequiredSprites((i) => i !== bruteIdx)).toEqual(["brute"]);
+  });
 });
