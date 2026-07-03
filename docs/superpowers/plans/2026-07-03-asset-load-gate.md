@@ -48,21 +48,64 @@
 **Interfaces:**
 - Produces: `REQUIRED_SAMPLE_KEYS: readonly string[]`, `sampleVariantCount(key: string): number`.
 
+**Note:** A parallel drift guard already exists at `game/data/sfx.test.ts` (checks the `SFX` prompt manifest ↔ code ↔ files). The runtime deliberately does NOT import that manifest (keeps prompts out of the bundle), so `audioAssets.ts` hardcodes `REQUIRED_SAMPLE_KEYS`. The test below adds an **equivalence** assertion so the hardcoded list can't drift from the dynamically-derived set when a weapon/enemy is added.
+
 - [ ] **Step 1: Write the failing test**
 
 Create `game/engine/audioAssets.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest";
+import { ENEMY_TYPES } from "../data/enemies";
+import { WEAPON_ORDER, WEAPONS } from "../data/weapons";
 import { REQUIRED_SAMPLE_KEYS, sampleVariantCount } from "./audioAssets";
 
-// Build-time guard: the eager import.meta.glob resolves the sample set at bundle time, so a
-// dropped/renamed MP3 silently disappears from the registry (sampleVariantCount → 0) instead of
-// erroring. audio.ts has no synth fallback, so this test is the detection mechanism — it fails
-// CI/pre-push if a required sound is gone, rather than shipping a silent one-shot.
+// Fixed (non-dynamic) one-shot/loop keys audio.ts always plays. Mirrors game/data/sfx.test.ts so
+// the two guards agree on the required set.
+const FIXED_KEYS = [
+  "hit",
+  "kill_big",
+  "kill_small",
+  "reload",
+  "reload_done",
+  "weapon_switch",
+  "dry_fire",
+  "hurt",
+  "pickup",
+  "heal",
+  "repair",
+  "click",
+  "light_die",
+  "dawn",
+  "wave_start",
+  "game_over",
+  "ui_select",
+  "ui_reject",
+  "screech",
+  "search",
+  "amb_day",
+  "amb_night",
+];
+
+// Rebuild the full required set from the SAME data the runtime uses (weapons → shot_<gun>/melee,
+// enemies → groan_<type>), so REQUIRED_SAMPLE_KEYS can't silently drift when content is added.
+const derived = new Set<string>(FIXED_KEYS);
+for (const id of WEAPON_ORDER) {
+  const w = WEAPONS[id];
+  if (!w) continue;
+  derived.add(w.melee ? "melee" : `shot_${id}`);
+}
+for (const type of Object.keys(ENEMY_TYPES)) derived.add(`groan_${type}`);
+
 describe("required sample assets", () => {
+  it("REQUIRED_SAMPLE_KEYS equals the keys the code actually plays", () => {
+    expect(new Set(REQUIRED_SAMPLE_KEYS)).toEqual(derived);
+  });
+
+  // audio.ts has no synth fallback, so a dropped/renamed MP3 (registry variant count → 0) must fail
+  // the build here rather than ship a silent one-shot.
   for (const key of REQUIRED_SAMPLE_KEYS) {
-    it(`"${key}" has at least one variant in the glob`, () => {
+    it(`"${key}" has at least one variant in the registry`, () => {
       expect(sampleVariantCount(key)).toBeGreaterThanOrEqual(1);
     });
   }
@@ -130,7 +173,7 @@ export function sampleVariantCount(key: string): number {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `bun run test -- game/engine/audioAssets.test.ts`
-Expected: PASS — 32 assertions green (every required key maps to ≥1 file under `game/audio/sfx/`).
+Expected: PASS — the equivalence assertion plus 32 registry assertions green (every required key maps to ≥1 file under `game/audio/sfx/` and the hardcoded list matches the derived set).
 
 - [ ] **Step 5: Commit**
 
@@ -221,17 +264,22 @@ export function loadSamples(ctx: AudioContext, destination: AudioNode): void {
   dest = destination;
   const tasks: Promise<void>[] = [];
   for (const [key, list] of registry) {
-    const decode = Promise.all(
-      list.map((url) =>
-        fetch(url)
-          .then((r) => r.arrayBuffer())
-          .then((ab) => ctx.decodeAudioData(ab)),
-      ),
-    ).then((bufs) => {
-      buffers.set(key, bufs);
-    });
-    // Required keys must decode (reject on failure); a non-required extra may still fail silently.
-    tasks.push(REQUIRED_SAMPLE_KEYS.includes(key) ? decode : decode.catch(() => {}));
+    tasks.push(
+      Promise.all(
+        list.map((url) =>
+          fetch(url)
+            .then((r) => r.arrayBuffer())
+            .then((ab) => ctx.decodeAudioData(ab)),
+        ),
+      )
+        .then((bufs) => {
+          buffers.set(key, bufs);
+        })
+        // Swallow per-key failures here (required OR not); required-ness is enforced by the single
+        // missing-check below, so the thrown error can list the FULL set of unready required keys
+        // rather than aborting on the first rejection. Mirrors renderer.loadSprites' allSettled path.
+        .catch(() => {}),
+    );
   }
   loadPromise = Promise.all(tasks).then(() => {
     const missing = missingRequiredSamples((k) => (buffers.get(k)?.length ?? 0) > 0);
@@ -410,6 +458,9 @@ let spritesReadyPromise: Promise<void> | null = null;
 
 ```ts
   spritesReadyPromise = loadSprites();
+  // Log boot asset failures for diagnostics AND mark the rejection handled so it never surfaces as
+  // an unhandledrejection between commits; main() separately surfaces it in the #loading overlay.
+  void spritesReadyPromise.catch((e) => console.error("[sprites]", e));
 ```
 
 (d) Replace the `loadSprites` early-return + validation. Change line 337 from:
@@ -539,8 +590,12 @@ Append to `game/style.css` (after the existing `.overlay` / `@keyframes fadeIn` 
 
 ```css
 /* Load gate: fully opaque (unlike .overlay's semi-transparent gradient) with NO fade-in, so the
-   canvas is never revealed mid-load. Paired with main.ts's draw-skip, no broken frame shows. */
+   canvas is never revealed mid-load. Paired with main.ts's draw-skip, no broken frame shows. The
+   raised z-index keeps it ABOVE the other overlays — critical for the error state on an early sync
+   boot failure (e.g. no WebGL2), where #start is still in the DOM after #loading and would
+   otherwise paint on top at the shared z-index: 6. */
 #loading {
+  z-index: 20;
   background: #070a08;
   animation: none;
 }
@@ -824,4 +879,4 @@ Expected: succeeds (`dist/` produced).
 
 **2. Placeholder scan:** No TBD/TODO/"add error handling"/"similar to Task N"/"write tests for the above". Every code step contains the actual code.
 
-**3. Type consistency:** `spritesReady()`/`whenSamplesReady()`/`unreadyRequiredSprites()`/`missingRequiredSamples()`/`sampleVariantCount()`/`REQUIRED_SAMPLE_KEYS`/`showLoadError()`/`startingSingleRun`/`spritesLoaded` are named identically across the tasks that define and consume them. `REQUIRED_SAMPLE_KEYS` typed `readonly string[]` so `.includes(key: string)` type-checks under strict.
+**3. Type consistency:** `spritesReady()`/`whenSamplesReady()`/`unreadyRequiredSprites()`/`missingRequiredSamples()`/`sampleVariantCount()`/`REQUIRED_SAMPLE_KEYS`/`showLoadError()`/`startingSingleRun`/`spritesLoaded` are named identically across the tasks that define and consume them. `REQUIRED_SAMPLE_KEYS` typed `readonly string[]`; `missingRequiredSamples` filters it. No `.includes` on a literal tuple (avoids the strict readonly-tuple pitfall). The `audioAssets.test.ts` equivalence assertion guards `REQUIRED_SAMPLE_KEYS` against drift from the dynamic weapon/enemy-derived set.
