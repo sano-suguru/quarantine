@@ -562,6 +562,35 @@ body {
 .overlay.hidden {
   display: none;
 }
+
+/* Load gate: fully opaque (unlike .overlay's semi-transparent gradient) with NO fade-in, so the
+   canvas is never revealed mid-load. Paired with main.ts's draw-skip, no broken frame shows. The
+   raised z-index keeps it ABOVE the other overlays — critical for the error state on an early sync
+   boot failure (e.g. no WebGL2), where #start is still in the DOM after #loading and would
+   otherwise paint on top at the shared z-index: 6. */
+#loading {
+  z-index: 20;
+  background: #070a08;
+  animation: none;
+}
+.loading-label {
+  color: var(--toxic);
+  font:
+    600 14px / 1.4 ui-monospace,
+    "SFMono-Regular",
+    Menlo,
+    monospace;
+  letter-spacing: 0.32em;
+  opacity: 0.85;
+}
+.loading-error {
+  margin-top: 14px;
+  max-width: 320px;
+  color: #ff6b6b;
+  font:
+    500 13px / 1.5 system-ui,
+    sans-serif;
+}
 #lobby {
   justify-content: flex-start;
   box-sizing: border-box;
