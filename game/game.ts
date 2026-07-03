@@ -510,6 +510,8 @@ export function draw(): void {
     const a = pt.life / pt.maxLife;
     if (pt.kind === "shard")
       R.rect(pt.x, pt.y, pt.r * 2, pt.r, pt.rot, pt.color[0], pt.color[1], pt.color[2], a);
+    else if (pt.kind === "smoke")
+      R.circle(pt.x, pt.y, pt.r, pt.color[0], pt.color[1], pt.color[2], a * 0.5);
   }
 
   // --- zombies ---
@@ -705,7 +707,7 @@ function drawRigParts(
 
 /** Draw the held-weapon silhouette from its data-driven `viz` parts, posed by the draw-anim timer.
  *  Generic per-shape dispatch only — no per-weapon branches (CLAUDE.md). The whole rig dips toward
- *  the body and dims at switch start, then extends out and aligns to aim as switchT → 0. */
+ *  the body mid-action, then extends and aligns to aim as rigPhase → 1 (reload or switch). */
 function drawWeaponRig(
   R: typeof Renderer,
   px: number,
@@ -802,6 +804,8 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
     drawRigParts(R, MEDKIT_PROP, ox, oy, pl.aim, 1, 1);
     R.rect(pl.x, pl.y - pl.r - 12, 34 * prog, 4, 0, 0.3, 1, 0.45, 1);
   }
+  // swing prop (repair=tool, mateHeal=medkit). ch.kind is never "mateHeal" while healT>0
+  // (deriveActionChannel returns "heal"), so this never double-draws the heal prop.
   if (ch.kind === "repair" || ch.kind === "mateHeal") {
     const af = CONFIG.actionFeel;
     const ox = px - Math.sin(pl.aim) * af.propOffset;

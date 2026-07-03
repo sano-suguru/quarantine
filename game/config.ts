@@ -110,7 +110,7 @@ export const CONFIG = {
       lidRattle: 1.5, // crate-lid jitter amplitude (world units)
       dustEveryS: 0.18, // seconds between dust puffs
     },
-    repair: { sparkEveryS: 0.0, dust: 4 }, // sparks emitted per swing edge; dust puffs per swing
+    repair: { dust: 4 }, // dust puffs per repair swing
     revive: { auraPulseHz: 1.6, beamAlpha: 0.25 },
     deploy: { emerge: 0.25 }, // seconds of the draw-only spawn-in scale/settle
   },

@@ -283,7 +283,7 @@ export class Client {
       if (p && p.hp <= 0 && pl.hp > 0) {
         fxActionBurst(st, pl.x, pl.y, [0.4, 1, 0.6], true);
       }
-      if (p && pl.hp > p.hp + 1 && p.hp > 0 && pl.hp < pl.maxHp + 1) {
+      if (p && pl.hp > p.hp + 1 && p.hp > 0 && pl.hp < pl.maxHp + 1 && pl.healT <= 0.05) {
         fxMote(st, pl.x, pl.y, [0.3, 1, 0.45]);
       }
     }
