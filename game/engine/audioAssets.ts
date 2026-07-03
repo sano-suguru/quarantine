@@ -43,6 +43,53 @@ const registry = new Map<string, string[]>();
   }
 }
 
+/**
+ * Samples the game hard-depends on. audio.ts plays these one-shots/loops with NO synth fallback,
+ * so a missing/renamed MP3 must fail the build (audioAssets.test.ts) rather than play silence.
+ * Covers the dynamic families explicitly: shot_<gun> for each firing weapon (knife is melee),
+ * groan_<walker|runner|brute>, kill_big/kill_small, the loops search/amb_day/amb_night, plus the
+ * flat one-shot keys.
+ */
+export const REQUIRED_SAMPLE_KEYS: readonly string[] = [
+  "shot_pistol",
+  "shot_smg",
+  "shot_shotgun",
+  "shot_rifle",
+  "shot_lmg",
+  "shot_magnum",
+  "groan_walker",
+  "groan_runner",
+  "groan_brute",
+  "kill_big",
+  "kill_small",
+  "search",
+  "amb_day",
+  "amb_night",
+  "hit",
+  "reload",
+  "reload_done",
+  "weapon_switch",
+  "hurt",
+  "dry_fire",
+  "pickup",
+  "melee",
+  "heal",
+  "click",
+  "dawn",
+  "repair",
+  "ui_select",
+  "ui_reject",
+  "wave_start",
+  "game_over",
+  "screech",
+  "light_die",
+];
+
+/** Number of decoded-able variants discovered for `key` (0 = not present in the glob). */
+export function sampleVariantCount(key: string): number {
+  return registry.get(key)?.length ?? 0;
+}
+
 // --- runtime state (set up by loadSamples; null until the first gesture) ---
 let actx: AudioContext | null = null;
 let dest: AudioNode | null = null;
