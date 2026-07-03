@@ -512,65 +512,24 @@ export function draw(): void {
     const gg = CONFIG.fx.gore;
     const dk = 1 - gg.woundDarken * wound;
 
+    // Every enemy type has a required sprite (EnemyType.sprite + the enemies.test.ts coverage
+    // guard), and the Phase-1 load gate guarantees the atlas is ready before any run draws — so
+    // there is no SDF/eyes fallback path; a valid enemy always resolves to a sprite layer.
     const spriteKey = ENEMY_TYPES[z.type]?.sprite;
     const layer = spriteKey ? R.spriteLayer(spriteKey) : -1;
     if (layer >= 0) {
-      // A textured sprite already has its own colors, so — unlike the SDF fill `col` — its tint is
-      // WHITE at full HP (true illustration), darkening toward blood only as it's wounded (so a
-      // damaged zombie reads as bloodied, not the muddy blur that multiplying by the SDF body color
-      // gave). The hit-flash is restored as a >1 overbright multiply (brightens the texel on hit) —
-      // a texture multiply can't lerp to pure white like the SDF fill, but the pop reads. Normal
-      // pass (u_emissive 0) → still black outside the cone.
+      // A textured sprite already has its own colors, so its tint is WHITE at full HP (true
+      // illustration), darkening toward blood only as it's wounded. The hit-flash is a >1
+      // overbright multiply (brightens the texel on hit). Normal pass (u_emissive 0) → still black
+      // outside the flashlight cone.
       const flash = 1 + fl * SPRITE_FLASH;
       const tr = (1 + (gg.woundTint[0] - 1) * wound) * dk * flash;
       const tg = (1 + (gg.woundTint[1] - 1) * wound) * dk * flash;
       const tb = (1 + (gg.woundTint[2] - 1) * wound) * dk * flash;
       // Rotate so the illustration's front (its bottom, local -y) points at the target from any
-      // direction — front-first approach, not crab-walk (that was +x aligned) and not the
-      // upright-billboard up/down bug. Drawn at SPRITE_SCALE× the hitbox (bare rad*2 mushes).
+      // direction — front-first approach. Drawn at SPRITE_SCALE× the hitbox (bare rad*2 mushes).
       const sz = rad * 2 * SPRITE_SCALE;
       R.spriteQuad(zx, zy, sz, sz, face + SPRITE_FACE_OFFSET, layer, tr, tg, tb, grow);
-    } else {
-      // wound tint toward blood + darken (dk), then the transient white hit-flash lerp (fl) on top.
-      const wr = (z.color[0] + (gg.woundTint[0] - z.color[0]) * wound) * dk;
-      const wg = (z.color[1] + (gg.woundTint[1] - z.color[1]) * wound) * dk;
-      const wb = (z.color[2] + (gg.woundTint[2] - z.color[2]) * wound) * dk;
-      const col: [number, number, number] = [
-        wr + (1 - wr) * fl,
-        wg + (1 - wg) * fl,
-        wb + (1 - wb) * fl,
-      ];
-      if (z.shape === SHAPE.tri) R.tri(zx, zy, rad, face, col[0], col[1], col[2], grow);
-      else if (z.shape === SHAPE.hex)
-        R.hex(zx, zy, rad, state.time * 0.6 + z.wob, col[0], col[1], col[2], grow);
-      else R.circle(zx, zy, rad, col[0], col[1], col[2], grow);
-      // dark silhouette outline
-      R.ring(zx, zy, rad * 1.04, 0.02, 0.03, 0.02, 0.7 * grow);
-    }
-
-    // glowing eyes (appear even as it emerges from the dark) — SDF bodies only. A sprite has its
-    // own face baked in; engine eyes at a fixed offset don't line up with the illustration.
-    if (layer < 0) {
-      const ex = Math.cos(face);
-      const ey = Math.sin(face);
-      const px2 = -ey;
-      const py2 = ex;
-      const eo = rad * 0.42;
-      const es = rad * 0.32;
-      for (const s of [-1, 1]) {
-        R.add(
-          zx + ex * eo + px2 * es * s,
-          zy + ey * eo + py2 * es * s,
-          rad * 0.42,
-          rad * 0.42,
-          0,
-          z.eye[0],
-          z.eye[1],
-          z.eye[2],
-          0.9,
-          SHAPE.glow,
-        );
-      }
     }
   }
 
