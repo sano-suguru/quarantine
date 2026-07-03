@@ -3,6 +3,7 @@ import {
   circlePush,
   circlePushFromSegment,
   closestPointOnSegment,
+  segMid,
   segmentHitsSegment,
 } from "./geometry";
 
@@ -15,6 +16,18 @@ describe("closestPointOnSegment", () => {
   });
   it("handles a degenerate (point) segment", () => {
     expect(closestPointOnSegment(3, 4, 1, 1, 1, 1)).toEqual({ x: 1, y: 1 });
+  });
+});
+
+describe("segMid", () => {
+  it("returns the midpoint of a segment", () => {
+    expect(segMid(0, 0, 10, 4)).toEqual({ x: 5, y: 2 });
+  });
+  it("handles negative coordinates", () => {
+    expect(segMid(-4, -2, 4, 2)).toEqual({ x: 0, y: 0 });
+  });
+  it("returns the point itself for a degenerate (zero-length) segment", () => {
+    expect(segMid(3, 7, 3, 7)).toEqual({ x: 3, y: 7 });
   });
 });
 

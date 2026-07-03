@@ -18,6 +18,11 @@ export function closestPointOnSegment(
   return { x: x1 + ex * t, y: y1 + ey * t };
 }
 
+/** Midpoint of segment AB (also the midpoint of a barricade/wall's two endpoints). */
+export function segMid(x1: number, y1: number, x2: number, y2: number): { x: number; y: number } {
+  return { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
+}
+
 /**
  * If a circle (cx,cy,r) overlaps segment `s`, return the minimum push-out vector
  * that separates them; otherwise null. Used to keep the player/zombies out of walls.
