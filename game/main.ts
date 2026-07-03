@@ -159,9 +159,47 @@ function endCoop(): void {
   coopRoomCode = null;
 }
 
-/** Solo Start: tear down any lingering co-op session, then build the single-player world. */
-function startSingleRun(): void {
-  endCoop();
+// True once Phase 1 (sprite load) completes — frame() skips the world draw until then so no
+// broken/incomplete frame is shown behind the #loading overlay.
+let spritesLoaded = false;
+// Re-entry latch for the async Start path: a double-click must not launch two awaits / two runs.
+let startingSingleRun = false;
+
+/** Surface a load failure in the #loading overlay and stop (the user must reload). */
+function showLoadError(msg: string): void {
+  hide("start"); // an early sync throw (e.g. no WebGL2) leaves #start up — never let it compete
+  show("loading");
+  const errEl = el("loading-error");
+  errEl.textContent = msg;
+  errEl.classList.remove("hidden");
+}
+
+/**
+ * Solo Start (first user gesture): open the AudioContext, wait for the required samples to decode
+ * behind a brief #loading gate, then build the single-player world. Re-entry-guarded so a
+ * double-click can't launch concurrent awaits or start the run twice.
+ */
+async function startSingleRun(): Promise<void> {
+  if (startingSingleRun) return;
+  startingSingleRun = true;
+  const startBtn = el<HTMLButtonElement>("startBtn");
+  startBtn.disabled = true;
+  try {
+    endCoop();
+    Audio.resume(); // first gesture: opens AudioContext + kicks off sample decode
+    hide("start");
+    show("loading");
+    await Audio.whenSamplesReady();
+  } catch {
+    showLoadError("Failed to load game audio. Please reload the page.");
+    return;
+  } finally {
+    startBtn.disabled = false;
+    startingSingleRun = false;
+  }
+  // Audio is ready — build the world. A throw here is a game-init bug, not a load failure, so it
+  // must not be misattributed to the audio gate above (surfaces as an unhandled rejection instead).
+  hide("loading");
   startGame();
 }
 
@@ -172,12 +210,12 @@ function startHostRun(host: Host): void {
   hostStarted = true; // frame loop now sims + broadcasts
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const canvas = el<HTMLCanvasElement>("game");
   Renderer.init(canvas);
   Input.init(canvas);
 
-  el("startBtn").onclick = startSingleRun;
+  el("startBtn").onclick = () => void startSingleRun();
   el("restartBtn").onclick = () => {
     endCoop(); // game-over → title must fully drop any co-op mode/links (was leaking a ghost peer)
     toTitle();
@@ -400,7 +438,7 @@ function main(): void {
     // snapshot). After the sim/render step so single-player opens it the same frame.
     if (st.running) syncShopUI();
 
-    draw();
+    if (spritesLoaded) draw();
     audioLoops(); // looping ambience/rummage — driven here (runs even while paused) in all modes
     if (st.running) updateHUD();
 
@@ -443,6 +481,20 @@ function main(): void {
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+
+  // PHASE 1 (no gesture needed): cover the canvas with the opaque #loading overlay and skip the
+  // world draw until the sprite atlas is ready, so the first frames are never broken/incomplete.
+  hide("start");
+  show("loading");
+  try {
+    await Renderer.spritesReady();
+  } catch {
+    showLoadError("Failed to load game graphics. Please reload the page.");
+    return;
+  }
+  spritesLoaded = true;
+  hide("loading");
+  show("start");
 }
 
 /* ------------------------- co-op lobby ------------------------- */
@@ -1064,4 +1116,4 @@ function wireCoop(): void {
   window.addEventListener("pagehide", () => endCoop());
 }
 
-main();
+void main().catch(() => showLoadError("Failed to start the game. Please reload the page."));
