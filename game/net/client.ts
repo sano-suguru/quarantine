@@ -281,7 +281,12 @@ export class Client {
         fxActionBurst(st, pl.x, pl.y, [0.3, 1, 0.45], false);
         if (pl.id === st.localId) Audio.heal();
       }
-      if (p && p.hp <= 0 && pl.hp > 0) {
+      // peer-revive completion only: anchor to the assist gauge (the host fires this burst in
+      // sysAssist). A tended teammate always shows assistT>0 in the prev snapshot, while the
+      // dawn batch-respawn (revivePlayer, no tending) has assistT==0 — so this no longer
+      // bursts at dawn, matching the host. (Rare: an interrupt→immediate-resume revive can
+      // show assistT==0 in prev and drop the burst — cosmetic only, never a false fire.)
+      if (p && p.hp <= 0 && p.assistT > 0 && pl.hp > 0) {
         fxActionBurst(st, pl.x, pl.y, [0.4, 1, 0.6], true);
       }
       if (p && pl.hp > p.hp + 1 && p.hp > 0 && pl.hp < pl.maxHp + 1 && pl.healT <= 0.05) {
