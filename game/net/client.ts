@@ -3,6 +3,7 @@ import { effWeapon } from "../data/arsenal";
 import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { ENEMY_TYPES } from "../data/enemies";
 import { Audio } from "../engine/audio";
+import { segMid } from "../engine/geometry";
 import { approach, rand } from "../engine/math";
 import { localPlayer } from "../engine/players";
 import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
@@ -301,9 +302,8 @@ export class Client {
       const nb = next.barricades[i];
       const bar = st.barricades[i];
       if (pb && nb && bar && pb.hp < nb.hp && nb.hp >= bar.maxHp && pb.hp < bar.maxHp) {
-        const mx = (bar.x1 + bar.x2) / 2;
-        const my = (bar.y1 + bar.y2) / 2;
-        fxActionBurst(st, mx, my, [0.8, 0.7, 0.3], false);
+        const m = segMid(bar.x1, bar.y1, bar.x2, bar.y2);
+        fxActionBurst(st, m.x, m.y, [0.8, 0.7, 0.3], false);
       }
     }
     const prevDIds = new Set(prev.deployables.map((d) => d.id));

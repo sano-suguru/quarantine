@@ -3,7 +3,7 @@ import { effWeapon, meleeArc, meleeReach } from "../data/arsenal";
 import { resolveDeployableCollisions } from "../data/deployables";
 import { WEAPON_ORDER, WEAPONS } from "../data/weapons";
 import { Audio } from "../engine/audio";
-import { circlePushFromSegment } from "../engine/geometry";
+import { circlePushFromSegment, segMid } from "../engine/geometry";
 import { approach, clamp, len, rand } from "../engine/math";
 import type { PlayerInput } from "../net/playerInput";
 import { allocId } from "../state";
@@ -297,9 +297,8 @@ function interact(
   let barD = reach;
   for (const b of state.barricades) {
     if (b.hp >= b.maxHp) continue;
-    const mx = (b.x1 + b.x2) / 2;
-    const my = (b.y1 + b.y2) / 2;
-    const d = len(mx - p.x, my - p.y);
+    const m = segMid(b.x1, b.y1, b.x2, b.y2);
+    const d = len(m.x - p.x, m.y - p.y);
     if (d < barD) {
       barD = d;
       bar = b;
@@ -376,15 +375,12 @@ function interact(
       p.repairCd = CONFIG.siege.repairCd;
       p.swingT = CONFIG.actionFeel.swingDecay;
       p.swingKind = "repair";
-      const mx2 = (bar.x1 + bar.x2) / 2;
-      const my2 = (bar.y1 + bar.y2) / 2;
-      fxImpact(state, mx2, my2, p.aim, [0.85, 0.7, 0.35]); // sparks (intensity 0 = wall-spark look)
-      fxDust(state, mx2, my2, CONFIG.actionFeel.repair.dust);
+      const mid = segMid(bar.x1, bar.y1, bar.x2, bar.y2);
+      fxImpact(state, mid.x, mid.y, p.aim, [0.85, 0.7, 0.35]); // sparks (intensity 0 = wall-spark look)
+      fxDust(state, mid.x, mid.y, CONFIG.actionFeel.repair.dust);
       // completion: barricade just reached full → burst on the segment midpoint
       if (before < bar.maxHp && bar.hp >= bar.maxHp) {
-        const mx = (bar.x1 + bar.x2) / 2;
-        const my = (bar.y1 + bar.y2) / 2;
-        fxActionBurst(state, mx, my, [0.8, 0.7, 0.3], false);
+        fxActionBurst(state, mid.x, mid.y, [0.8, 0.7, 0.3], false);
       }
       Audio.repair();
     }
