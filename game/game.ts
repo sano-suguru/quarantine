@@ -594,6 +594,7 @@ export function draw(): void {
     if (pl.hp <= 0 || pl.absent) drawDownedPlayer(R, pl);
     else drawPlayer(R, pl, pl.id === state.localId);
   }
+  drawReviveLinks(R);
 
   // --- additive particles (sparks / rings) ---
   for (const pt of state.particles) {
@@ -815,6 +816,36 @@ function drawDownedPlayer(R: typeof Renderer, pl: Player): void {
     const yb = pl.y - pl.r - 10;
     R.rect(pl.x, yb, w, 4, 0, 0.05, 0.05, 0.05, 0.8);
     R.rect(pl.x - (w * (1 - f)) / 2, yb, w * f, 4, 0, 0.3, 1, 0.45, 1);
+  }
+}
+
+/** Co-op: for each downed teammate being revived, draw a tending aura on the body + a faint beam
+ *  from the nearest standing teammate (the reviver). Purely derived — no synced reviver id. */
+function drawReviveLinks(R: typeof Renderer): void {
+  if (state.players.length < 2) return;
+  const af = CONFIG.actionFeel.revive;
+  const reach2 = CONFIG.siege.interactRadius * CONFIG.siege.interactRadius;
+  for (const t of state.players) {
+    if (t.hp > 0 || t.absent || t.assistT <= 0) continue;
+    const prog = Math.min(1, t.assistT / CONFIG.assist.reviveTime);
+    const pulse = af.beamAlpha * (0.6 + 0.4 * Math.sin(state.time * af.auraPulseHz * Math.PI * 2));
+    R.glow(t.x, t.y, t.r * 3, 0.4, 1, 0.6, pulse); // tending aura on the body
+    // nearest standing teammate = the reviver; draw a faint beam
+    let rv: Player | null = null;
+    let best = reach2;
+    for (const h of state.players) {
+      if (h === t || h.hp <= 0 || h.absent) continue;
+      const d = (h.x - t.x) ** 2 + (h.y - t.y) ** 2;
+      if (d < best) {
+        best = d;
+        rv = h;
+      }
+    }
+    if (rv) {
+      const mx = (rv.x + t.x) / 2;
+      const my = (rv.y + t.y) / 2;
+      R.glow(mx, my, 8 + 10 * prog, 0.4, 1, 0.6, pulse * 0.8);
+    }
   }
 }
 

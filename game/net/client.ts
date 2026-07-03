@@ -280,6 +280,9 @@ export class Client {
         fxActionBurst(st, pl.x, pl.y, [0.3, 1, 0.45], false);
         if (pl.id === st.localId) Audio.heal();
       }
+      if (p && p.hp <= 0 && pl.hp > 0) {
+        fxActionBurst(st, pl.x, pl.y, [0.4, 1, 0.6], true);
+      }
     }
     for (let i = 0; i < next.caches.length; i++) {
       const pc = prev.caches[i];
