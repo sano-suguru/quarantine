@@ -41,6 +41,7 @@ export function integrateMovement(
   }
 }
 
+import { decaySwing } from "./actionFeel";
 import { ammoTransfer } from "./ammo";
 import { killZombie } from "./bullets";
 import { lootCache } from "./caches";
@@ -154,6 +155,7 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
 
   if (p.fireCd > 0) p.fireCd -= dt;
   if (p.switchT > 0) p.switchT -= dt;
+  p.swingT = decaySwing(p.swingT, dt);
   const wantFire = inp.firing && (wd.auto || !p.firedThisHold);
   if (wantFire && p.fireCd <= 0 && p.reloadT <= 0 && !healing) {
     if (wd.melee || p.ammo > 0) {

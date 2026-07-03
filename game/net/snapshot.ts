@@ -80,6 +80,9 @@ interface SnapPlayer {
    *  Carried as its own byte so CONFIG.arsenal.freePicks is freely tunable — no single-bit assumption. */
   draftFreePicksUsed: number;
   draftRerolls: number;
+  searching: boolean;
+  swingT: number;
+  swingKind: "" | "repair" | "mateHeal";
 }
 
 interface SnapZombie {
@@ -190,6 +193,9 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
       draftOffer: p.draftOffer.map((id) => CARD_ORDER.indexOf(id)).filter((i) => i >= 0),
       draftFreePicksUsed: p.draftFreePicksUsed,
       draftRerolls: p.draftRerolls,
+      searching: p.searching,
+      swingT: p.swingT,
+      swingKind: p.swingKind,
     })),
     zombies: state.zombies.map((z) => ({
       id: z.id,
@@ -336,6 +342,9 @@ export function applySnapshot(
       .filter((id): id is string => id !== undefined);
     p.assistT = sp.assistT;
     p.absent = sp.absent;
+    p.searching = sp.searching;
+    p.swingT = sp.swingT;
+    p.swingKind = sp.swingKind;
     p.draftOffer = sp.draftOffer
       .map((i) => CARD_ORDER[i])
       .filter((id): id is string => id !== undefined);
@@ -446,6 +455,7 @@ const q01 = (v: number, max: number): number =>
 const dq01 = (b: number, max: number): number => (b / 255) * max;
 /** quantization ceiling for Player.switchT (≥ the largest WeaponDef.drawTime, with headroom) */
 const MAX_DRAWTIME = 0.8;
+const MAX_SWING = CONFIG.actionFeel.swingDecay;
 
 class Writer {
   private buf: ArrayBuffer;
@@ -570,7 +580,9 @@ export function encode(snap: Snapshot): ArrayBuffer {
     for (const ci of p.draftOffer) w.u8(ci);
     w.u8(Math.min(255, p.draftRerolls));
     w.u8(Math.min(255, p.draftFreePicksUsed));
-    w.u8((p.lightOn ? 1 : 0) | (p.absent ? 2 : 0)); // flag byte: bit0 lightOn, bit1 absent
+    const swingKindBits = p.swingKind === "repair" ? 4 : p.swingKind === "mateHeal" ? 8 : 0;
+    w.u8((p.lightOn ? 1 : 0) | (p.absent ? 2 : 0) | (p.searching ? 16 : 0) | swingKindBits);
+    w.u8(q01(p.swingT, MAX_SWING));
   }
 
   // zombies (quantized)
@@ -695,8 +707,12 @@ export function decode(buf: ArrayBuffer): Snapshot {
     const draftRerolls = r.u8();
     const draftFreePicksUsed = r.u8();
     const pflags = r.u8();
+    const swingT = dq01(r.u8(), MAX_SWING);
     const lightOn = (pflags & 1) === 1;
     const absent = (pflags & 2) !== 0;
+    const searching = (pflags & 16) !== 0;
+    const swingKind: "" | "repair" | "mateHeal" =
+      (pflags & 4) !== 0 ? "repair" : (pflags & 8) !== 0 ? "mateHeal" : "";
     players.push({
       id,
       x,
@@ -731,6 +747,9 @@ export function decode(buf: ArrayBuffer): Snapshot {
       draftOffer,
       draftFreePicksUsed,
       draftRerolls,
+      searching,
+      swingT,
+      swingKind,
     });
   }
 
