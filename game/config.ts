@@ -369,5 +369,6 @@ export const CONFIG = {
     phantomDreadExp: 1.5, // shaping exponent k for the (1-dread)^k rate falloff
     phantomAlphaMax: 0.5, // peak silhouette alpha at mid-life
     phantomStepLockout: 0.6, // s after a real footfall during which no phantom step fires (owned by stalkerFx)
+    phantomStepIntervalMax: 4, // mean seconds between phantom steps at the ambient max rate (dread≈0)
   },
 };

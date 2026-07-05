@@ -13,7 +13,9 @@
  */
 
 import { CONFIG } from "../config";
+import { Audio } from "../engine/audio";
 import type { Player, State } from "../types";
+import { phantomStepLocked } from "./stalkerFx";
 
 const SCFG = CONFIG.stalker;
 const FLC = CONFIG.flashlight;
@@ -29,10 +31,12 @@ export interface Phantom {
 
 // Module-level bookkeeping only (no sim state — reset via resetStalkerPhantom).
 const phantoms: Phantom[] = [];
+let stepT = 0; // countdown to the next phantom step (render/audio-side only)
 
 /** Reset per-run bookkeeping so stale phantoms/timers don't carry across runs. Call from resetAtmosphere. */
 export function resetStalkerPhantom(): void {
   phantoms.length = 0;
+  stepT = 0;
 }
 
 /**
@@ -81,6 +85,7 @@ export function sysStalkerPhantom(
   if (!active) {
     // Stalker gone / day / staggered / retreating: clear fakes so nothing lingers into the quiet-after.
     if (phantoms.length) phantoms.length = 0;
+    stepT = Math.max(stepT, SCFG.phantomStepIntervalMax * 0.5); // don't fire the instant it re-activates
     return phantoms;
   }
 
@@ -99,6 +104,17 @@ export function sysStalkerPhantom(
     Math.random() < (ddt / SCFG.phantomSpawnIntervalMax) * scale
   ) {
     spawnPhantom(lp);
+  }
+
+  // Phantom steps (Stage 2): a footfall-like but non-localizable sound on a jittered rhythm.
+  // Gated by the same dread scale (quiet → likely; approach → suppressed) AND by the real-footfall
+  // lockout so a fake never lands on the same beat as the real localizable cue.
+  stepT -= ddt;
+  if (stepT <= 0) {
+    stepT = SCFG.phantomStepIntervalMax * (0.6 + Math.random() * 0.8); // jittered interval
+    if (Math.random() < scale && !phantomStepLocked(state.time)) {
+      Audio.stalkerPhantomStep();
+    }
   }
 
   return phantoms;
