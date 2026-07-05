@@ -4,6 +4,7 @@ import { phaseMods } from "../data/phaseMods";
 import { Audio } from "../engine/audio";
 import { circlePush, circlePushFromSegment } from "../engine/geometry";
 import { len, rand } from "../engine/math";
+import { buildFlowField, sampleFlow } from "../engine/navfield";
 import { localPlayer, nearestPlayer } from "../engine/players";
 import { avoidHeading } from "../engine/steering";
 import type { NavMode, State, Zombie } from "../types";
@@ -51,7 +52,20 @@ const NAV_STEER: Record<NavMode, (c: SteerCtx) => { hx: number; hy: number }> = 
       strength: CFG.avoidStrength,
     });
   },
-  path: (c) => headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt), // Task 4
+  path: (c) => {
+    if (!c.chasing || !c.state.flow)
+      return headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
+    const g = sampleFlow(c.state.flow, c.z.x, c.z.y);
+    if (g.hx === 0 && g.hy === 0)
+      return headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
+    // smooth final approach / opening traversal with whiskers
+    const CFG = CONFIG.ai.nav;
+    return avoidHeading(c.z.x, c.z.y, g.hx, g.hy, c.state.walls, {
+      look: CFG.whiskerLook,
+      whiskerAngle: CFG.whiskerAngle,
+      strength: CFG.avoidStrength,
+    });
+  },
 };
 
 const WOOD: [number, number, number] = [0.62, 0.42, 0.2];
@@ -61,6 +75,22 @@ export function sysAI(state: State, dt: number): void {
   const Z = state.zombies;
   const lp = localPlayer(state);
   const mod = phaseMods(state.phase, state.day);
+  const CFG = CONFIG.ai.nav;
+
+  // rebuild flow field every rebuildFrames ticks (or on first call when flow is null)
+  state.navTick++;
+  if (state.navTick % CFG.rebuildFrames === 0 || state.flow === null) {
+    const living = state.players.filter((p) => p.hp > 0 && !p.absent);
+    const b = {
+      minX: -CONFIG.arena,
+      minY: -CONFIG.arena,
+      maxX: CONFIG.arena,
+      maxY: CONFIG.arena,
+    };
+    state.flow = living.length
+      ? buildFlowField(state.walls, living, b, CFG.cell, CFG.clearance)
+      : null;
+  }
 
   state.hash.clear();
   for (let i = 0; i < Z.length; i++) {

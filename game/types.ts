@@ -1,3 +1,4 @@
+import type { FlowField } from "./engine/navfield";
 import type { PlayerInput } from "./net/playerInput";
 
 export interface GunPart {
@@ -497,6 +498,12 @@ export interface State {
   surrounded: number;
   /** nearby zombies that are outside the flashlight cone (behind / in the dark) */
   lurking: number;
+  // ---- host-only transient navigation state (NOT in captureSnapshot/encode) ----
+  /** current flow field for path-nav zombies; null until first build or when no living players */
+  flow: FlowField | null;
+  /** monotonic sim-tick counter used to schedule flow-field rebuilds (one per sysAI call).
+   *  There is no general state.tick — this is the only tick counter in state. */
+  navTick: number;
 }
 
 /** Structural type so state.ts need not import the engine class directly. */

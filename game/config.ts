@@ -296,6 +296,14 @@ export const CONFIG = {
       whiskerLook: 40, // how far ahead (world units) the avoidance whiskers probe
       whiskerAngle: 0.6, // radians offset of the two side whiskers from the center probe
       avoidStrength: 1.0, // how hard to steer away when a wall is detected (multiplier on blockage)
+      // flow-field (path nav): coarse grid rebuilt every rebuildFrames sim ticks.
+      // cell=24, clearance=14: walkable band through a 60px door = ±(30-14)=±16 (32px) > cell 24,
+      // so a walkable cell column is guaranteed regardless of grid phase. clearance=14 fits walker
+      // (r15) and runner (r13); brute (r27) is too wide for a 60px door — give it nav:"avoid".
+      // Grid ≈ (3200/24)² ≈ 134² ≈ 18k cells; bounds derived from CONFIG.arena (±1600).
+      cell: 24,
+      clearance: 14,
+      rebuildFrames: 15, // rebuild the flow field every N sim ticks (~4× per second at 60Hz)
     },
   },
   deployables: {
