@@ -62,11 +62,13 @@ float lightAt(vec2 w){
 
     // occlusion: any wall between this light and w? gates the CONE only.
     bool blocked = false;
-    for(int k = 0; k < MAX_WALLS; k++){
-      if(k >= u_wallCount) break;
-      vec4 seg = u_wall[k];
-      if(distToSeg(Lp, seg.xy, seg.zw) > range) continue;         // early reject: wall beyond this light's reach
-      if(segCross(d, seg.xy - Lp, seg.zw - Lp)){ blocked = true; break; }
+    if(u_occludeFloor == 1){
+      for(int k = 0; k < MAX_WALLS; k++){
+        if(k >= u_wallCount) break;
+        vec4 seg = u_wall[k];
+        if(distToSeg(Lp, seg.xy, seg.zw) > range) continue;         // early reject: wall beyond this light's reach
+        if(segCross(d, seg.xy - Lp, seg.zw - Lp)){ blocked = true; break; }
+      }
     }
     if(blocked) continue;   // cone blocked here; pool already counted above
     anyLOS = true;
