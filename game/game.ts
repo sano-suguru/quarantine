@@ -38,6 +38,7 @@ import { sysPickups } from "./systems/pickups";
 import { effectiveSearchTime, sysPlayer } from "./systems/player";
 import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "./systems/siege";
 import { spawnStalker, sysStalker } from "./systems/stalker";
+import { resetStalkerFx, stalkerFx } from "./systems/stalkerFx";
 import type { Player, State, WeaponDef } from "./types";
 import { el, hide, renderList, show } from "./ui";
 
@@ -80,6 +81,9 @@ const TOOL_PROP: WeaponDef["viz"] = [
 /* -------------------------- UPDATE / DRAW ----------------------- */
 let hbT = 0; // heartbeat timer
 let groanT = 2; // ambient groan timer
+// Grab scare (local player only): tracks the stalker contactCd so we can detect a new grab.
+// A grab is detected when contactCd jumps up to contactCd max (stalker.ts sets it on contact).
+let prevStalkerCd = 0; // contactCd last frame — render-side edge detector for the scare
 
 /* ---- horror "feel" layer (light/sound polish) ----
  * All of this is pure visual/audio re-derived from `state` on whichever machine renders:
@@ -149,6 +153,8 @@ function resetAtmosphere(): void {
   // Reset the render-side draw clock so the first draw() of a fresh run (where state.time resets
   // to 0) doesn't produce a negative/large ddt that flings darts or garbles ease steps.
   lastDrawT = 0;
+  prevStalkerCd = 0;
+  resetStalkerFx();
 }
 
 export function update(dt: number): void {
@@ -437,6 +443,40 @@ export function draw(): void {
   // so a backgrounded tab's time jump can't fling darts across the map.
   const ddt = Math.max(0, Math.min(0.1, state.time - lastDrawT));
   lastDrawT = state.time;
+
+  // --- stalker telegraph (footfall/heartbeat audio + cone-flicker signal) ---
+  // Render/audio only; returns a 0..1 dread value used to modulate the local player's cone below.
+  const stalkerDread = stalkerFx(state, lp, ddt);
+
+  // --- grab scare (local player only): extend the basic flash/shake from stalker.ts into a
+  //     full diegetic scare — camera lurch + stinger + extra flash. Detected from the stalker's
+  //     contactCd edge (jumps to max on each grab). NOT in sysStalker to keep that system pure. ---
+  if (state.stalker && state.running) {
+    const sk = state.stalker;
+    const cdNow = sk.contactCd;
+    const justGrabbed = cdNow > prevStalkerCd && cdNow >= CONFIG.stalker.contactCd * 0.95;
+    if (justGrabbed) {
+      // Only scare the local player (the grab already hurt them in sysStalker).
+      const lplayer = localPlayer(state);
+      if (lplayer.id === state.localId && lplayer.hp > 0) {
+        // Additional flash on top of the basic 0.7 set by stalker.ts
+        state.flashT = Math.min(1, state.flashT + CONFIG.stalker.scareFlashBoost);
+        // Camera lurch: bias the camera toward the stalker for one frame by nudging cam position.
+        // We use a cam drag rather than directly mutating c.x/c.y so sysCamera's lerp recovers naturally.
+        const ddx = sk.x - state.cam.x;
+        const ddy = sk.y - state.cam.y;
+        const ddl = Math.hypot(ddx, ddy) || 1;
+        state.cam.x += (ddx / ddl) * CONFIG.stalker.scareDragDist;
+        state.cam.y += (ddy / ddl) * CONFIG.stalker.scareDragDist;
+        // Audio stinger (no text — diegetic only)
+        Audio.stalkerStinger();
+      }
+    }
+    prevStalkerCd = cdNow;
+  } else {
+    prevStalkerCd = 0;
+  }
+
   const c = state.cam;
   const sh = c.shake;
   const camX = c.x + (Math.random() * 2 - 1) * sh;
@@ -459,7 +499,7 @@ export function draw(): void {
   const cands: LightCandidate[] = [];
   for (const pl of state.players) {
     if (pl.hp <= 0 || pl.absent) continue;
-    const intensity = flashlightIntensity(
+    const baseIntensity = flashlightIntensity(
       pl.battery / flc.batteryMax,
       pl.lightOn,
       flc.lowThreshold,
@@ -469,6 +509,12 @@ export function draw(): void {
       flc.dimFloor,
       flc.dimStart,
     );
+    // Apply stalker cone-flicker to the LOCAL player's light only (the "something interfering
+    // with your beam" effect — feels personal, not global). Capped so the cone never goes black.
+    const intensity =
+      pl.id === state.localId
+        ? Math.max(flc.dimFloor, baseIntensity - stalkerDread * CONFIG.stalker.flickerMax)
+        : baseIntensity;
     cands.push({
       x: pl.x,
       y: pl.y,
@@ -569,11 +615,11 @@ export function draw(): void {
       // White tint (true illustration); fade in on spawn via vis.
       R.spriteQuad(sk.x, sk.y, sz, sz, sk.face + SPRITE_FACE_OFFSET, skLayer, 1, 1, 1, sk.vis);
     }
-    // Faint cold glow when unlit — a silhouette that barely shows in gloom (the lighting
-    // model means it reads as a cold shape, not a lit body). Matches the "gloom, not a void"
-    // principle: the stalker is visible enough to be found, not an invisible wall.
-    const isLit = state.phase === "night";
-    if (isLit) {
+    // Faint cold glow during the night phase — a silhouette that barely shows in gloom (the
+    // lighting model means it reads as a cold shape, not a lit body). Matches the "gloom, not a
+    // void" principle: the stalker is visible enough to be found, not an invisible wall.
+    const isNight = state.phase === "night";
+    if (isNight) {
       R.glow(sk.x, sk.y, 38, 0.3, 0.4, 0.9, 0.12 * sk.vis);
     }
   }

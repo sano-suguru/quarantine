@@ -345,5 +345,20 @@ export const CONFIG = {
     retreatSpeed: 220, // px/s leaving at dawn / after a grab
     noiseBias: 1.0, // how strongly it steers toward the loudest player
     telegraphNear: 460, // proximity where telegraph starts
+    // --- telegraph tuning (stalkerFx.ts — render/audio only, not in sim) ---
+    // dread = nearness (0..1 by telegraphNear) × unlit (1 if stalker NOT in the local cone, 0 if lit).
+    // The three outputs scale with dread: footfall volume, cone flicker intensity, heartbeat add.
+    footfallIntervalMin: 0.7, // s between footfall sounds at max dread (close + unlit)
+    footfallIntervalMax: 3.0, // s between footfall sounds at min dread (far or lit)
+    footfallVolMax: 0.55, // footfall volume at max dread (panned by direction)
+    footfallVolMin: 0.05, // footfall volume at min dread (a faint tread, barely audible)
+    flickerMax: 0.28, // cone alpha modulation at max dread (0 = no flicker, 1 = full extinction)
+    heartbeatAdd: 0.45, // extra heartbeat strength contributed by dread (stacks with HP dread)
+    heartbeatIntervalMin: 0.55, // s between heartbeats at max dread (stalker very close)
+    // --- grab scare tuning (local-player only, game.ts) ---
+    // Extended scare: hard flash → near-black collapse → camera drag toward the stalker.
+    scareFlashBoost: 0.9, // additional flashT added on a grab (stack on top of stalker.ts 0.7)
+    scareDragDist: 80, // world units the camera lurches toward the stalker during the scare
+    scareDragDecay: 6.0, // exp-decay speed of the camera drag (toward normal position)
   },
 };

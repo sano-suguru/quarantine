@@ -211,6 +211,81 @@ function heartbeat(strength: number): void {
   thump(t + 0.16, 0.32 * strength);
 }
 
+/**
+ * Stalker footfall: a low, muffled thud panned by the stalker's direction from the local player.
+ * Procedural — no asset file. Designed to read as a heavy footstep in the dark even at low volume.
+ * `pan` (-1..1) places it left/right; `vol` (0..1) scales amplitude.
+ */
+function stalkerFootfall(pan: number, vol: number): void {
+  if (!ctx || !master) return;
+  const now = ctx.currentTime;
+  // Low-frequency thud: a short sine burst pitched around 55 Hz, dropping fast like a heavy step
+  const o = ctx.createOscillator();
+  o.type = "sine";
+  o.frequency.setValueAtTime(60, now);
+  o.frequency.exponentialRampToValueAtTime(28, now + 0.18);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(vol * 0.6, now + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+  // Spatial pan
+  if (pan !== 0 && typeof StereoPannerNode !== "undefined") {
+    const pn = ctx.createStereoPanner();
+    pn.pan.value = Math.max(-1, Math.min(1, pan));
+    o.connect(g).connect(pn).connect(master);
+  } else {
+    o.connect(g).connect(master);
+  }
+  o.start(now);
+  o.stop(now + 0.25);
+
+  // A faint high scrape layered on top (drag of something heavy, unsettling texture)
+  const n = ctx.createOscillator();
+  n.type = "sawtooth";
+  n.frequency.setValueAtTime(220, now);
+  n.frequency.exponentialRampToValueAtTime(80, now + 0.14);
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0, now);
+  ng.gain.linearRampToValueAtTime(vol * 0.07, now + 0.02);
+  ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+  const nlp = ctx.createBiquadFilter();
+  nlp.type = "lowpass";
+  nlp.frequency.value = 300;
+  n.connect(ng).connect(nlp).connect(master);
+  n.start(now);
+  n.stop(now + 0.18);
+}
+
+/**
+ * Stalker grab stinger: a jarring dissonant burst — hard, brief, and not musical.
+ * Procedural; fired once on a grab for the local player only.
+ */
+function stalkerStinger(): void {
+  if (!ctx || !master) return;
+  const now = ctx.currentTime;
+  // Three detuned oscillators: a dissonant cluster that spikes and dies fast (< 0.4s)
+  for (const [freq, amp] of [
+    [110, 0.35],
+    [148, 0.25],
+    [220, 0.18],
+  ] as const) {
+    const o = ctx.createOscillator();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(freq * 2.1, now); // spike high then fall
+    o.frequency.exponentialRampToValueAtTime(freq, now + 0.08);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(amp, now + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 200;
+    o.connect(g).connect(hp).connect(master);
+    o.start(now);
+    o.stop(now + 0.42);
+  }
+}
+
 /** ambient drone intensity 0..1 (smoothed) */
 function setDread(level: number): void {
   droneTarget = Math.max(0, Math.min(1, level));
@@ -284,6 +359,8 @@ export const Audio = {
   setDread,
   setTension,
   stopDread,
+  stalkerFootfall,
+  stalkerStinger,
   toggleMute,
   setMuted,
   isMuted,
