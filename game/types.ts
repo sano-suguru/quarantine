@@ -59,6 +59,9 @@ export interface WeaponDef {
 
 export type NavMode = "none" | "avoid" | "path";
 
+export type Perception = "omniscient" | "sight";
+export type Percept = "hunt" | "search" | "idle";
+
 export interface EnemyType {
   hp: number;
   speed: number;
@@ -85,6 +88,8 @@ export interface EnemyType {
   separation?: number;
   /** navigation intelligence: none=beeline, avoid=steer around walls, path=flow-field route */
   nav?: NavMode;
+  /** perception model for this enemy type; defaults to "omniscient" (always knows player position) */
+  perception?: Perception;
 }
 
 export interface Upgrade {
@@ -234,6 +239,16 @@ export interface Zombie {
   lungeT: number;
   /** current wander heading (radians), drifts over time */
   wanderDir: number;
+  /** perception model for this zombie (host-only; not synced) */
+  perception: Perception;
+  /** current perception state: actively hunting, searching last-seen pos, or idle (host-only) */
+  percept: Percept;
+  /** world-space X of the last known player position (host-only) */
+  lastSeenX: number;
+  /** world-space Y of the last known player position (host-only) */
+  lastSeenY: number;
+  /** countdown for search-mode duration (host-only) */
+  searchT: number;
 }
 
 export interface Bullet {

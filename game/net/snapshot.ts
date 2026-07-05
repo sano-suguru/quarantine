@@ -276,6 +276,11 @@ function zombieFromSnap(z: SnapZombie): Zombie {
     lungeCd: 0,
     lungeT: 0,
     wanderDir: 0,
+    perception: "omniscient",
+    percept: "idle",
+    lastSeenX: 0,
+    lastSeenY: 0,
+    searchT: 0,
   };
 }
 
