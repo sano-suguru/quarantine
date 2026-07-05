@@ -44,6 +44,7 @@ let viewHalfY = 300;
 // flashlight state — up to MAX_LIGHTS aimed cones (one per player), set each frame via
 // setLightParams (shared) + beginLights()/addLight() (per player). MAX_LIGHTS mirrors the shaders.
 const MAX_LIGHTS = 8;
+const MAX_WALLS = 32;
 let lightCount = 0;
 const lightPos = new Float32Array(MAX_LIGHTS * 2);
 const lightAim = new Float32Array(MAX_LIGHTS * 2);
@@ -63,10 +64,19 @@ let b_half: WebGLUniformLocation | null;
 let bloodIntensity = 0;
 let bloodPulse = 0;
 let bloodTime = 0;
+let u_wall: WebGLUniformLocation | null;
+let u_wallCount: WebGLUniformLocation | null;
+let u_shadowFloor: WebGLUniformLocation | null;
+let g_wall: WebGLUniformLocation | null;
+let g_wallCount: WebGLUniformLocation | null;
+let g_shadowFloor: WebGLUniformLocation | null;
+let g_occludeFloor: WebGLUniformLocation | null;
 let g_sat: WebGLUniformLocation | null;
 let g_dim: WebGLUniformLocation | null;
 let u_sat: WebGLUniformLocation | null;
 let u_dim: WebGLUniformLocation | null;
+const wallData = new Float32Array(MAX_WALLS * 4);
+let wallCount = 0;
 let gradeSat = 1;
 let gradeDim = 1;
 const MAX_SPRITES = 32; // must match instance.frag
@@ -148,6 +158,9 @@ function init(cv: HTMLCanvasElement): void {
   u_lightInt = gl.getUniformLocation(instProg, "u_lightInt");
   u_ambient = gl.getUniformLocation(instProg, "u_ambient");
   u_lightCone = gl.getUniformLocation(instProg, "u_lightCone");
+  u_wall = gl.getUniformLocation(instProg, "u_wall");
+  u_wallCount = gl.getUniformLocation(instProg, "u_wallCount");
+  u_shadowFloor = gl.getUniformLocation(instProg, "u_shadowFloor");
   u_personal = gl.getUniformLocation(instProg, "u_personal");
   u_emissive = gl.getUniformLocation(instProg, "u_emissive");
   u_sat = gl.getUniformLocation(instProg, "u_sat");
@@ -179,6 +192,10 @@ function init(cv: HTMLCanvasElement): void {
   g_lightInt = gl.getUniformLocation(gridProg, "u_lightInt");
   g_ambient = gl.getUniformLocation(gridProg, "u_ambient");
   g_lightCone = gl.getUniformLocation(gridProg, "u_lightCone");
+  g_wall = gl.getUniformLocation(gridProg, "u_wall");
+  g_wallCount = gl.getUniformLocation(gridProg, "u_wallCount");
+  g_shadowFloor = gl.getUniformLocation(gridProg, "u_shadowFloor");
+  g_occludeFloor = gl.getUniformLocation(gridProg, "u_occludeFloor");
   g_personal = gl.getUniformLocation(gridProg, "u_personal");
   g_sat = gl.getUniformLocation(gridProg, "u_sat");
   g_dim = gl.getUniformLocation(gridProg, "u_dim");
@@ -249,6 +266,24 @@ function setBlood(intensity: number, pulse: number, time: number): void {
 function setGrade(sat: number, dim: number): void {
   gradeSat = sat;
   gradeDim = dim;
+}
+
+/** upload the static wall segments once; occlusion reads them every frame (walls never change in a run) */
+export function setWalls(walls: { x1: number; y1: number; x2: number; y2: number }[]): void {
+  wallCount = Math.min(walls.length, MAX_WALLS);
+  for (let i = 0; i < wallCount; i++) {
+    const w = walls[i] as (typeof walls)[number];
+    wallData[i * 4] = w.x1;
+    wallData[i * 4 + 1] = w.y1;
+    wallData[i * 4 + 2] = w.x2;
+    wallData[i * 4 + 3] = w.y2;
+  }
+  gl.useProgram(instProg);
+  gl.uniform4fv(u_wall, wallData);
+  gl.uniform1i(u_wallCount, wallCount);
+  gl.useProgram(gridProg);
+  gl.uniform4fv(g_wall, wallData);
+  gl.uniform1i(g_wallCount, wallCount);
 }
 
 /** start a new frame's light list (call before addLight) */
@@ -556,6 +591,13 @@ function drawLayer(layer: Layer): void {
 }
 
 function flush(camX: number, camY: number): void {
+  // night → shadowFloor (dark, truly hides); day → coneAmbient (no harsh daylight shadows)
+  const na = CONFIG.siege.nightAmbient;
+  const da = CONFIG.siege.dayAmbient;
+  const tPhase = Math.min(1, Math.max(0, (coneAmbient - na) / Math.max(1e-3, da - na)));
+  const shadowFloorNow =
+    CONFIG.flashlight.shadowFloor + (coneAmbient - CONFIG.flashlight.shadowFloor) * tPhase;
+
   gl.useProgram(gridProg);
   gl.uniform2f(g_cam, camX, camY);
   gl.uniform2f(g_half, viewHalfX, viewHalfY);
@@ -565,6 +607,8 @@ function flush(camX: number, camY: number): void {
   gl.uniform1fv(g_lightInt, lightInt);
   gl.uniform2fv(g_lightCone, lightCone);
   gl.uniform1f(g_ambient, coneAmbient);
+  gl.uniform1f(g_shadowFloor, shadowFloorNow);
+  gl.uniform1i(g_occludeFloor, CONFIG.flashlight.occludeFloor ? 1 : 0);
   gl.uniform2f(g_personal, personalRadius, personalMax);
   gl.uniform1f(g_sat, gradeSat);
   gl.uniform1f(g_dim, gradeDim);
@@ -580,6 +624,7 @@ function flush(camX: number, camY: number): void {
   gl.uniform1fv(u_lightInt, lightInt);
   gl.uniform2fv(u_lightCone, lightCone);
   gl.uniform1f(u_ambient, coneAmbient);
+  gl.uniform1f(u_shadowFloor, shadowFloorNow);
   gl.uniform2f(u_personal, personalRadius, personalMax);
   gl.uniform1f(u_sat, gradeSat);
   gl.uniform1f(u_dim, gradeDim);
@@ -631,6 +676,7 @@ export const Renderer = {
   setLightParams,
   setBlood,
   setGrade,
+  setWalls,
   beginLights,
   addLight,
   sprite,

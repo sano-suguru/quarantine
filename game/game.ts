@@ -1172,6 +1172,7 @@ function buildWeaponSlots(): void {
 
 export function startGame(): void {
   state = newState();
+  Renderer.setWalls(state.walls);
   deployableSeen.clear();
   state.running = true;
   lastWeapon = "";
@@ -1633,6 +1634,7 @@ export function startClientGame(): void {
   // snapshot would wipe the live game — no-op here so only the first client boot builds state.
   if (state.running && Net.mode === "client") return;
   state = newState();
+  Renderer.setWalls(state.walls);
   deployableSeen.clear();
   state.running = true;
   lastWeapon = "";
