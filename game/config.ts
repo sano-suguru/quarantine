@@ -292,6 +292,14 @@ export const CONFIG = {
     rerollStep: 25, // each further reroll this night costs this much more (resets next night)
   },
   ai: {
+    perception: {
+      baseHearing: 60, // noise radius (world units) the player emits while walking
+      nightSenseMul: 3, // hearing radius multiplier at night (zombies hear further in the dark)
+      searchTime: 4, // seconds a zombie searches the last-known player position before going idle
+      searchArriveDist: 40, // world units — close enough to the search target to stop and look
+      losEveryFrames: 4, // re-check LOS every N sim ticks (performance throttle; 4 = ~15 Hz)
+      loseGraceMs: 700, // ms a zombie keeps hunting after losing LOS before falling to search
+    },
     nav: {
       whiskerLook: 40, // how far ahead (world units) the avoidance whiskers probe
       whiskerAngle: 0.6, // radians offset of the two side whiskers from the center probe
