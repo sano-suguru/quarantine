@@ -37,6 +37,7 @@ import { integrityGrade } from "./systems/integrity";
 import { sysPickups } from "./systems/pickups";
 import { effectiveSearchTime, sysPlayer } from "./systems/player";
 import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "./systems/siege";
+import { spawnStalker, sysStalker } from "./systems/stalker";
 import type { Player, State, WeaponDef } from "./types";
 import { el, hide, renderList, show } from "./ui";
 
@@ -169,6 +170,7 @@ export function update(dt: number): void {
     gameOver();
     return;
   }
+  if (state.stalker) sysStalker(state, sdt);
   sysDeployables(state, sdt); // turrets fire / stations emit (after AI so the zombie set is current)
   sysBullets(state, sdt);
   sysPickups(state, sdt);
@@ -177,9 +179,12 @@ export function update(dt: number): void {
   sysCamera(state, sdt);
   audioAmbience(dt);
   if (ev === "night") {
+    spawnStalker(state);
     announce("NIGHT", state.day);
     Audio.waveStart();
   } else if (ev === "dawn") {
+    // Set to retreat so it leaves gracefully; despawns when off-arena via sysStalker
+    if (state.stalker) state.stalker.state = "retreat";
     Audio.dawn();
     openShop();
   }
@@ -550,6 +555,26 @@ export function draw(): void {
       // direction — front-first approach. Drawn at SPRITE_SCALE× the hitbox (bare rad*2 mushes).
       const sz = rad * 2 * SPRITE_SCALE;
       R.spriteQuad(zx, zy, sz, sz, face + SPRITE_FACE_OFFSET, layer, tr, tg, tb, grow);
+    }
+  }
+
+  // --- stalker ---
+  if (state.stalker) {
+    const sk = state.stalker;
+    const skLayer = R.spriteLayer("stalker");
+    if (skLayer >= 0) {
+      // Brute radius is 27; stalker is a bit larger — use 32 as the logical hitbox radius for draw.
+      const skRad = 32;
+      const sz = skRad * 2 * SPRITE_SCALE;
+      // White tint (true illustration); fade in on spawn via vis.
+      R.spriteQuad(sk.x, sk.y, sz, sz, sk.face + SPRITE_FACE_OFFSET, skLayer, 1, 1, 1, sk.vis);
+    }
+    // Faint cold glow when unlit — a silhouette that barely shows in gloom (the lighting
+    // model means it reads as a cold shape, not a lit body). Matches the "gloom, not a void"
+    // principle: the stalker is visible enough to be found, not an invisible wall.
+    const isLit = state.phase === "night";
+    if (isLit) {
+      R.glow(sk.x, sk.y, 38, 0.3, 0.4, 0.9, 0.12 * sk.vis);
     }
   }
 
