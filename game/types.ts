@@ -59,6 +59,9 @@ export interface WeaponDef {
 
 export type NavMode = "none" | "avoid" | "path";
 
+export type Perception = "omniscient" | "sight";
+export type Percept = "hunt" | "search" | "idle";
+
 export interface EnemyType {
   hp: number;
   speed: number;
@@ -85,6 +88,8 @@ export interface EnemyType {
   separation?: number;
   /** navigation intelligence: none=beeline, avoid=steer around walls, path=flow-field route */
   nav?: NavMode;
+  /** perception model for this enemy type; defaults to "omniscient" (always knows player position) */
+  perception?: Perception;
 }
 
 export interface Upgrade {
@@ -181,6 +186,10 @@ export interface Player {
    *  "noise"). sysPlayer sets it each tick, sysAI reads it to surge nearby zombies (the lure).
    *  Host-derived, NOT synced — clients never run sysPlayer/sysAI so it stays false there. */
   searching: boolean;
+  /** host-only transient hearing loudness (fire/run/rummage); NOT synced. Rises on noise-producing
+   *  actions and decays each tick. Consumed by the perception system (Task 4) as the hearing
+   *  input radius for sight-model zombies. Zero until Task 4 reads it — no behavior change yet. */
+  noise: number;
   /** between-nights draft: card ids currently offered to this player (host-rolled, snapshot-synced) */
   draftOffer: string[];
   /** how many free picks this player has spent this night (free while < CONFIG.arsenal.freePicks,
@@ -226,7 +235,8 @@ export interface Zombie {
   lungePeriod: number;
   separation: number;
   nav: NavMode;
-  /** latched once aggroed (or at night); never reverts → guarantees the night clears */
+  /** latched once aggroed (or at night); never reverts for omniscient types → guarantees the night clears.
+   *  For sight types, chasing is derived each frame from percept (hunt/search) and does revert. */
   chasing: boolean;
   /** countdown to the next lunge */
   lungeCd: number;
@@ -234,6 +244,16 @@ export interface Zombie {
   lungeT: number;
   /** current wander heading (radians), drifts over time */
   wanderDir: number;
+  /** perception model for this zombie (host-only; not synced) */
+  perception: Perception;
+  /** current perception state: actively hunting, searching last-seen pos, or idle (host-only) */
+  percept: Percept;
+  /** world-space X of the last known player position (host-only) */
+  lastSeenX: number;
+  /** world-space Y of the last known player position (host-only) */
+  lastSeenY: number;
+  /** countdown for search-mode duration (host-only) */
+  searchT: number;
 }
 
 export interface Bullet {

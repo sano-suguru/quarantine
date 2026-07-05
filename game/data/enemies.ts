@@ -18,6 +18,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     wander: 0.6, // shambles, drifts off course
     separation: 1.0,
     nav: "none",
+    perception: "omniscient",
   },
   runner: {
     hp: 50,
@@ -37,6 +38,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     lungePeriod: 2.4,
     separation: 1.0,
     nav: "path",
+    perception: "sight",
   },
   brute: {
     hp: 260,
@@ -54,5 +56,6 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     wander: 0.08, // relentless, near-straight
     separation: 0.15, // plows through the crowd
     nav: "avoid",
+    perception: "omniscient",
   },
 };

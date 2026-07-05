@@ -7,8 +7,9 @@ import { len, rand } from "../engine/math";
 import { buildFlowField, sampleFlow } from "../engine/navfield";
 import { localPlayer, nearestPlayer } from "../engine/players";
 import { avoidHeading } from "../engine/steering";
-import type { NavMode, State, Zombie } from "../types";
+import type { NavMode, Player, State, Zombie } from "../types";
 import { fxHurt, fxImpact } from "./fx";
+import { hasLineOfSight, heard } from "./perception";
 
 /** Desired heading for a zombie this frame — extracted from pass-1 verbatim (nav: "none").
  *  dx/dy is the normalized direction to the target (0,0 if no target). */
@@ -53,8 +54,20 @@ const NAV_STEER: Record<NavMode, (c: SteerCtx) => { hx: number; hy: number }> = 
     });
   },
   path: (c) => {
-    if (!c.chasing || !c.state.flow)
-      return headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
+    if (!c.chasing) return headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
+    // A searching sight zombie must head to its last-known position, NOT ride the live-player
+    // flow field (which descends to the player's actual position and tracks through walls).
+    // During hunt the player is detected so the flow field is correct and fair.
+    // Omniscient path types always use the flow field.
+    if (c.z.perception === "sight" && c.z.percept === "search") {
+      const CFG = CONFIG.ai.nav;
+      return avoidHeading(c.z.x, c.z.y, c.dx, c.dy, c.state.walls, {
+        look: CFG.whiskerLook,
+        whiskerAngle: CFG.whiskerAngle,
+        strength: CFG.avoidStrength,
+      });
+    }
+    if (!c.state.flow) return headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
     const g = sampleFlow(c.state.flow, c.z.x, c.z.y);
     if (g.hx === 0 && g.hy === 0)
       return headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
@@ -122,21 +135,112 @@ export function sysAI(state: State, dt: number): void {
       if ((ldx / ldist) * aimX + (ldy / ldist) * aimY < coneCos) lurking++;
     }
 
-    // steer toward the nearest living player (everyone is a target in co-op)
-    const target = nearestPlayer(state, z.x, z.y);
+    // ---- perception: sight vs omniscient ----
+    let target: Player | null;
     let dx = 0;
     let dy = 0;
     let dist = Number.POSITIVE_INFINITY;
-    if (target) {
-      dx = target.x - z.x;
-      dy = target.y - z.y;
-      dist = len(dx, dy) || 1;
-      dx /= dist;
-      dy /= dist;
-      // aggro latches on once sensed; night auto-aggros (mod.autoAggro), day needs line-of-sense
-      if (mod.autoAggro || dist <= z.sense * mod.senseMul) z.chasing = true;
+    let chasing: boolean;
+
+    if (z.perception === "sight") {
+      // Throttle LOS/hearing to every losEveryFrames ticks, id-staggered via navTick.
+      const PCFG = CONFIG.ai.perception;
+      const night = state.phase === "night";
+      const runDetection = (state.navTick + z.id) % PCFG.losEveryFrames === 0;
+
+      if (runDetection) {
+        // Scan ALL living players — a teammate in the open should be seen even if the
+        // nearest is behind a wall.
+        let detectedPlayer: Player | null = null;
+        let bestDist = Number.POSITIVE_INFINITY;
+        for (const p of state.players) {
+          if (p.hp <= 0 || p.absent) continue;
+          const pdx = p.x - z.x;
+          const pdy = p.y - z.y;
+          const pdist = len(pdx, pdy) || 1;
+          const senseRange = z.sense * mod.senseMul * (night ? PCFG.nightSenseMul : 1);
+          const detected =
+            (pdist <= senseRange && hasLineOfSight(z.x, z.y, p.x, p.y, state.walls)) ||
+            heard(p.x, p.y, PCFG.baseHearing + p.noise, z.x, z.y);
+          if (detected && pdist < bestDist) {
+            bestDist = pdist;
+            detectedPlayer = p;
+          }
+        }
+
+        // Transition the percept state machine.
+        if (detectedPlayer !== null) {
+          // Any player detected → hunt (or stay hunting).
+          z.percept = "hunt";
+          z.lastSeenX = detectedPlayer.x;
+          z.lastSeenY = detectedPlayer.y;
+          z.searchT = 0;
+        } else if (z.percept === "hunt") {
+          // Lost sight while hunting — apply lose-grace before dropping to search.
+          // We reuse searchT as the grace accumulator here (negative while in grace).
+          // searchT starts at 0 on hunt; we let it count up as "time-since-last-seen".
+          // The actual search timer starts fresh when we flip to "search".
+          // Use a simple flag: if we just lost sight, let the main loop's dt accumulate
+          // in searchT. We flip to "search" only once searchT > loseGraceMs.
+          // (searchT is incremented below in the main dt block.)
+        }
+        // search and idle transitions are handled in the dt block below.
+      }
+
+      // dt-driven transitions (run every tick regardless of LOS throttle).
+      if (z.percept === "hunt" && z.searchT > PCFG.loseGraceMs / 1000) {
+        // loseGrace exceeded without a detection reset — flip to search.
+        // (When detectedPlayer !== null above, searchT is reset to 0 so this doesn't trigger.)
+        z.percept = "search";
+        z.searchT = 0;
+      } else if (z.percept === "hunt") {
+        // Accumulate lose-grace timer (reset to 0 by detection above).
+        z.searchT += dt;
+      } else if (z.percept === "search") {
+        z.searchT += dt;
+        const sdx = z.lastSeenX - z.x;
+        const sdy = z.lastSeenY - z.y;
+        const sdist = len(sdx, sdy);
+        if (sdist <= PCFG.searchArriveDist || z.searchT > PCFG.searchTime) {
+          z.percept = "idle";
+          z.searchT = 0;
+        }
+      }
+      // idle: handled below via chasing=false path; leash applied after movement.
+
+      // Derive chasing and movement target from percept.
+      chasing = z.percept === "hunt" || z.percept === "search";
+      if (chasing) {
+        // Steer toward lastSeen position during hunt/search.
+        dx = z.lastSeenX - z.x;
+        dy = z.lastSeenY - z.y;
+        const lastSeenDist = len(dx, dy) || 1;
+        dx /= lastSeenDist;
+        dy /= lastSeenDist;
+        target = nearestPlayer(state, z.x, z.y); // keep target for melee
+        // dist must reflect actual distance to target for the melee attack check below
+        dist = target ? len(target.x - z.x, target.y - z.y) || 1 : Number.POSITIVE_INFINITY;
+      } else {
+        // idle: wander (no target needed for movement; melee still possible on contact)
+        target = nearestPlayer(state, z.x, z.y);
+        if (target) {
+          dist = len(target.x - z.x, target.y - z.y) || 1;
+        }
+      }
+    } else {
+      // omniscient: UNCHANGED — aggro latches; night auto-aggros; never reverts for omniscient types
+      target = nearestPlayer(state, z.x, z.y);
+      if (target) {
+        dx = target.x - z.x;
+        dy = target.y - z.y;
+        dist = len(dx, dy) || 1;
+        dx /= dist;
+        dy /= dist;
+        // aggro latches on once sensed; night auto-aggros (mod.autoAggro), day needs line-of-sense
+        if (mod.autoAggro || dist <= z.sense * mod.senseMul) z.chasing = true;
+      }
+      chasing = z.chasing && target !== null;
     }
-    const chasing = z.chasing && target !== null;
 
     // desired heading
     const { hx, hy } = NAV_STEER[z.nav]({
@@ -205,6 +309,20 @@ export function sysAI(state: State, dt: number): void {
     z.y += (vy / vl) * spd * dt + z.vy * dt;
     z.vx *= kbK;
     z.vy *= kbK;
+
+    // idle leash for sight types: drift slowly toward the nearest player so the zombie
+    // stays re-detectable and doesn't hog a nightCapMax slot far from the action.
+    if (z.perception === "sight" && z.percept === "idle") {
+      const lp2 = nearestPlayer(state, z.x, z.y);
+      if (lp2) {
+        const ldx2 = lp2.x - z.x;
+        const ldy2 = lp2.y - z.y;
+        const ldist2 = len(ldx2, ldy2) || 1;
+        const leashSpd = z.speed * mod.speedMul * 0.25;
+        z.x += (ldx2 / ldist2) * leashSpd * dt;
+        z.y += (ldy2 / ldist2) * leashSpd * dt;
+      }
+    }
 
     if (z.attackCd > 0) z.attackCd -= dt;
 

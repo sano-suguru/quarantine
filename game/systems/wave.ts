@@ -95,6 +95,11 @@ export function spawnZombie(
     lungeCd: rand(0, t.lungePeriod ?? 0),
     lungeT: 0,
     wanderDir: rand(0, Math.PI * 2),
+    perception: t.perception ?? "omniscient",
+    percept: "idle",
+    lastSeenX: 0,
+    lastSeenY: 0,
+    searchT: 0,
   });
 }
 
