@@ -38,7 +38,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     lungePeriod: 2.4,
     separation: 1.0,
     nav: "path",
-    perception: "omniscient",
+    perception: "sight",
   },
   brute: {
     hp: 260,

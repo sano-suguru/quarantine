@@ -235,7 +235,8 @@ export interface Zombie {
   lungePeriod: number;
   separation: number;
   nav: NavMode;
-  /** latched once aggroed (or at night); never reverts → guarantees the night clears */
+  /** latched once aggroed (or at night); never reverts for omniscient types → guarantees the night clears.
+   *  For sight types, chasing is derived each frame from percept (hunt/search) and does revert. */
   chasing: boolean;
   /** countdown to the next lunge */
   lungeCd: number;
