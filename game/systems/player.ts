@@ -71,6 +71,11 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   const inp = p.input;
   p.searching = false; // re-derived each tick; interact() sets it true while night-searching
 
+  // decay noise toward 0 each tick (exponential falloff); clamp sub-threshold values to 0
+  // to avoid floating-point never-quite-reaching-zero. Bumps happen later in this function.
+  p.noise *= CONFIG.ai.perception.noise.decay;
+  if (p.noise < 0.5) p.noise = 0;
+
   // F = toggle the flashlight (off = no drain, near-blind). Edge, consumed below.
   if (inp.lightToggle) {
     p.lightOn = !p.lightOn;
@@ -124,6 +129,12 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   // client's own-player prediction stays collider-free; it reconciles to this via the snapshot)
   if (!healing) resolveDeployableCollisions(p, state);
 
+  // run noise: footstep clatter while moving (scaled by dt so it's rate-based, not per-tick)
+  if (moving && !healing) {
+    const noiseCfg = CONFIG.ai.perception.noise;
+    p.noise = Math.min(noiseCfg.max, p.noise + noiseCfg.run * dt);
+  }
+
   // E = context interact: repair a barricade you're next to, else search a cache
   interact(state, p, dt, healing, moving, searched);
 
@@ -174,7 +185,12 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   if (wantFire && p.fireCd <= 0 && p.reloadT <= 0 && !healing) {
     if (wd.melee || p.ammo > 0) {
       fireWeapon(state, p, wd);
-      if (!wd.melee) p.ammo--;
+      if (!wd.melee) {
+        p.ammo--;
+        // fire noise: gunshot attracts distant sight-model zombies (melee is silent by design)
+        const noiseCfg = CONFIG.ai.perception.noise;
+        p.noise = Math.min(noiseCfg.max, p.noise + noiseCfg.fire);
+      }
       p.fireCd = 1 / (wd.fireRate * p.fireRateMul);
       p.firedThisHold = true;
     } else {
@@ -337,6 +353,10 @@ function interact(
     cache.searchT += dt;
     searched.add(cache); // mark; sysPlayer resets only caches nobody searched
     p.searching = true; // drives the rummage motion (draw) for all phases
+    // rummage noise: audible to sight-model zombies (double-sourced with the existing lure in
+    // ai.ts until the Stalker phase unifies into a single noise model — see task-3-brief.md)
+    const noiseCfg = CONFIG.ai.perception.noise;
+    p.noise = Math.min(noiseCfg.max, p.noise + noiseCfg.rummage * dt);
     // ongoing dust while rummaging
     if (
       Math.floor((cache.searchT - dt) / CONFIG.actionFeel.search.dustEveryS) !==

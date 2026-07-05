@@ -299,6 +299,17 @@ export const CONFIG = {
       searchArriveDist: 40, // world units — close enough to the search target to stop and look
       losEveryFrames: 4, // re-check LOS every N sim ticks (performance throttle; 4 = ~15 Hz)
       loseGraceMs: 700, // ms a zombie keeps hunting after losing LOS before falling to search
+      // per-player noise model: p.noise rises on loud actions and decays each tick.
+      // Task 4 (sight perception) reads p.noise as the hearing-radius bonus for sight-model zombies.
+      // Tech-debt: rummage noise is double-sourced (lure in ai.ts + p.noise) until the Stalker phase
+      // unifies the two into a single noise model. See task-3-brief.md for rationale.
+      noise: {
+        fire: 260, // noise added on each shot (loud, attracts distant sight-model zombies)
+        run: 70, // noise added per second of movement (footstep clatter)
+        rummage: 200, // noise added per second of active cache searching
+        decay: 0.92, // multiplicative decay applied each sim tick (exponential falloff)
+        max: 400, // clamp ceiling so simultaneous loud actions don't stack unboundedly
+      },
     },
     nav: {
       whiskerLook: 40, // how far ahead (world units) the avoidance whiskers probe

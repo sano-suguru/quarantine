@@ -186,6 +186,10 @@ export interface Player {
    *  "noise"). sysPlayer sets it each tick, sysAI reads it to surge nearby zombies (the lure).
    *  Host-derived, NOT synced — clients never run sysPlayer/sysAI so it stays false there. */
   searching: boolean;
+  /** host-only transient hearing loudness (fire/run/rummage); NOT synced. Rises on noise-producing
+   *  actions and decays each tick. Consumed by the perception system (Task 4) as the hearing
+   *  input radius for sight-model zombies. Zero until Task 4 reads it — no behavior change yet. */
+  noise: number;
   /** between-nights draft: card ids currently offered to this player (host-rolled, snapshot-synced) */
   draftOffer: string[];
   /** how many free picks this player has spent this night (free while < CONFIG.arsenal.freePicks,
