@@ -54,8 +54,20 @@ const NAV_STEER: Record<NavMode, (c: SteerCtx) => { hx: number; hy: number }> = 
     });
   },
   path: (c) => {
-    if (!c.chasing || !c.state.flow)
-      return headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
+    if (!c.chasing) return headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
+    // A searching sight zombie must head to its last-known position, NOT ride the live-player
+    // flow field (which descends to the player's actual position and tracks through walls).
+    // During hunt the player is detected so the flow field is correct and fair.
+    // Omniscient path types always use the flow field.
+    if (c.z.perception === "sight" && c.z.percept === "search") {
+      const CFG = CONFIG.ai.nav;
+      return avoidHeading(c.z.x, c.z.y, c.dx, c.dy, c.state.walls, {
+        look: CFG.whiskerLook,
+        whiskerAngle: CFG.whiskerAngle,
+        strength: CFG.avoidStrength,
+      });
+    }
+    if (!c.state.flow) return headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
     const g = sampleFlow(c.state.flow, c.z.x, c.z.y);
     if (g.hx === 0 && g.hy === 0)
       return headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
