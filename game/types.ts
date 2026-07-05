@@ -1,3 +1,4 @@
+import type { FlowField } from "./engine/navfield";
 import type { PlayerInput } from "./net/playerInput";
 
 export interface GunPart {
@@ -56,6 +57,8 @@ export interface WeaponDef {
   meleeRange?: number;
 }
 
+export type NavMode = "none" | "avoid" | "path";
+
 export interface EnemyType {
   hp: number;
   speed: number;
@@ -80,6 +83,8 @@ export interface EnemyType {
   lungePeriod?: number;
   /** how much the steering separation force affects this type (brute ≈ 0) */
   separation?: number;
+  /** navigation intelligence: none=beeline, avoid=steer around walls, path=flow-field route */
+  nav?: NavMode;
 }
 
 export interface Upgrade {
@@ -220,6 +225,7 @@ export interface Zombie {
   lunge: number;
   lungePeriod: number;
   separation: number;
+  nav: NavMode;
   /** latched once aggroed (or at night); never reverts → guarantees the night clears */
   chasing: boolean;
   /** countdown to the next lunge */
@@ -492,6 +498,12 @@ export interface State {
   surrounded: number;
   /** nearby zombies that are outside the flashlight cone (behind / in the dark) */
   lurking: number;
+  // ---- host-only transient navigation state (NOT in captureSnapshot/encode) ----
+  /** current flow field for path-nav zombies; null until first build or when no living players */
+  flow: FlowField | null;
+  /** monotonic sim-tick counter used to schedule flow-field rebuilds (one per sysAI call).
+   *  There is no general state.tick — this is the only tick counter in state. */
+  navTick: number;
 }
 
 /** Structural type so state.ts need not import the engine class directly. */

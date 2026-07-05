@@ -271,6 +271,7 @@ function zombieFromSnap(z: SnapZombie): Zombie {
     lunge: t.lunge ?? 0,
     lungePeriod: t.lungePeriod ?? 0,
     separation: t.separation ?? 1,
+    nav: "none",
     chasing: true,
     lungeCd: 0,
     lungeT: 0,

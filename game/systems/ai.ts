@@ -4,9 +4,69 @@ import { phaseMods } from "../data/phaseMods";
 import { Audio } from "../engine/audio";
 import { circlePush, circlePushFromSegment } from "../engine/geometry";
 import { len, rand } from "../engine/math";
+import { buildFlowField, sampleFlow } from "../engine/navfield";
 import { localPlayer, nearestPlayer } from "../engine/players";
-import type { State } from "../types";
+import { avoidHeading } from "../engine/steering";
+import type { NavMode, State, Zombie } from "../types";
 import { fxHurt, fxImpact } from "./fx";
+
+/** Desired heading for a zombie this frame — extracted from pass-1 verbatim (nav: "none").
+ *  dx/dy is the normalized direction to the target (0,0 if no target). */
+function headingNone(
+  z: Zombie,
+  state: State,
+  chasing: boolean,
+  dx: number,
+  dy: number,
+  wanderMul: number,
+  dt: number,
+): { hx: number; hy: number } {
+  if (chasing) {
+    const a = Math.sin(state.time * 3 + z.wob) * z.wander * 0.5;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    return { hx: dx * c - dy * s, hy: dx * s + dy * c };
+  }
+  z.wanderDir += rand(-1, 1) * z.wander * wanderMul * 3 * dt;
+  return { hx: Math.cos(z.wanderDir), hy: Math.sin(z.wanderDir) };
+}
+
+type SteerCtx = {
+  z: Zombie;
+  state: State;
+  chasing: boolean;
+  dx: number;
+  dy: number;
+  wanderMul: number;
+  dt: number;
+};
+const NAV_STEER: Record<NavMode, (c: SteerCtx) => { hx: number; hy: number }> = {
+  none: (c) => headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt),
+  avoid: (c) => {
+    const base = headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
+    const bl = Math.hypot(base.hx, base.hy) || 1;
+    const CFG = CONFIG.ai.nav;
+    return avoidHeading(c.z.x, c.z.y, base.hx / bl, base.hy / bl, c.state.walls, {
+      look: CFG.whiskerLook,
+      whiskerAngle: CFG.whiskerAngle,
+      strength: CFG.avoidStrength,
+    });
+  },
+  path: (c) => {
+    if (!c.chasing || !c.state.flow)
+      return headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
+    const g = sampleFlow(c.state.flow, c.z.x, c.z.y);
+    if (g.hx === 0 && g.hy === 0)
+      return headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
+    // smooth final approach / opening traversal with whiskers
+    const CFG = CONFIG.ai.nav;
+    return avoidHeading(c.z.x, c.z.y, g.hx, g.hy, c.state.walls, {
+      look: CFG.whiskerLook,
+      whiskerAngle: CFG.whiskerAngle,
+      strength: CFG.avoidStrength,
+    });
+  },
+};
 
 const WOOD: [number, number, number] = [0.62, 0.42, 0.2];
 const LUNGE_DUR = 0.3; // seconds a runner's dash lasts
@@ -15,6 +75,22 @@ export function sysAI(state: State, dt: number): void {
   const Z = state.zombies;
   const lp = localPlayer(state);
   const mod = phaseMods(state.phase, state.day);
+  const CFG = CONFIG.ai.nav;
+
+  // rebuild flow field every rebuildFrames ticks (or on first call when flow is null)
+  state.navTick++;
+  if (state.navTick % CFG.rebuildFrames === 0 || state.flow === null) {
+    const living = state.players.filter((p) => p.hp > 0 && !p.absent);
+    const b = {
+      minX: -CONFIG.arena,
+      minY: -CONFIG.arena,
+      maxX: CONFIG.arena,
+      maxY: CONFIG.arena,
+    };
+    state.flow = living.length
+      ? buildFlowField(state.walls, living, b, CFG.cell, CFG.clearance)
+      : null;
+  }
 
   state.hash.clear();
   for (let i = 0; i < Z.length; i++) {
@@ -63,21 +139,15 @@ export function sysAI(state: State, dt: number): void {
     const chasing = z.chasing && target !== null;
 
     // desired heading
-    let hx: number;
-    let hy: number;
-    if (chasing) {
-      // shamble: wobble the heading a little so the chase isn't a dead-straight line
-      const a = Math.sin(state.time * 3 + z.wob) * z.wander * 0.5;
-      const c = Math.cos(a);
-      const s = Math.sin(a);
-      hx = dx * c - dy * s;
-      hy = dx * s + dy * c;
-    } else {
-      // wander: drift the heading slowly and amble in that direction
-      z.wanderDir += rand(-1, 1) * z.wander * mod.wanderMul * 3 * dt;
-      hx = Math.cos(z.wanderDir);
-      hy = Math.sin(z.wanderDir);
-    }
+    const { hx, hy } = NAV_STEER[z.nav]({
+      z,
+      state,
+      chasing,
+      dx,
+      dy,
+      wanderMul: mod.wanderMul,
+      dt,
+    });
 
     // soft steering separation (weakened; positional de-overlap does the hard work)
     let sx = 0;

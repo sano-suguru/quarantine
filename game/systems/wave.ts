@@ -90,6 +90,7 @@ export function spawnZombie(
     lunge: t.lunge ?? 0,
     lungePeriod: t.lungePeriod ?? 0,
     separation: t.separation ?? 1,
+    nav: t.nav ?? "none",
     chasing: opts.chasing ?? true,
     lungeCd: rand(0, t.lungePeriod ?? 0),
     lungeT: 0,

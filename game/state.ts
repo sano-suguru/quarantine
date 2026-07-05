@@ -86,5 +86,8 @@ export function newState(): State {
     flashColor: [1, 0.3, 0.3],
     surrounded: 0,
     lurking: 0,
+    // transient host-only nav state — NOT in captureSnapshot/encode
+    flow: null,
+    navTick: 0,
   };
 }
