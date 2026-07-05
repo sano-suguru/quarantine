@@ -7,6 +7,10 @@ uniform vec2 u_lightPos[MAX_LIGHTS];   // each light's world origin
 uniform vec2 u_lightAim[MAX_LIGHTS];   // each light's normalized aim direction
 uniform float u_lightInt[MAX_LIGHTS];  // each cone's brightness (battery/flicker), 0 = off
 uniform vec2 u_lightCone[MAX_LIGHTS];  // per-light: x = cos(halfAngle), y = range
+#define MAX_WALLS 32
+uniform vec4 u_wall[MAX_WALLS]; // static wall segments (x1,y1,x2,y2), world space
+uniform int u_wallCount;
+uniform float u_shadowFloor;    // floor brightness where occluded from every light (phase-blended, set CPU-side)
 uniform float u_ambient; // shared ambient light floor
 uniform vec2 u_personal; // shared: x: radius, y: max brightness of the dim pool
 uniform float u_emissive;  // darkness floor for this pass (0 normal, >0 additive)

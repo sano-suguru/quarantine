@@ -1172,6 +1172,7 @@ function buildWeaponSlots(): void {
 
 export function startGame(): void {
   state = newState();
+  Renderer.setWalls(state.walls);
   deployableSeen.clear();
   state.running = true;
   lastWeapon = "";

@@ -7,6 +7,11 @@ uniform vec2 u_lightPos[MAX_LIGHTS];
 uniform vec2 u_lightAim[MAX_LIGHTS];
 uniform float u_lightInt[MAX_LIGHTS];
 uniform vec2 u_lightCone[MAX_LIGHTS];  // per-light: x = cos(halfAngle), y = range
+#define MAX_WALLS 32
+uniform vec4 u_wall[MAX_WALLS]; // static wall segments (x1,y1,x2,y2), world space
+uniform int u_wallCount;
+uniform float u_shadowFloor;    // floor brightness where occluded from every light (phase-blended, set CPU-side)
+uniform int u_occludeFloor;     // runtime perf fallback: 0 = skip floor occlusion (wired in Task 4)
 uniform float u_ambient; // shared ambient light floor
 uniform vec2 u_personal; // shared: x: radius, y: max brightness of the dim pool
 uniform float u_sat; // grade: 1 = full colour, 0 = greyscale
