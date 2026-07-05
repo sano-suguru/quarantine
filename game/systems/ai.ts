@@ -5,6 +5,7 @@ import { Audio } from "../engine/audio";
 import { circlePush, circlePushFromSegment } from "../engine/geometry";
 import { len, rand } from "../engine/math";
 import { localPlayer, nearestPlayer } from "../engine/players";
+import { avoidHeading } from "../engine/steering";
 import type { NavMode, State, Zombie } from "../types";
 import { fxHurt, fxImpact } from "./fx";
 
@@ -40,7 +41,16 @@ type SteerCtx = {
 };
 const NAV_STEER: Record<NavMode, (c: SteerCtx) => { hx: number; hy: number }> = {
   none: (c) => headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt),
-  avoid: (c) => headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt), // Task 3
+  avoid: (c) => {
+    const base = headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt);
+    const bl = Math.hypot(base.hx, base.hy) || 1;
+    const CFG = CONFIG.ai.nav;
+    return avoidHeading(c.z.x, c.z.y, base.hx / bl, base.hy / bl, c.state.walls, {
+      look: CFG.whiskerLook,
+      whiskerAngle: CFG.whiskerAngle,
+      strength: CFG.avoidStrength,
+    });
+  },
   path: (c) => headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt), // Task 4
 };
 

@@ -291,6 +291,13 @@ export const CONFIG = {
     rerollBase: 30, // SCRAP for the first reroll of a night
     rerollStep: 25, // each further reroll this night costs this much more (resets next night)
   },
+  ai: {
+    nav: {
+      whiskerLook: 40, // how far ahead (world units) the avoidance whiskers probe
+      whiskerAngle: 0.6, // radians offset of the two side whiskers from the center probe
+      avoidStrength: 1.0, // how hard to steer away when a wall is detected (multiplier on blockage)
+    },
+  },
   deployables: {
     lightIntensity: 0.6, // deployable searchlight brightness (player flashlight is ~1); high enough
     // that the cone reads on near-black night ground, low enough to keep the player light primary
