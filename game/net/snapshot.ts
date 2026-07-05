@@ -123,8 +123,9 @@ interface SnapPickup {
 
 /**
  * Wire representation of the Stalker. `present` is always sent (1 byte); when true,
- * x/y/face/state follow as a fixed 6-byte payload. The `state` string maps to a small
- * integer: 0=lull, 1=aggro, 2=stagger, 3=retreat.
+ * x/y/face/state/vis follow as a fixed 7-byte payload. The `state` string maps to a small
+ * integer: 0=lull, 1=aggro, 2=stagger, 3=retreat. `vis` is quantized as a u8 (vis*255)
+ * so co-op clients see the ward-fade rather than a pop.
  */
 interface SnapStalker {
   present: boolean;
@@ -133,6 +134,8 @@ interface SnapStalker {
   face: number;
   /** 0=lull 1=aggro 2=stagger 3=retreat */
   state: number;
+  /** visibility in [0,1] — synced so clients see the ward-fade (not a pop) */
+  vis: number;
 }
 
 export interface Snapshot {
@@ -263,15 +266,17 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
       reloading: d.reloading,
       ammoFrac: d.ammoFrac ?? 1,
     })),
-    stalker: state.stalker
-      ? {
-          present: true,
-          x: state.stalker.x,
-          y: state.stalker.y,
-          face: state.stalker.face,
-          state: stalkerStateToInt(state.stalker.state),
-        }
-      : { present: false, x: 0, y: 0, face: 0, state: 0 },
+    stalker:
+      state.stalker && state.stalker.vis > 0.004
+        ? {
+            present: true,
+            x: state.stalker.x,
+            y: state.stalker.y,
+            face: state.stalker.face,
+            state: stalkerStateToInt(state.stalker.state),
+            vis: state.stalker.vis,
+          }
+        : { present: false, x: 0, y: 0, face: 0, state: 0, vis: 0 },
   };
 }
 
@@ -497,6 +502,7 @@ export function applySnapshot(
       sk.y = snap.stalker.y;
       sk.face = snap.stalker.face;
       sk.state = intToStalkerState(snap.stalker.state);
+      sk.vis = snap.stalker.vis;
     } else {
       state.stalker = {
         x: snap.stalker.x,
@@ -505,7 +511,7 @@ export function applySnapshot(
         state: intToStalkerState(snap.stalker.state),
         staggerT: 0,
         contactCd: 0,
-        vis: 1, // client sees a fully visible stalker; vis is host-sim-only
+        vis: snap.stalker.vis,
       };
     }
   } else {
@@ -719,14 +725,15 @@ export function encode(snap: Snapshot): ArrayBuffer {
   }
 
   // stalker block — fixed-size, always written (single-player: presence=0, no payload).
-  // Layout: [u8 present] [i16 x] [i16 y] [u8 face-quantized-over-TAU] [u8 state-int]
-  // Total: 1 byte when absent; 7 bytes when present. Always writes ≥1 byte.
+  // Layout: [u8 present] [i16 x] [i16 y] [u8 face-quantized-over-TAU] [u8 state-int] [u8 vis*255]
+  // Total: 1 byte when absent; 8 bytes when present. Always writes ≥1 byte.
   w.u8(snap.stalker.present ? 1 : 0);
   if (snap.stalker.present) {
     w.i16(qpos(snap.stalker.x));
     w.i16(qpos(snap.stalker.y));
     w.u8(q01(((snap.stalker.face % TAU) + TAU) % TAU, TAU));
     w.u8(snap.stalker.state & 3); // only 4 states, 2 bits; mask for safety
+    w.u8(Math.max(0, Math.min(255, Math.round(snap.stalker.vis * 255)))); // vis as u8
   }
 
   return w.done();
@@ -905,7 +912,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
     });
   }
 
-  // stalker block — mirror of encode: [u8 present] (+ [i16 x][i16 y][u8 face][u8 state] when present)
+  // stalker block — mirror of encode: [u8 present] (+ [i16 x][i16 y][u8 face][u8 state][u8 vis] when present)
   const stalkerPresent = r.u8() !== 0;
   let stalker: SnapStalker;
   if (stalkerPresent) {
@@ -913,9 +920,10 @@ export function decode(buf: ArrayBuffer): Snapshot {
     const sy = dqpos(r.i16());
     const sface = dq01(r.u8(), TAU);
     const sstate = r.u8() & 3;
-    stalker = { present: true, x: sx, y: sy, face: sface, state: sstate };
+    const svis = r.u8() / 255;
+    stalker = { present: true, x: sx, y: sy, face: sface, state: sstate, vis: svis };
   } else {
-    stalker = { present: false, x: 0, y: 0, face: 0, state: 0 };
+    stalker = { present: false, x: 0, y: 0, face: 0, state: 0, vis: 0 };
   }
 
   return {
@@ -1007,7 +1015,7 @@ export function lerpSnapshots(a: Snapshot, b: Snapshot, t: number): Snapshot {
       : db;
   });
 
-  // stalker: interpolate x/y/face when present in both frames; else snap to b (appear/disappear)
+  // stalker: interpolate x/y/face/vis when present in both frames; else snap to b (appear/disappear)
   let stalker: SnapStalker;
   if (b.stalker.present && a.stalker.present) {
     stalker = {
@@ -1016,6 +1024,7 @@ export function lerpSnapshots(a: Snapshot, b: Snapshot, t: number): Snapshot {
       y: lerp(a.stalker.y, b.stalker.y, t),
       face: lerpAngle(a.stalker.face, b.stalker.face, t),
       state: b.stalker.state, // state takes latest (b)
+      vis: lerp(a.stalker.vis, b.stalker.vis, t),
     };
   } else {
     stalker = b.stalker; // snap: appear or disappear — no partial lerp across a spawn/despawn edge

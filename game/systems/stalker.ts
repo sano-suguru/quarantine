@@ -192,7 +192,7 @@ export function sysStalker(state: State, dt: number): void {
       // While still lit, refresh the stagger window (lingering flash-ward)
       if (lit) s.staggerT = CFG.staggerWindow;
 
-      // Back away from the target
+      // Brief backward recede — stays short because vis fades out quickly (Step 1)
       if (target) {
         const dx = s.x - target.x;
         const dy = s.y - target.y;
@@ -200,6 +200,14 @@ export function sysStalker(state: State, dt: number): void {
         s.x += (dx / d) * CFG.staggerSpeed * dt;
         s.y += (dy / d) * CFG.staggerSpeed * dt;
         s.face = Math.atan2(target.y - s.y, target.x - s.x);
+      }
+
+      // When fully vanished: relocate to a fresh far dark spot and return to lull.
+      // vis stays at 0 so it fades back in gradually as it re-approaches.
+      if (s.vis <= 0) {
+        placeStalker(state, s);
+        s.state = "lull";
+        break;
       }
 
       if (s.staggerT <= 0) s.state = "aggro";
@@ -228,8 +236,29 @@ export function sysStalker(state: State, dt: number): void {
     }
   }
 
-  // Fade in on spawn
-  s.vis = Math.min(1, s.vis + dt * 2);
+  // Fade out while staggered (melts into the dark); fade in otherwise.
+  if (s.state === "stagger") {
+    s.vis = Math.max(0, s.vis - dt * CFG.wardFadeOut);
+  } else {
+    s.vis = Math.min(1, s.vis + dt * 2);
+  }
+}
+
+/**
+ * Place (or relocate) the stalker at spawnDist from the nearest living player,
+ * at an angle away from the player's aim (enter from the blind side).
+ * Mutates s in place — call this for both initial spawn and ward-triggered relocates.
+ */
+function placeStalker(state: State, s: NonNullable<State["stalker"]>): void {
+  const target = nearestPlayer(state, 0, 0);
+  if (!target) return;
+
+  // Bias spawn angle to approach from opposite the player's aim (the dark side)
+  const awayFromAim = target.aim + Math.PI + (Math.random() - 0.5) * Math.PI;
+  const dist = CFG.spawnDist;
+  s.x = target.x + Math.cos(awayFromAim) * dist;
+  s.y = target.y + Math.sin(awayFromAim) * dist;
+  s.face = Math.atan2(target.y - s.y, target.x - s.x);
 }
 
 /**
@@ -241,21 +270,18 @@ export function spawnStalker(state: State): void {
   const target = nearestPlayer(state, 0, 0);
   if (!target) return;
 
-  // Bias spawn angle to approach from opposite the player's aim (the dark side)
-  const awayFromAim = target.aim + Math.PI + (Math.random() - 0.5) * Math.PI;
-  const dist = CFG.spawnDist;
-  const sx = target.x + Math.cos(awayFromAim) * dist;
-  const sy = target.y + Math.sin(awayFromAim) * dist;
-
-  state.stalker = {
-    x: sx,
-    y: sy,
-    face: Math.atan2(target.y - sy, target.x - sx),
+  // Temporary object to pass to placeStalker; placeStalker fills x/y/face.
+  const s: NonNullable<State["stalker"]> = {
+    x: 0,
+    y: 0,
+    face: 0,
     state: "lull",
     staggerT: 0,
     contactCd: 0,
     vis: 0,
   };
+  placeStalker(state, s);
+  state.stalker = s;
 }
 
 /** Immediately remove the stalker from the world. */

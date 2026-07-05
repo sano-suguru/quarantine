@@ -361,5 +361,6 @@ export const CONFIG = {
     scareFlashBoost: 0.9, // additional flashT added on a grab (stack on top of stalker.ts 0.7)
     scareDragDist: 80, // world units the camera lurches toward the stalker during the scare
     scareDragDecay: 6.0, // exp-decay speed of the camera drag (toward normal position)
+    wardFadeOut: 5, // vis fade-out rate (per second) while staggered — stalker melts into the dark
   },
 };
