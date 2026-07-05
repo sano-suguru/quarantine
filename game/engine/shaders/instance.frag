@@ -23,24 +23,63 @@ out vec4 frag;
 
 /* shape flags: 0 rect, 1 circle, 2 soft glow, 3 ring, 4 triangle, 5 hexagon, 6 slash */
 
+// distance from point p to segment a-b (world space; length-based, precision-robust)
+float distToSeg(vec2 p, vec2 a, vec2 b){
+  vec2 ab = b - a;
+  vec2 ap = p - a;
+  float t = clamp(dot(ap, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+  return length(ap - ab * t);
+}
+
+// does segment A(0,0)->B cross wall segment C->D, strictly interior to A->B?
+// all args are LIGHT-RELATIVE (light at origin) and highp, to avoid mediump cancellation.
+bool segCross(highp vec2 B, highp vec2 C, highp vec2 D){
+  highp vec2 s = D - C;
+  highp float rxs = B.x * s.y - B.y * s.x;      // B is the ray A->B with A=origin
+  if(abs(rxs) < 1e-6) return false;             // parallel/collinear → ignore
+  highp vec2 ac = C;                            // C - A, A = origin
+  highp float t = (ac.x * s.y - ac.y * s.x) / rxs;   // param along A->B
+  highp float u = (ac.x * B.y - ac.y * B.x) / rxs;   // param along C->D
+  const float E = 0.01;                         // endpoint guard: no caster-edge acne
+  return t > E && t < 1.0 - E && u >= 0.0 && u <= 1.0;
+}
+
 // how lit a world point is: ambient + the brightest of every player's pool/cone
 float lightAt(vec2 w){
   float best = 0.0;
+  bool anyLOS = false;
   for(int i = 0; i < MAX_LIGHTS; i++){
     if(i >= u_lightCount) break;
-    vec2 d = w - u_lightPos[i];
+    highp vec2 Lp = u_lightPos[i];
+    highp vec2 d = w - Lp;
     float dist = length(d);
-    // dim bubble right around each player so feet aren't pitch black
+    float range = u_lightCone[i].y;
+
+    // personal "feet" pool is NOT occluded (omni bubble; keeps the player's feet visible
+    // even hugging a wall — occluding it makes the feet flicker to black). Count it first.
     float pool = smoothstep(u_personal.x, u_personal.x * 0.3, dist) * u_personal.y;
-    // aimed cone: angle gate * distance falloff * intensity
+    best = max(best, pool);
+
+    // occlusion: any wall between this light and w? gates the CONE only.
+    bool blocked = false;
+    for(int k = 0; k < MAX_WALLS; k++){
+      if(k >= u_wallCount) break;
+      vec4 seg = u_wall[k];
+      if(distToSeg(Lp, seg.xy, seg.zw) > range) continue;         // early reject: wall beyond this light's reach
+      if(segCross(d, seg.xy - Lp, seg.zw - Lp)){ blocked = true; break; }
+    }
+    if(blocked) continue;   // cone blocked here; pool already counted above
+    anyLOS = true;
+
     vec2 dir = dist > 1e-3 ? d / dist : u_lightAim[i];
     float ca = dot(dir, u_lightAim[i]);
     float e = smoothstep(u_lightCone[i].x, mix(u_lightCone[i].x, 1.0, 0.35), ca);
-    float reach = smoothstep(u_lightCone[i].y, u_lightCone[i].y * 0.25, dist);
+    float reach = smoothstep(range, range * 0.25, dist);
     float cone = e * reach * u_lightInt[i];
-    best = max(best, max(pool, cone));
+    best = max(best, cone);
   }
-  return clamp(u_ambient + best, 0.0, 1.0);
+  float floorLevel = anyLOS ? u_ambient : u_shadowFloor;   // any unblocked cone → gloom; behind every cone → dark
+  return clamp(floorLevel + best, 0.0, 1.0);
 }
 
 // regular hexagon signed distance (negative inside), p/r in local space
