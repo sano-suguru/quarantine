@@ -72,12 +72,15 @@ function loudestPlayer(state: State, sx: number, sy: number): Player | null {
   return best;
 }
 
-/** Check whether any living player's light currently wards the stalker. */
-function anyPlayerWards(state: State, sx: number, sy: number): boolean {
+/**
+ * Return the first living player whose flashlight currently wards the stalker, or null.
+ * Used both to determine whether a ward is active and to identify who pays the battery cost.
+ */
+function wardingPlayer(state: State, sx: number, sy: number): Player | null {
   for (const pl of state.players) {
-    if (playerWardsStalker(pl, sx, sy, state.time)) return true;
+    if (playerWardsStalker(pl, sx, sy, state.time)) return pl;
   }
-  return false;
+  return null;
 }
 
 export function sysStalker(state: State, dt: number): void {
@@ -85,7 +88,8 @@ export function sysStalker(state: State, dt: number): void {
   if (!s) return;
 
   const target = loudestPlayer(state, s.x, s.y);
-  const lit = anyPlayerWards(state, s.x, s.y);
+  const warder = wardingPlayer(state, s.x, s.y);
+  const lit = warder !== null;
 
   // Decay contact cooldown
   if (s.contactCd > 0) s.contactCd -= dt;
@@ -112,7 +116,9 @@ export function sysStalker(state: State, dt: number): void {
       if (!target) break;
 
       if (lit) {
-        // Caught in the beam → stagger
+        // Caught in the beam → stagger. Nick the warding player's battery once on this edge
+        // (tiny cost so warding isn't entirely free; the ward is a flick, not a hold).
+        warder.battery = Math.max(0, warder.battery - CFG.wardBatteryCost);
         s.state = "stagger";
         s.staggerT = CFG.staggerWindow;
         break;

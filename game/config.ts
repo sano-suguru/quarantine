@@ -339,6 +339,7 @@ export const CONFIG = {
     staggerSpeed: 40, // px/s backing off while staggered
     staggerWindow: 1.1, // s the stagger lingers after the beam leaves
     wardConeGrace: 0.15, // s of cone-touch needed to trigger a stagger
+    wardBatteryCost: 4, // battery units drained from the warding player per aggro→stagger edge
     contactDist: 34,
     contactDamage: 34,
     contactCd: 1.5, // s before it can grab again

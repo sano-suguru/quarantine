@@ -40,6 +40,8 @@ function assistAim(state: State, px: number, py: number): number | null {
   const r2 = CONFIG.flashlight.range * CONFIG.flashlight.range;
   let best: { x: number; y: number; id: number } | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
+  // NOTE: iterates state.zombies only — state.stalker is a separate slot and is intentionally
+  // excluded from aim-assist (warding it with the light must be a deliberate manual act).
   for (const z of state.zombies) {
     const dx = z.x - px;
     const dy = z.y - py;
