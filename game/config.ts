@@ -333,4 +333,17 @@ export const CONFIG = {
     lightRangeMul: 0.6, // deployable cone range as a fraction of the player flashlight range
     lightHalfAngle: 0.5, // deployable cone half-angle (rad); narrower than the player cone
   },
+  stalker: {
+    spawnDist: 900, // spawns this far from the target, in the dark
+    advanceSpeed: 95, // px/s while aggro in the dark
+    staggerSpeed: 40, // px/s backing off while staggered
+    staggerWindow: 1.1, // s the stagger lingers after the beam leaves
+    wardConeGrace: 0.15, // s of cone-touch needed to trigger a stagger
+    contactDist: 34,
+    contactDamage: 34,
+    contactCd: 1.5, // s before it can grab again
+    retreatSpeed: 220, // px/s leaving at dawn / after a grab
+    noiseBias: 1.0, // how strongly it steers toward the loudest player
+    telegraphNear: 460, // proximity where telegraph starts
+  },
 };

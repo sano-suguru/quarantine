@@ -443,6 +443,17 @@ export interface Deployable {
   ammoFrac?: number;
 }
 
+/** The unkillable pursuer — a single-instance horror that runs on a separate subsystem. */
+export interface Stalker {
+  x: number;
+  y: number;
+  face: number;
+  state: "lull" | "aggro" | "stagger" | "retreat";
+  staggerT: number;
+  contactCd: number;
+  vis: number;
+}
+
 /** Day = lit scavenge/repair window; night = the dark horde siege. */
 export type SiegePhase = "day" | "night";
 
@@ -511,6 +522,8 @@ export interface State {
   /** which perk cards are unlocked this run (id = `card:<perkId>`); from meta, host-authoritative.
    *  Read by draftPool. Separate from `owned` (weapons) so the two namespaces don't collide. */
   unlockedCards: Record<string, boolean>;
+  /** The Stalker instance; null until first spawn (Phase 2+). */
+  stalker: Stalker | null;
   hash: SpatialHashLike;
   hitstopT: number;
   flashT: number;
