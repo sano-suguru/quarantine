@@ -6,7 +6,7 @@ import { PICKUP_TYPES } from "../data/pickups";
 import { WEAPON_ORDER } from "../data/weapons";
 import { lerp } from "../engine/math";
 import { makePlayer } from "../engine/players";
-import type { Bullet, Deployable, Pickup, SiegePhase, State, Zombie } from "../types";
+import type { Bullet, Deployable, Pickup, SiegePhase, Stalker, State, Zombie } from "../types";
 
 /**
  * Host-authoritative world snapshot: the host captures one each network tick and
@@ -25,6 +25,14 @@ import type { Bullet, Deployable, Pickup, SiegePhase, State, Zombie } from "../t
 const ENEMY_ORDER = Object.keys(ENEMY_TYPES);
 const PICKUP_ORDER = Object.keys(PICKUP_TYPES);
 const DEPLOYABLE_ORDER = Object.keys(DEPLOYABLE_TYPES);
+
+/** Stalker state string → wire int (0=lull, 1=aggro, 2=stagger, 3=retreat). */
+const STALKER_STATES: Stalker["state"][] = ["lull", "aggro", "stagger", "retreat"];
+const stalkerStateToInt = (s: Stalker["state"]): number => {
+  const i = STALKER_STATES.indexOf(s);
+  return i < 0 ? 0 : i;
+};
+const intToStalkerState = (i: number): Stalker["state"] => STALKER_STATES[i] ?? "lull";
 
 const ARENA = CONFIG.arena;
 const SPAWN_MAX = 0.35; // zombie emerge time (see spawnZombie)
@@ -113,6 +121,20 @@ interface SnapPickup {
   life: number;
 }
 
+/**
+ * Wire representation of the Stalker. `present` is always sent (1 byte); when true,
+ * x/y/face/state follow as a fixed 6-byte payload. The `state` string maps to a small
+ * integer: 0=lull, 1=aggro, 2=stagger, 3=retreat.
+ */
+interface SnapStalker {
+  present: boolean;
+  x: number;
+  y: number;
+  face: number;
+  /** 0=lull 1=aggro 2=stagger 3=retreat */
+  state: number;
+}
+
 export interface Snapshot {
   tick: number;
   time: number;
@@ -144,6 +166,13 @@ export interface Snapshot {
     reloading: boolean;
     ammoFrac: number;
   }[];
+  /**
+   * The Stalker block — always present in the wire format (presence byte written even when null).
+   * When present=false, x/y/face/state carry no meaning and are not transmitted.
+   * Kept separate from `zombies` so the client's kill-rederivation (prev→next zombie id diff)
+   * never sees the stalker; the stalker is despawned via a separate withdraw cue.
+   */
+  stalker: SnapStalker;
 }
 
 /** Read the current world into a logical snapshot. */
@@ -234,6 +263,15 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
       reloading: d.reloading,
       ammoFrac: d.ammoFrac ?? 1,
     })),
+    stalker: state.stalker
+      ? {
+          present: true,
+          x: state.stalker.x,
+          y: state.stalker.y,
+          face: state.stalker.face,
+          state: stalkerStateToInt(state.stalker.state),
+        }
+      : { present: false, x: 0, y: 0, face: 0, state: 0 },
   };
 }
 
@@ -449,6 +487,30 @@ export function applySnapshot(
       ammoFrac: sd.ammoFrac,
     };
   });
+
+  // stalker: set/clear from the dedicated block (separate from zombies so kill-rederive is unaffected)
+  if (snap.stalker.present) {
+    // Reuse existing object to keep identity stable (avoids churn when only position updates)
+    const sk = state.stalker;
+    if (sk) {
+      sk.x = snap.stalker.x;
+      sk.y = snap.stalker.y;
+      sk.face = snap.stalker.face;
+      sk.state = intToStalkerState(snap.stalker.state);
+    } else {
+      state.stalker = {
+        x: snap.stalker.x,
+        y: snap.stalker.y,
+        face: snap.stalker.face,
+        state: intToStalkerState(snap.stalker.state),
+        staggerT: 0,
+        contactCd: 0,
+        vis: 1, // client sees a fully visible stalker; vis is host-sim-only
+      };
+    }
+  } else {
+    state.stalker = null;
+  }
 }
 
 /* -------------------------------- binary codec ------------------------------ */
@@ -656,6 +718,17 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.u8(Math.round(Math.max(0, Math.min(1, d.ammoFrac)) * 255));
   }
 
+  // stalker block — fixed-size, always written (single-player: presence=0, no payload).
+  // Layout: [u8 present] [i16 x] [i16 y] [u8 face-quantized-over-TAU] [u8 state-int]
+  // Total: 1 byte when absent; 7 bytes when present. Always writes ≥1 byte.
+  w.u8(snap.stalker.present ? 1 : 0);
+  if (snap.stalker.present) {
+    w.i16(qpos(snap.stalker.x));
+    w.i16(qpos(snap.stalker.y));
+    w.u8(q01(((snap.stalker.face % TAU) + TAU) % TAU, TAU));
+    w.u8(snap.stalker.state & 3); // only 4 states, 2 bits; mask for safety
+  }
+
   return w.done();
 }
 
@@ -832,6 +905,19 @@ export function decode(buf: ArrayBuffer): Snapshot {
     });
   }
 
+  // stalker block — mirror of encode: [u8 present] (+ [i16 x][i16 y][u8 face][u8 state] when present)
+  const stalkerPresent = r.u8() !== 0;
+  let stalker: SnapStalker;
+  if (stalkerPresent) {
+    const sx = dqpos(r.i16());
+    const sy = dqpos(r.i16());
+    const sface = dq01(r.u8(), TAU);
+    const sstate = r.u8() & 3;
+    stalker = { present: true, x: sx, y: sy, face: sface, state: sstate };
+  } else {
+    stalker = { present: false, x: 0, y: 0, face: 0, state: 0 };
+  }
+
   return {
     tick,
     time,
@@ -850,6 +936,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
     barricades,
     caches,
     deployables,
+    stalker,
   };
 }
 
@@ -919,5 +1006,20 @@ export function lerpSnapshots(a: Snapshot, b: Snapshot, t: number): Snapshot {
       ? { ...db, x: lerp(da.x, db.x, t), y: lerp(da.y, db.y, t), aim: lerpAngle(da.aim, db.aim, t) }
       : db;
   });
-  return { ...b, players, zombies, bullets, pickups, deployables };
+
+  // stalker: interpolate x/y/face when present in both frames; else snap to b (appear/disappear)
+  let stalker: SnapStalker;
+  if (b.stalker.present && a.stalker.present) {
+    stalker = {
+      present: true,
+      x: lerp(a.stalker.x, b.stalker.x, t),
+      y: lerp(a.stalker.y, b.stalker.y, t),
+      face: lerpAngle(a.stalker.face, b.stalker.face, t),
+      state: b.stalker.state, // state takes latest (b)
+    };
+  } else {
+    stalker = b.stalker; // snap: appear or disappear — no partial lerp across a spawn/despawn edge
+  }
+
+  return { ...b, players, zombies, bullets, pickups, deployables, stalker };
 }

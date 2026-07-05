@@ -128,8 +128,10 @@ describe("snapshot binary round-trip", () => {
       h ^= b;
       h = Math.imul(h, 0x01000193);
     }
+    // +1 byte vs the pre-stalker golden: the stalker block always writes a presence byte (0 for null).
+    // If this drifts again, bump PROTOCOL_VERSION in net.ts and regenerate here.
     expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
-      `"len=303 fnv=d5880647"`,
+      `"len=304 fnv=6c21e1c5"`,
     );
   });
 
@@ -208,6 +210,41 @@ describe("snapshot binary round-trip", () => {
     for (let i = 0; i < 60; i++) spawnZombie(s, "walker", 1, 1);
     const buf = encode(captureSnapshot(s, 1));
     expect(buf.byteLength).toBeLessThan(16 * 1024);
+  });
+
+  it("stalker present: round-trips x/y/face/state; stalker absent: round-trips as not-present", () => {
+    // Present stalker: encode → decode must reconstruct all fields within quantization tolerance
+    const sPresent = newState();
+    sPresent.stalker = {
+      x: 123,
+      y: -456,
+      face: 1.2,
+      state: "aggro",
+      staggerT: 0,
+      contactCd: 0.3,
+      vis: 0.7,
+    };
+    const backPresent = decode(encode(captureSnapshot(sPresent, 7)));
+    expect(backPresent.stalker.present).toBe(true);
+    expect(Math.abs(backPresent.stalker.x - 123)).toBeLessThanOrEqual(POS_TOL);
+    expect(Math.abs(backPresent.stalker.y - -456)).toBeLessThanOrEqual(POS_TOL);
+    // face is byte-quantized over TAU: step ≈ 0.025 rad, allow 0.1
+    expect(Math.abs(backPresent.stalker.face - 1.2)).toBeLessThanOrEqual(0.1);
+    // state: 0=lull, 1=aggro, 2=stagger, 3=retreat
+    expect(backPresent.stalker.state).toBe(1); // "aggro" → 1
+
+    // Absent stalker: encode → decode must produce present=false
+    const sAbsent = newState();
+    expect(sAbsent.stalker).toBeNull();
+    const backAbsent = decode(encode(captureSnapshot(sAbsent, 8)));
+    expect(backAbsent.stalker.present).toBe(false);
+
+    // Byte-delta confirmation: absent stalker = +1 presence byte vs a snapshot with no stalker block.
+    // (The test that verifies this is the golden above: len went 303→304 for the null case.)
+    const lenAbsent = encode(captureSnapshot(sAbsent, 1)).byteLength;
+    const lenPresent = encode(captureSnapshot(sPresent, 1)).byteLength;
+    // present adds 6 more bytes (i16 x + i16 y + u8 face + u8 state = 2+2+1+1)
+    expect(lenPresent - lenAbsent).toBe(6);
   });
 
   it("round-trips searching / swingT / swingKind", () => {
