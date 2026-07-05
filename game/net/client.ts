@@ -342,6 +342,23 @@ export class Client {
         }
       }
     }
+
+    // stalker withdraw cue: present→false edge — a retreating footfall, NOT a kill burst.
+    // The stalker is a separate snapshot block and is never in `snap.zombies`, so it is
+    // already excluded from the zombie kill-rederivation above (the prev.zombies / nextIds
+    // id-diff loop only sees zombie entries, not this block).
+    if (prev.stalker.present && !next.stalker.present) {
+      // Play a retreating footfall cue (quiet, centred — stalker is withdrawing off-arena)
+      Audio.stalkerFootfall(0, 0.3);
+    }
+
+    // stalkerFx (footfall/heartbeat/cone-flicker) for co-op clients is driven automatically
+    // by game.ts:draw() via state.stalker, which applySnapshot now populates from the
+    // synced block above. No additional wiring needed here.
+    // Grab scare on the client: game.ts:draw() edge-detects state.stalker.contactCd, which is
+    // now SYNCED in the snapshot block, so the flash/shake/lurch/stinger fire for a client
+    // victim exactly as on the host. The pain grunt + blood come from the hitFlash re-derivation
+    // above (fxHurt + Audio.hurt). Local-only, victim-gated by proximity in game.ts.
   }
 
   /** Send this frame's local input to the host (reliable, sequenced). */

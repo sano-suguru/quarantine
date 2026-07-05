@@ -333,4 +333,34 @@ export const CONFIG = {
     lightRangeMul: 0.6, // deployable cone range as a fraction of the player flashlight range
     lightHalfAngle: 0.5, // deployable cone half-angle (rad); narrower than the player cone
   },
+  stalker: {
+    spawnDist: 900, // spawns this far from the target, in the dark
+    advanceSpeed: 95, // px/s while aggro in the dark
+    staggerSpeed: 40, // px/s backing off while staggered
+    staggerWindow: 1.1, // s the stagger lingers after the beam leaves
+    wardBatteryCost: 4, // battery units drained from the warding player per aggro→stagger edge
+    contactDist: 34,
+    contactDamage: 34,
+    contactCd: 1.5, // s before it can grab again
+    retreatSpeed: 220, // px/s leaving at dawn / after a grab
+    noiseBias: 1.0, // how strongly it steers toward the loudest player
+    telegraphNear: 460, // proximity where telegraph starts
+    // --- telegraph tuning (stalkerFx.ts — render/audio only, not in sim) ---
+    // dread = nearness (0..1 by telegraphNear) × unlit (1 if stalker NOT in the local cone, 0 if lit).
+    // The three outputs scale with dread: footfall volume, cone flicker intensity, heartbeat add.
+    footfallIntervalMin: 0.7, // s between footfall sounds at max dread (close + unlit)
+    footfallIntervalMax: 3.0, // s between footfall sounds at min dread (far or lit)
+    footfallVolMax: 0.55, // footfall volume at max dread (panned by direction)
+    footfallVolMin: 0.05, // footfall volume at min dread (a faint tread, barely audible)
+    flickerMax: 0.28, // cone alpha modulation at max dread (0 = no flicker, 1 = full extinction)
+    heartbeatAdd: 0.45, // extra heartbeat strength contributed by dread (stacks with HP dread)
+    heartbeatIntervalMin: 0.55, // s between heartbeats at max dread (stalker very close)
+    // --- grab scare tuning (local victim only, game.ts) ---
+    // Extended scare: hard flash → near-black collapse → camera drag toward the stalker.
+    scareFlashBoost: 0.9, // added on top of the 0.7 base flash on a grab (both applied in game.ts)
+    scareDragDist: 80, // world units the camera lurches toward the stalker during the scare
+    wardFadeOut: 5, // vis fade-out rate (per second) while staggered — stalker melts into the dark
+    bulletKnockback: 60, // world-units impulse applied to the stalker along the bullet direction
+    bulletFlinch: 0.18, // vis dip on a bullet hit (clamped to 0.2 floor so it never fully vanishes)
+  },
 };

@@ -5,6 +5,7 @@ import { localPlayer } from "../engine/players";
 import { Renderer } from "../engine/renderer";
 import { Input } from "../input";
 import { getSettings } from "../settings";
+import { hasLineOfSight } from "../systems/perception";
 import type { State } from "../types";
 import { emptyInput, type PlayerInput } from "./playerInput";
 
@@ -40,11 +41,14 @@ function assistAim(state: State, px: number, py: number): number | null {
   const r2 = CONFIG.flashlight.range * CONFIG.flashlight.range;
   let best: { x: number; y: number; id: number } | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
+  // NOTE: iterates state.zombies only — state.stalker is a separate slot and is intentionally
+  // excluded from aim-assist (warding it with the light must be a deliberate manual act).
   for (const z of state.zombies) {
     const dx = z.x - px;
     const dy = z.y - py;
     const d2 = dx * dx + dy * dy;
     if (d2 > r2) continue;
+    if (!hasLineOfSight(px, py, z.x, z.y, state.walls)) continue; // skip wall-occluded zombies
     const score = z.id === aimTargetId ? d2 / (1.4 * 1.4) : d2; // hysteresis: stick to current
     if (score < bestScore) {
       bestScore = score;

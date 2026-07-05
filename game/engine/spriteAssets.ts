@@ -27,7 +27,7 @@ const INDEX = new Map(SPRITE_ASSETS.map((a, i) => [a.key, i]));
  * resolves. Enemies additionally keep their SDF fallback, but we still require the assets so a
  * silently-dropped PNG fails CI instead of shipping.
  */
-export const REQUIRED_SPRITES = ["player", "zombie", "runner", "brute"] as const;
+export const REQUIRED_SPRITES = ["player", "zombie", "runner", "brute", "stalker"] as const;
 
 export function spriteIndex(key: string): number {
   return INDEX.get(key) ?? -1;

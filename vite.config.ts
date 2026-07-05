@@ -61,6 +61,10 @@ export default defineConfig({
         "game/systems/ai.ts",
         "game/systems/camera.ts",
         "game/systems/fx.ts",
+        // the Stalker: AI movement/state machine + telegraph particles/audio — same feel boundary
+        // as ai.ts/fx.ts. Its pure geometry (LOS/hearing) lives in perception.ts, which IS covered.
+        "game/systems/stalker.ts",
+        "game/systems/stalkerFx.ts",
         // net IO boundaries (WebRTC/WS/fetch/Worker)
         "game/net/client.ts",
         "game/net/signaling.ts",
