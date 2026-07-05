@@ -31,7 +31,7 @@ Creates the module with the Stage-1 (silhouette-only) behavior and the one pure,
 **Files:**
 - Create: `game/systems/stalkerPhantom.ts`
 - Create: `game/systems/stalkerPhantom.test.ts`
-- Modify: `game/config.ts` (add silhouette fields to the `stalker` block, after `bulletFlinch` at `game/config.ts:365`)
+- Modify: `game/config.ts` (add silhouette fields to the `stalker` block, after the `bulletFlinch` line at `game/config.ts:364`, before the block's closing `}` at line 365)
 
 **Interfaces:**
 - Consumes: `CONFIG.stalker` (new fields below); `CONFIG.flashlight` (`range`, `halfAngle`); `Player`, `State` from `../types`; `state.stalker` (`{ x, y, face, state, staggerT, contactCd, vis }`, `state` ∈ `"lull"|"aggro"|"stagger"|"retreat"`).
@@ -43,7 +43,7 @@ Creates the module with the Stage-1 (silhouette-only) behavior and the one pure,
 
 - [ ] **Step 1: Add the silhouette CONFIG fields**
 
-In `game/config.ts`, inside the `stalker: { … }` block, immediately after the `bulletFlinch: 0.18, …` line (`game/config.ts:365`), add:
+In `game/config.ts`, inside the `stalker: { … }` block, immediately after the `bulletFlinch: 0.18, …` line (`game/config.ts:364`, before the block's closing `}`), add:
 
 ```ts
     // --- phantom perception (Phase 1.5, stalkerPhantom.ts) — fake cues, render/audio-only ---
