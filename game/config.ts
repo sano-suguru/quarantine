@@ -368,5 +368,6 @@ export const CONFIG = {
     phantomSpawnIntervalMax: 5, // mean seconds between silhouette spawns at the ambient max rate (dread≈0)
     phantomDreadExp: 1.5, // shaping exponent k for the (1-dread)^k rate falloff
     phantomAlphaMax: 0.5, // peak silhouette alpha at mid-life
+    phantomStepLockout: 0.6, // s after a real footfall during which no phantom step fires (owned by stalkerFx)
   },
 };

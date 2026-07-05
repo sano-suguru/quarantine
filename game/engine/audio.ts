@@ -257,6 +257,35 @@ function stalkerFootfall(pan: number, vol: number): void {
 }
 
 /**
+ * Phantom (fake) footstep — Phase 1.5. Footfall-LIKE so it plausibly reads as the stalker, but
+ * engineered to fail both localization tests: fixed CENTRE pan (never panned) and a duller, lower
+ * timbre than stalkerFootfall, at a FLAT low volume (no distance argument — it must never mimic the
+ * real cue's approach-tracking loudness). The learnable rule: a step that gets louder as it repeats
+ * is real; a flat, centred, dull step is a lie.
+ */
+function stalkerPhantomStep(): void {
+  if (!ctx || !master) return;
+  const now = ctx.currentTime;
+  const vol = 0.16; // flat, low — deliberately not distance-scaled
+  // Low, dull thud: lower and slower-decaying than the real footfall (60→28Hz); no high scrape layer.
+  const o = ctx.createOscillator();
+  o.type = "sine";
+  o.frequency.setValueAtTime(46, now);
+  o.frequency.exponentialRampToValueAtTime(24, now + 0.2);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(vol * 0.6, now + 0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.26);
+  // A soft lowpass gives it a muffled, "somewhere / everywhere" quality; NO stereo panner (centred).
+  const lp = ctx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 180;
+  o.connect(g).connect(lp).connect(master);
+  o.start(now);
+  o.stop(now + 0.28);
+}
+
+/**
  * Stalker grab stinger: a jarring dissonant burst — hard, brief, and not musical.
  * Procedural; fired once on a grab for the local player only.
  */
@@ -360,6 +389,7 @@ export const Audio = {
   setTension,
   stopDread,
   stalkerFootfall,
+  stalkerPhantomStep,
   stalkerStinger,
   toggleMute,
   setMuted,
