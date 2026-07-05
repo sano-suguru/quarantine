@@ -241,13 +241,15 @@ describe("snapshot binary round-trip", () => {
 
     // vis round-trip: u8-quantized (step ~0.004); allow 0.01 tolerance
     expect(backPresent.stalker.vis).toBeCloseTo(0.7, 1);
+    // contactCd round-trip: u8-quantized over CONFIG.stalker.contactCd (1.5); step ~0.006, allow 0.02
+    expect(Math.abs(backPresent.stalker.contactCd - 0.3)).toBeLessThanOrEqual(0.02);
 
     // Byte-delta confirmation: absent stalker = +1 presence byte vs a snapshot with no stalker block.
     // (The test that verifies this is the golden above: len went 303→304 for the null case.)
     const lenAbsent = encode(captureSnapshot(sAbsent, 1)).byteLength;
     const lenPresent = encode(captureSnapshot(sPresent, 1)).byteLength;
-    // present adds 7 more bytes (i16 x + i16 y + u8 face + u8 state + u8 vis = 2+2+1+1+1)
-    expect(lenPresent - lenAbsent).toBe(7);
+    // present adds 8 more bytes (i16 x + i16 y + u8 face + u8 state + u8 vis + u8 contactCd = 2+2+1+1+1+1)
+    expect(lenPresent - lenAbsent).toBe(8);
   });
 
   it("round-trips searching / swingT / swingKind", () => {

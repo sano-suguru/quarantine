@@ -355,9 +355,10 @@ export class Client {
     // stalkerFx (footfall/heartbeat/cone-flicker) for co-op clients is driven automatically
     // by game.ts:draw() via state.stalker, which applySnapshot now populates from the
     // synced block above. No additional wiring needed here.
-    // Grab scare on the client: derived from the local player's HP drop + synced stalker
-    // (handled in game.ts using state.stalker + prevStalkerCd, which now works on clients
-    // because state.stalker is populated from the snapshot). Local-only, unchanged.
+    // Grab scare on the client: game.ts:draw() edge-detects state.stalker.contactCd, which is
+    // now SYNCED in the snapshot block, so the flash/shake/lurch/stinger fire for a client
+    // victim exactly as on the host. The pain grunt + blood come from the hitFlash re-derivation
+    // above (fxHurt + Audio.hurt). Local-only, victim-gated by proximity in game.ts.
   }
 
   /** Send this frame's local input to the host (reliable, sequenced). */

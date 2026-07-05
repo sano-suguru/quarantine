@@ -162,16 +162,10 @@ export function sysStalker(state: State, dt: number): void {
           target.hitFlash = 0.28;
           target.iframe = CONFIG.feel.hurtIframe;
           fxHurt(state, target.x, target.y);
-          // Local-only feedback: flash + shake + pain grunt
-          if (target.id === state.localId) {
-            state.flashT = Math.min(1, state.flashT + 0.7);
-            state.flashColor = [0.8, 0.1, 0.8]; // cold purple for the stalker grab
-            state.cam.shake = Math.min(
-              state.cam.shake + CONFIG.feel.shakeMax,
-              CONFIG.feel.shakeMax,
-            );
-            Audio.hurt();
-          }
+          // Pain grunt for the local victim (host). The visual scare (flash/shake/lurch/stinger)
+          // lives in game.ts:draw() keyed off the synced contactCd edge, so it fires identically
+          // on the host and on a client victim (whose grunt comes from the hitFlash re-derivation).
+          if (target.id === state.localId) Audio.hurt();
           if (target.hp <= 0) target.hp = 0;
         }
         // Set BOTH suppressors: contactCd (stalker re-grab) and iframe (victim multi-hit)

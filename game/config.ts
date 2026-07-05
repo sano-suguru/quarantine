@@ -355,11 +355,10 @@ export const CONFIG = {
     flickerMax: 0.28, // cone alpha modulation at max dread (0 = no flicker, 1 = full extinction)
     heartbeatAdd: 0.45, // extra heartbeat strength contributed by dread (stacks with HP dread)
     heartbeatIntervalMin: 0.55, // s between heartbeats at max dread (stalker very close)
-    // --- grab scare tuning (local-player only, game.ts) ---
+    // --- grab scare tuning (local victim only, game.ts) ---
     // Extended scare: hard flash → near-black collapse → camera drag toward the stalker.
-    scareFlashBoost: 0.9, // additional flashT added on a grab (stack on top of stalker.ts 0.7)
+    scareFlashBoost: 0.9, // added on top of the 0.7 base flash on a grab (both applied in game.ts)
     scareDragDist: 80, // world units the camera lurches toward the stalker during the scare
-    scareDragDecay: 6.0, // exp-decay speed of the camera drag (toward normal position)
     wardFadeOut: 5, // vis fade-out rate (per second) while staggered — stalker melts into the dark
     bulletKnockback: 60, // world-units impulse applied to the stalker along the bullet direction
     bulletFlinch: 0.18, // vis dip on a bullet hit (clamped to 0.2 floor so it never fully vanishes)

@@ -448,19 +448,26 @@ export function draw(): void {
   // Render/audio only; returns a 0..1 dread value used to modulate the local player's cone below.
   const stalkerDread = stalkerFx(state, lp, ddt);
 
-  // --- grab scare (local player only): extend the basic flash/shake from stalker.ts into a
-  //     full diegetic scare — camera lurch + stinger + extra flash. Detected from the stalker's
-  //     contactCd edge (jumps to max on each grab). NOT in sysStalker to keep that system pure. ---
+  // --- grab scare (local victim only): the full diegetic grab feedback — hard purple flash +
+  //     camera shake + camera lurch + stinger. Keyed off the stalker's contactCd edge (jumps to
+  //     max on each grab), which is now SYNCED in the snapshot, so this fires identically on the
+  //     host and on a client victim. Kept in draw() (not sysStalker) so a client — which never runs
+  //     sysStalker — still gets it. contactCd is per-stalker (global), so a proximity gate limits
+  //     the scare to the player actually grabbed (only the victim is within contact range). ---
   if (state.stalker && state.running) {
     const sk = state.stalker;
     const cdNow = sk.contactCd;
     const justGrabbed = cdNow > prevStalkerCd && cdNow >= CONFIG.stalker.contactCd * 0.95;
     if (justGrabbed) {
-      // Only scare the local player (the grab already hurt them in sysStalker).
       const lplayer = localPlayer(state);
-      if (lplayer.id === state.localId && lplayer.hp > 0) {
-        // Additional flash on top of the basic 0.7 set by stalker.ts
-        state.flashT = Math.min(1, state.flashT + CONFIG.stalker.scareFlashBoost);
+      const gdx = sk.x - lplayer.x;
+      const gdy = sk.y - lplayer.y;
+      const near = gdx * gdx + gdy * gdy < (CONFIG.stalker.contactDist * 1.6) ** 2;
+      if (lplayer.id === state.localId && lplayer.hp > 0 && near) {
+        // Hard flash (0.7 base + boost, matching the pre-sync host total) in cold stalker purple.
+        state.flashT = Math.min(1, state.flashT + 0.7 + CONFIG.stalker.scareFlashBoost);
+        state.flashColor = [0.8, 0.1, 0.8];
+        state.cam.shake = Math.min(state.cam.shake + CONFIG.feel.shakeMax, CONFIG.feel.shakeMax);
         // Camera lurch: bias the camera toward the stalker for one frame by nudging cam position.
         // We use a cam drag rather than directly mutating c.x/c.y so sysCamera's lerp recovers naturally.
         const ddx = sk.x - state.cam.x;
