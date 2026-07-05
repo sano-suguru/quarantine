@@ -56,6 +56,8 @@ export interface WeaponDef {
   meleeRange?: number;
 }
 
+export type NavMode = "none" | "avoid" | "path";
+
 export interface EnemyType {
   hp: number;
   speed: number;
@@ -80,6 +82,8 @@ export interface EnemyType {
   lungePeriod?: number;
   /** how much the steering separation force affects this type (brute ≈ 0) */
   separation?: number;
+  /** navigation intelligence: none=beeline, avoid=steer around walls, path=flow-field route */
+  nav?: NavMode;
 }
 
 export interface Upgrade {
@@ -220,6 +224,7 @@ export interface Zombie {
   lunge: number;
   lungePeriod: number;
   separation: number;
+  nav: NavMode;
   /** latched once aggroed (or at night); never reverts → guarantees the night clears */
   chasing: boolean;
   /** countdown to the next lunge */

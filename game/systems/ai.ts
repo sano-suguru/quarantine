@@ -5,7 +5,7 @@ import { Audio } from "../engine/audio";
 import { circlePush, circlePushFromSegment } from "../engine/geometry";
 import { len, rand } from "../engine/math";
 import { localPlayer, nearestPlayer } from "../engine/players";
-import type { State, Zombie } from "../types";
+import type { NavMode, State, Zombie } from "../types";
 import { fxHurt, fxImpact } from "./fx";
 
 /** Desired heading for a zombie this frame — extracted from pass-1 verbatim (nav: "none").
@@ -28,6 +28,21 @@ function headingNone(
   z.wanderDir += rand(-1, 1) * z.wander * wanderMul * 3 * dt;
   return { hx: Math.cos(z.wanderDir), hy: Math.sin(z.wanderDir) };
 }
+
+type SteerCtx = {
+  z: Zombie;
+  state: State;
+  chasing: boolean;
+  dx: number;
+  dy: number;
+  wanderMul: number;
+  dt: number;
+};
+const NAV_STEER: Record<NavMode, (c: SteerCtx) => { hx: number; hy: number }> = {
+  none: (c) => headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt),
+  avoid: (c) => headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt), // Task 3
+  path: (c) => headingNone(c.z, c.state, c.chasing, c.dx, c.dy, c.wanderMul, c.dt), // Task 4
+};
 
 const WOOD: [number, number, number] = [0.62, 0.42, 0.2];
 const LUNGE_DUR = 0.3; // seconds a runner's dash lasts
@@ -84,7 +99,15 @@ export function sysAI(state: State, dt: number): void {
     const chasing = z.chasing && target !== null;
 
     // desired heading
-    const { hx, hy } = headingNone(z, state, chasing, dx, dy, mod.wanderMul, dt);
+    const { hx, hy } = NAV_STEER[z.nav]({
+      z,
+      state,
+      chasing,
+      dx,
+      dy,
+      wanderMul: mod.wanderMul,
+      dt,
+    });
 
     // soft steering separation (weakened; positional de-overlap does the hard work)
     let sx = 0;
