@@ -5,7 +5,7 @@ import { sampleFlow } from "../engine/navfield";
 import { nearestPlayer } from "../engine/players";
 import type { Player, State } from "../types";
 import { flashlightIntensity } from "./flashlight";
-import { fxHurt } from "./fx";
+import { fxHurt, fxImpact } from "./fx";
 
 const CFG = CONFIG.stalker;
 const FLC = CONFIG.flashlight;
@@ -259,6 +259,36 @@ function placeStalker(state: State, s: NonNullable<State["stalker"]>): void {
   s.x = target.x + Math.cos(awayFromAim) * dist;
   s.y = target.y + Math.sin(awayFromAim) * dist;
   s.face = Math.atan2(target.y - s.y, target.x - s.x);
+}
+
+/**
+ * React to a bullet impact: knockback along the bullet direction + a brief vis dip (flinch
+ * flicker). No hp, no death, no stagger/banish — light is still the only real ward.
+ * Skipped entirely when the stalker is not visible (vis <= 0.1) so a faded/vanished stalker
+ * can't be interacted with.
+ */
+export function flinchStalker(
+  state: State,
+  bx: number,
+  by: number,
+  dirX: number,
+  dirY: number,
+): void {
+  const s = state.stalker;
+  if (!s || s.vis <= 0.1) return;
+
+  // Knockback: push along the bullet's travel direction
+  const dl = len(dirX, dirY) || 1;
+  s.x += (dirX / dl) * CFG.bulletKnockback;
+  s.y += (dirY / dl) * CFG.bulletKnockback;
+
+  // Vis dip: a cold recoil flicker; floor at 0.2 so it doesn't accidentally trigger the
+  // ward-stagger vanish path (which only fires when vis hits 0 inside "stagger" state).
+  s.vis = Math.max(0.2, s.vis - CFG.bulletFlinch);
+
+  // Cold spark at the hit point (purple tint — matches the stalker's grab flash colour).
+  const coldSpark: [number, number, number] = [0.6, 0.1, 0.9];
+  fxImpact(state, bx, by, Math.atan2(dirY, dirX), coldSpark);
 }
 
 /**

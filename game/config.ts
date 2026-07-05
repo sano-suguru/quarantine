@@ -362,5 +362,7 @@ export const CONFIG = {
     scareDragDist: 80, // world units the camera lurches toward the stalker during the scare
     scareDragDecay: 6.0, // exp-decay speed of the camera drag (toward normal position)
     wardFadeOut: 5, // vis fade-out rate (per second) while staggered — stalker melts into the dark
+    bulletKnockback: 60, // world-units impulse applied to the stalker along the bullet direction
+    bulletFlinch: 0.18, // vis dip on a bullet hit (clamped to 0.2 floor so it never fully vanishes)
   },
 };
