@@ -5,8 +5,29 @@ import { Audio } from "../engine/audio";
 import { circlePush, circlePushFromSegment } from "../engine/geometry";
 import { len, rand } from "../engine/math";
 import { localPlayer, nearestPlayer } from "../engine/players";
-import type { State } from "../types";
+import type { State, Zombie } from "../types";
 import { fxHurt, fxImpact } from "./fx";
+
+/** Desired heading for a zombie this frame — extracted from pass-1 verbatim (nav: "none").
+ *  dx/dy is the normalized direction to the target (0,0 if no target). */
+function headingNone(
+  z: Zombie,
+  state: State,
+  chasing: boolean,
+  dx: number,
+  dy: number,
+  wanderMul: number,
+  dt: number,
+): { hx: number; hy: number } {
+  if (chasing) {
+    const a = Math.sin(state.time * 3 + z.wob) * z.wander * 0.5;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    return { hx: dx * c - dy * s, hy: dx * s + dy * c };
+  }
+  z.wanderDir += rand(-1, 1) * z.wander * wanderMul * 3 * dt;
+  return { hx: Math.cos(z.wanderDir), hy: Math.sin(z.wanderDir) };
+}
 
 const WOOD: [number, number, number] = [0.62, 0.42, 0.2];
 const LUNGE_DUR = 0.3; // seconds a runner's dash lasts
@@ -63,21 +84,7 @@ export function sysAI(state: State, dt: number): void {
     const chasing = z.chasing && target !== null;
 
     // desired heading
-    let hx: number;
-    let hy: number;
-    if (chasing) {
-      // shamble: wobble the heading a little so the chase isn't a dead-straight line
-      const a = Math.sin(state.time * 3 + z.wob) * z.wander * 0.5;
-      const c = Math.cos(a);
-      const s = Math.sin(a);
-      hx = dx * c - dy * s;
-      hy = dx * s + dy * c;
-    } else {
-      // wander: drift the heading slowly and amble in that direction
-      z.wanderDir += rand(-1, 1) * z.wander * mod.wanderMul * 3 * dt;
-      hx = Math.cos(z.wanderDir);
-      hy = Math.sin(z.wanderDir);
-    }
+    const { hx, hy } = headingNone(z, state, chasing, dx, dy, mod.wanderMul, dt);
 
     // soft steering separation (weakened; positional de-overlap does the hard work)
     let sx = 0;
