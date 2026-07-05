@@ -60,7 +60,9 @@ export function buildFlowField(
   f.cost.fill(Number.POSITIVE_INFINITY);
 
   // mark walkable cells (effective clearance = clearance + halfCell so walls block the full
-  // cell footprint, not just the cell centre — prevents direct wall crossings at any grid phase)
+  // cell footprint, not just the cell centre — prevents direct wall crossings at any grid phase).
+  // Phase-independence for a door of width W requires 2×(W/2 − clearance − halfCell) ≥ cell,
+  // i.e. cell ≤ W/2 − clearance. At W=60, clearance=14: cell ≤ 16 (production value).
   const halfCell = cell * 0.5;
   const walk = new Uint8Array(cols * rows);
   for (let r = 0; r < rows; r++) {

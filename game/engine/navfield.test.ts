@@ -33,15 +33,32 @@ describe("flow field", () => {
   });
 
   it("passes a 60px door at PRODUCTION cell/clearance (guards phase-dependence)", () => {
-    // Same 60px gap, but at the values the game actually ships (Task 5 config).
-    // With cell=24, clearance=14 the walkable band is ±(30-14)=±16 (32px) > cell 24,
-    // so a walkable cell column through the gap is guaranteed regardless of grid phase.
+    // Same 60px gap, but at the values the game actually ships (cell=16, clearance=14).
+    // Effective clearance = clearance + cell/2 = 14 + 8 = 22; door band = 2×(30−22) = 16px = cell,
+    // so a walkable cell column is guaranteed at every grid phase (band ≥ cell → phase-independent).
     const walls: Segment[] = [
       { x1: 0, y1: -200, x2: 0, y2: -30 },
       { x1: 0, y1: 30, x2: 0, y2: 200 },
     ];
-    const f = buildFlowField(walls, [{ x: 120, y: 0 }], bounds, 24, 14);
+    const f = buildFlowField(walls, [{ x: 120, y: 0 }], bounds, 16, 14);
     const g = sampleFlow(f, -120, 0);
     expect(g.hx).toBeGreaterThan(0.3);
+  });
+
+  it("passes a 60px door at ALL phase offsets (production cell=16, clearance=14)", () => {
+    // The bug (cell=24) caused the door to be impassable for most grid phases because the
+    // walkable band (16px) was narrower than the cell (24px). At cell=16 the band exactly
+    // matches the cell, so every phase offset seats a walkable cell in the gap.
+    const walls: Segment[] = [
+      { x1: 0, y1: -200, x2: 0, y2: -30 },
+      { x1: 0, y1: 30, x2: 0, y2: 200 },
+    ];
+    // Shift the grid phase by varying minY; the door stays at y=[-30,+30].
+    for (const dy of [0, 5, 8, 13]) {
+      const shifted = { minX: -200, minY: -200 + dy, maxX: 200, maxY: 200 + dy };
+      const f = buildFlowField(walls, [{ x: 120, y: 0 }], shifted, 16, 14);
+      const g = sampleFlow(f, -120, 0);
+      expect(g.hx).toBeGreaterThan(0.3);
+    }
   });
 });
