@@ -36,7 +36,7 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     lunge: 2.3, // periodic dash toward the player
     lungePeriod: 2.4,
     separation: 1.0,
-    nav: "none",
+    nav: "path",
   },
   brute: {
     hp: 260,
@@ -53,6 +53,6 @@ export const ENEMY_TYPES: Record<string, EnemyType> = {
     sense: 900,
     wander: 0.08, // relentless, near-straight
     separation: 0.15, // plows through the crowd
-    nav: "none",
+    nav: "avoid",
   },
 };
