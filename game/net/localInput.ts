@@ -5,6 +5,7 @@ import { localPlayer } from "../engine/players";
 import { Renderer } from "../engine/renderer";
 import { Input } from "../input";
 import { getSettings } from "../settings";
+import { hasLineOfSight } from "../systems/perception";
 import type { State } from "../types";
 import { emptyInput, type PlayerInput } from "./playerInput";
 
@@ -47,6 +48,7 @@ function assistAim(state: State, px: number, py: number): number | null {
     const dy = z.y - py;
     const d2 = dx * dx + dy * dy;
     if (d2 > r2) continue;
+    if (!hasLineOfSight(px, py, z.x, z.y, state.walls)) continue; // skip wall-occluded zombies
     const score = z.id === aimTargetId ? d2 / (1.4 * 1.4) : d2; // hysteresis: stick to current
     if (score < bestScore) {
       bestScore = score;
