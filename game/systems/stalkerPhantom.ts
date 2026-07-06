@@ -65,8 +65,9 @@ function spawnPhantom(lp: Player): void {
 }
 
 /**
- * Update fake silhouettes for this draw frame and return the active list to draw.
- * Stage 1: silhouettes only. (Phantom steps are added in Stage 2.)
+ * Update fake silhouettes + fire non-localizable phantom steps for this draw frame, and return
+ * the active silhouettes to draw. Both channels are rate-gated by `(1-dread)^k` (quiet → likely,
+ * real approach → suppressed); the step is additionally gated by stalkerFx's footfall lockout.
  *
  * @param state read-only (stalker + phase)
  * @param lp    local player (localPlayer(state))
