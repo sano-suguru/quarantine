@@ -39,6 +39,7 @@ import { effectiveSearchTime, sysPlayer } from "./systems/player";
 import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "./systems/siege";
 import { spawnStalker, sysStalker } from "./systems/stalker";
 import { resetStalkerFx, stalkerFx } from "./systems/stalkerFx";
+import { resetStalkerPhantom, sysStalkerPhantom } from "./systems/stalkerPhantom";
 import type { Player, State, WeaponDef } from "./types";
 import { el, hide, renderList, show } from "./ui";
 
@@ -155,6 +156,7 @@ function resetAtmosphere(): void {
   lastDrawT = 0;
   prevStalkerCd = 0;
   resetStalkerFx();
+  resetStalkerPhantom();
 }
 
 export function update(dt: number): void {
@@ -447,6 +449,8 @@ export function draw(): void {
   // --- stalker telegraph (footfall/heartbeat audio + cone-flicker signal) ---
   // Render/audio only; returns a 0..1 dread value used to modulate the local player's cone below.
   const stalkerDread = stalkerFx(state, lp, ddt);
+  // fake perception cues (silhouettes now; phantom steps in Stage 2) — render/audio-only.
+  const phantoms = sysStalkerPhantom(state, lp, ddt, stalkerDread);
 
   // --- grab scare (local victim only): the full diegetic grab feedback — hard purple flash +
   //     camera shake + camera lurch + stinger. Keyed off the stalker's contactCd edge (jumps to
@@ -628,6 +632,32 @@ export function draw(): void {
     const isNight = state.phase === "night";
     if (isNight) {
       R.glow(sk.x, sk.y, 38, 0.3, 0.4, 0.9, 0.12 * sk.vis);
+    }
+  }
+
+  // --- fake stalker silhouettes (Phase 1.5): dark, low-alpha, no hitbox; fade in/out over life ---
+  if (phantoms.length) {
+    const phLayer = R.spriteLayer("stalker");
+    if (phLayer >= 0) {
+      const phSz = 32 * 2 * SPRITE_SCALE; // same logical size as the real stalker draw
+      for (const p of phantoms) {
+        const u = 1 - p.life / p.maxLife; // 0 at spawn → 1 at death
+        const a = Math.sin(Math.PI * u) * CONFIG.stalker.phantomAlphaMax; // fade in then out
+        if (a <= 0) continue;
+        // cold, near-black tint — reads as "a shape at the edge of the light," not a lit body
+        R.spriteQuad(
+          p.x,
+          p.y,
+          phSz,
+          phSz,
+          p.face + SPRITE_FACE_OFFSET,
+          phLayer,
+          0.14,
+          0.17,
+          0.3,
+          a,
+        );
+      }
     }
   }
 

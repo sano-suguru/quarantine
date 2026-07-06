@@ -65,6 +65,7 @@ export default defineConfig({
         // as ai.ts/fx.ts. Its pure geometry (LOS/hearing) lives in perception.ts, which IS covered.
         "game/systems/stalker.ts",
         "game/systems/stalkerFx.ts",
+        "game/systems/stalkerPhantom.ts",
         // net IO boundaries (WebRTC/WS/fetch/Worker)
         "game/net/client.ts",
         "game/net/signaling.ts",

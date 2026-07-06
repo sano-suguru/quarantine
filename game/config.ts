@@ -362,5 +362,13 @@ export const CONFIG = {
     wardFadeOut: 5, // vis fade-out rate (per second) while staggered — stalker melts into the dark
     bulletKnockback: 60, // world-units impulse applied to the stalker along the bullet direction
     bulletFlinch: 0.18, // vis dip on a bullet hit (clamped to 0.2 floor so it never fully vanishes)
+    // --- phantom perception (Phase 1.5, stalkerPhantom.ts) — fake cues, render/audio-only ---
+    phantomMax: 2, // concurrent fake silhouette cap
+    phantomLife: 0.32, // fake silhouette lifetime (s), with sinusoidal fade in/out
+    phantomSpawnIntervalMax: 5, // mean seconds between silhouette spawns at the ambient max rate (dread≈0)
+    phantomDreadExp: 1.5, // shaping exponent k for the (1-dread)^k rate falloff
+    phantomAlphaMax: 0.5, // peak silhouette alpha at mid-life
+    phantomStepLockout: 0.6, // s after a real footfall during which no phantom step fires (owned by stalkerFx)
+    phantomStepIntervalMax: 4, // mean seconds between phantom steps at the ambient max rate (dread≈0)
   },
 };

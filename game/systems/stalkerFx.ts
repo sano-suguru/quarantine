@@ -28,11 +28,13 @@ const FLC = CONFIG.flashlight;
 // Module-level render-side bookkeeping (no sim state — reset between runs via resetStalkerFx)
 let footfallT = 0; // countdown to the next footfall sound (render-side only)
 let stalkerHbT = 0; // countdown to the next stalker-dread heartbeat
+let lastFootfallT = Number.NEGATIVE_INFINITY; // state.time of the last real footfall (owns the phantom-step lockout)
 
 /** Reset between runs so stale timers don't carry forward. Call from resetAtmosphere. */
 export function resetStalkerFx(): void {
   footfallT = 0;
   stalkerHbT = 0;
+  lastFootfallT = Number.NEGATIVE_INFINITY;
 }
 
 /**
@@ -69,6 +71,15 @@ function localFlickerNoise(t: number, seed: number): number {
   const base = 0.5 + 0.3 * Math.sin(t * 9.1 + s) + 0.2 * Math.sin(t * 23.7 + s * 2.3);
   const surge = Math.max(0, Math.sin(t * 2.3 + s * 5)) ** 6;
   return Math.max(0, Math.min(1, base * 0.5 + surge));
+}
+
+/**
+ * True while a real footfall fired recently — the phantom-step suppressor. `stalkerFx` owns this
+ * because it is the real footfall's firer; `stalkerPhantom` reads it before firing a fake step so
+ * the real localizable cue is never muddied on the same beat.
+ */
+export function phantomStepLocked(now: number): boolean {
+  return now - lastFootfallT < CONFIG.stalker.phantomStepLockout;
 }
 
 /**
@@ -117,6 +128,7 @@ export function stalkerFx(state: State, lp: Player, ddt: number): number {
     const pan = Math.max(-1, Math.min(1, dx / 400));
     const vol = SCFG.footfallVolMin + (SCFG.footfallVolMax - SCFG.footfallVolMin) * dread;
     Audio.stalkerFootfall(pan, vol);
+    lastFootfallT = state.time; // arm the phantom-step lockout (this module owns it)
   } else if (dread <= 0.02) {
     // Drain footfall timer when dread is effectively zero (lit or very far) so it doesn't fire
     // immediately on re-approach after a stagger
