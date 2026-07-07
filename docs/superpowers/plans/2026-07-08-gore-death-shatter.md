@@ -65,11 +65,11 @@ In `game/config.ts`, inside the `fx.gore` block (after `woundDarken`, the last f
 
 - [ ] **Step 3: Write the failing test for `deathChunkCount`**
 
-In `game/systems/fx.test.ts`, add (imports at top alongside the existing `goreIntensity`/`gibsToSpawn` imports):
+In `game/systems/fx.test.ts`, **merge `deathChunkCount` into the existing `./fx` import** (it currently imports `{ gibsToSpawn, goreIntensity } from "./fx"` — make it `{ deathChunkCount, gibsToSpawn, goreIntensity }`, alphabetical for Biome), and add a `CONFIG` import if not already present:
 
 ```ts
-import { deathChunkCount } from "./fx";
 import { CONFIG } from "../config";
+// existing import becomes: import { deathChunkCount, gibsToSpawn, goreIntensity } from "./fx";
 
 describe("deathChunkCount", () => {
   it("returns the max chunk count on an empty particle buffer (death is full intensity)", () => {
