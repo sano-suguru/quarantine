@@ -182,21 +182,24 @@ export function sysStalker(state: State, dt: number): void {
     }
 
     case "stagger": {
-      s.staggerT -= dt;
-      // While still lit, refresh the stagger window (lingering flash-ward)
-      if (lit) s.staggerT = CFG.staggerWindow;
-
-      // Brief backward recede — stays short because vis fades out quickly (Step 1)
-      if (target) {
-        const dx = s.x - target.x;
-        const dy = s.y - target.y;
-        const d = len(dx, dy) || 1;
-        s.x += (dx / d) * CFG.staggerSpeed * dt;
-        s.y += (dy / d) * CFG.staggerSpeed * dt;
-        s.face = Math.atan2(target.y - s.y, target.x - s.x);
+      // The beam is sustained pressure: while actively lit it backs away and fades (vis block
+      // below); when the beam leaves it holds (no recede, vis paused) for a grace, then resumes
+      // the hunt. Only holding the beam all the way to vis<=0 banishes it.
+      if (lit) {
+        s.staggerT = CFG.staggerWindow; // refresh the look-away grace while the beam holds
+        if (target) {
+          const dx = s.x - target.x;
+          const dy = s.y - target.y;
+          const d = len(dx, dy) || 1;
+          s.x += (dx / d) * CFG.staggerSpeed * dt; // back away from the beam...
+          s.y += (dy / d) * CFG.staggerSpeed * dt;
+          s.face = Math.atan2(target.y - s.y, target.x - s.x); // ...while still staring at the player
+        }
+      } else {
+        s.staggerT -= dt; // beam left: hold position + vis (see vis block); count down the grace
       }
 
-      // When fully vanished: relocate to a fresh far dark spot and return to lull.
+      // Held in the beam all the way to gone → relocate to a fresh far dark spot and return to lull.
       // vis stays at 0 so it fades back in gradually as it re-approaches.
       if (s.vis <= 0) {
         placeStalker(state, s);
@@ -204,6 +207,7 @@ export function sysStalker(state: State, dt: number): void {
         break;
       }
 
+      // Grace expired without finishing the ward → it resumes the hunt (vis recovers as it advances).
       if (s.staggerT <= 0) s.state = "aggro";
       break;
     }
@@ -230,9 +234,12 @@ export function sysStalker(state: State, dt: number): void {
     }
   }
 
-  // Fade out while staggered (melts into the dark); fade in otherwise.
+  // Fade out only while ACTIVELY warded (staggered AND lit) — the longer you hold the beam, the
+  // more it melts into the dark. When the beam leaves mid-ward, vis holds (paused) so re-lighting
+  // resumes the chip-away. Otherwise (advancing/lull/retreat) it fades back in.
   if (s.state === "stagger") {
-    s.vis = Math.max(0, s.vis - dt * CFG.wardFadeOut);
+    if (lit) s.vis = Math.max(0, s.vis - dt * CFG.wardFadeOut);
+    // else: hold vis (waiting mid-ward)
   } else {
     s.vis = Math.min(1, s.vis + dt * 2);
   }
