@@ -359,7 +359,7 @@ export const CONFIG = {
     // Extended scare: hard flash → near-black collapse → camera drag toward the stalker.
     scareFlashBoost: 0.9, // added on top of the 0.7 base flash on a grab (both applied in game.ts)
     scareDragDist: 80, // world units the camera lurches toward the stalker during the scare
-    wardFadeOut: 5, // vis fade-out rate (per second) while staggered — stalker melts into the dark
+    wardFadeOut: 0.9, // vis fade-out rate per second of SUSTAINED light — ~1.1s of held beam to fully melt it into the dark (fade only advances while lit; pauses when the beam leaves)
     bulletKnockback: 60, // world-units impulse applied to the stalker along the bullet direction
     bulletFlinch: 0.18, // vis dip on a bullet hit (clamped to 0.2 floor so it never fully vanishes)
     // --- phantom perception (Phase 1.5, stalkerPhantom.ts) — fake cues, render/audio-only ---
