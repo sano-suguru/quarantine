@@ -567,13 +567,15 @@ export function draw(): void {
   drawCaches(R);
   drawDeployables(R);
 
-  // --- normal particles (shards / smoke) ---
+  // --- normal particles (shards / smoke / flesh chunks) ---
   for (const pt of state.particles) {
     const a = pt.life / pt.maxLife;
     if (pt.kind === "shard")
       R.rect(pt.x, pt.y, pt.r * 2, pt.r, pt.rot, pt.color[0], pt.color[1], pt.color[2], a);
     else if (pt.kind === "smoke")
       R.circle(pt.x, pt.y, pt.r, pt.color[0], pt.color[1], pt.color[2], a * 0.5);
+    else if (pt.kind === "chunk")
+      R.hex(pt.x, pt.y, pt.r, pt.rot, pt.color[0], pt.color[1], pt.color[2], a);
   }
 
   // --- zombies ---

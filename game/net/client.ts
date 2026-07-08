@@ -338,7 +338,7 @@ export class Client {
         if (d.ammoFrac <= 0.02) {
           fxImpact(st, d.x, d.y, 0, color); // soft power-down on RTB
         } else {
-          fxKill(st, d.x, d.y, color, color, true); // loud destruction burst
+          fxKill(st, d.x, d.y, color, color, true, false); // loud destruction burst (no flesh — it's a machine)
         }
       }
     }

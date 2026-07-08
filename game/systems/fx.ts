@@ -43,6 +43,16 @@ export function gibsToSpawn(
   return Math.round(lerp(countMin, countMax, intensity) * (1 - fillRatio));
 }
 
+/**
+ * Flesh-chunk count for a DEATH shatter — reuses gibsToSpawn (the throttle logic) but with
+ * death-calibrated CONFIG values (a shatter is bigger than a hit gib). Death is full intensity (1),
+ * threshold 0 (a kill always shatters). Pure — unit-tested.
+ */
+export function deathChunkCount(fill: number): number {
+  const g = CONFIG.fx.gore;
+  return gibsToSpawn(1, fill, 0, g.chunkCount[0], g.chunkCount[1], g.gibFillCap);
+}
+
 function spawn(
   state: State,
   x: number,
@@ -54,6 +64,7 @@ function spawn(
   color: RGB,
   kind: ParticleKind,
   drag: number,
+  settle = false,
 ): void {
   if (state.particles.length >= CONFIG.fx.maxParticles) return;
   state.particles.push({
@@ -68,6 +79,7 @@ function spawn(
     color,
     kind,
     drag,
+    settle,
   });
 }
 
@@ -174,7 +186,7 @@ export function fxImpact(
   }
 }
 
-/** death burst — shockwave ring, viscera shards, glowing embers */
+/** death burst — shockwave ring, flesh chunks (organic deaths only), glowing embers */
 export function fxKill(
   state: State,
   x: number,
@@ -182,25 +194,43 @@ export function fxKill(
   color: RGB,
   glow: RGB,
   big: boolean,
+  flesh = true,
 ): void {
+  const g = CONFIG.fx.gore;
   const n = big ? 22 : 12;
   spawn(state, x, y, 0, 0, big ? 0.32 : 0.22, big ? 46 : 26, glow, "ring", 0);
-  for (let i = 0; i < n; i++) {
-    const a = rand(0, 6.28);
-    const sp = rand(60, big ? 240 : 180);
-    spawn(
-      state,
-      x,
-      y,
-      Math.cos(a) * sp,
-      Math.sin(a) * sp,
-      rand(0.25, 0.6),
-      rand(1.5, big ? 4.5 : 3),
-      color,
-      "shard",
-      4,
-    );
+
+  // Flesh chunks: organic deaths only (a machine doesn't bleed — deployable destruction passes flesh=false).
+  if (flesh) {
+    const fill = state.particles.length / CONFIG.fx.maxParticles;
+    const chunks = deathChunkCount(fill);
+    // Flesh tone: enemy color blended toward the wound/blood tint so chunks read as body, not sparks.
+    const cc: RGB = [
+      lerp(color[0], g.woundTint[0], 0.6),
+      lerp(color[1], g.woundTint[1], 0.6),
+      lerp(color[2], g.woundTint[2], 0.6),
+    ];
+    for (let i = 0; i < chunks; i++) {
+      const a = rand(0, 6.28);
+      const sp = rand(60, big ? 240 : 180);
+      // The first chunkDecalMax chunks settle into decals (Task 2); the rest fly and fade.
+      spawn(
+        state,
+        x,
+        y,
+        Math.cos(a) * sp,
+        Math.sin(a) * sp,
+        rand(0.35, 0.7),
+        rand(g.chunkSize[0], g.chunkSize[1]),
+        cc,
+        "chunk",
+        4,
+        i < g.chunkDecalMax,
+      );
+    }
   }
+
+  // Embers (glowing sparks) — kept for both organic and machine deaths.
   for (let i = 0; i < n / 2; i++) {
     const a = rand(0, 6.28);
     const sp = rand(60, 220);
@@ -217,7 +247,8 @@ export function fxKill(
       5,
     );
   }
-  bloodPool(state, x, y, big);
+
+  if (flesh) bloodPool(state, x, y, big);
 }
 
 /** a small satisfying pop when an item is collected */

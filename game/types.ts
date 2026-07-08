@@ -299,7 +299,7 @@ export interface Pickup {
   bob: number;
 }
 
-export type ParticleKind = "spark" | "shard" | "ring" | "smoke";
+export type ParticleKind = "spark" | "shard" | "ring" | "smoke" | "chunk";
 
 interface Particle {
   x: number;
@@ -313,6 +313,8 @@ interface Particle {
   color: [number, number, number];
   kind: ParticleKind;
   drag: number;
+  /** flesh chunk that settles into a decal on expiry (set by fxKill for the first chunkDecalMax chunks) */
+  settle?: boolean;
 }
 
 interface Decal {

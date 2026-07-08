@@ -59,7 +59,7 @@ export function sysDeployables(state: State, dt: number): void {
     if (destroyed || retired) {
       dead.push(i);
       if (destroyed)
-        fxKill(state, d.x, d.y, def.color, def.color, true); // loud destruction burst
+        fxKill(state, d.x, d.y, def.color, def.color, true, false); // loud destruction burst (no flesh — it's a machine)
       else fxImpact(state, d.x, d.y, 0, def.color); // soft power-down on RTB
     }
   }
