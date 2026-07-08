@@ -1,4 +1,5 @@
 import { CONFIG } from "../config";
+import { cellOffset } from "../engine/fragment";
 import { clamp, lerp, mixRGB, rand } from "../engine/math";
 import type { ParticleKind, State } from "../types";
 
@@ -41,16 +42,6 @@ export function gibsToSpawn(
   if (intensity < threshold) return 0;
   if (fillRatio >= fillCap) return 0;
   return Math.round(lerp(countMin, countMax, intensity) * (1 - fillRatio));
-}
-
-/**
- * Flesh-chunk count for a DEATH shatter — reuses gibsToSpawn (the throttle logic) but with
- * death-calibrated CONFIG values (a shatter is bigger than a hit gib). Death is full intensity (1),
- * threshold 0 (a kill always shatters). Pure — unit-tested.
- */
-export function deathChunkCount(fill: number): number {
-  const g = CONFIG.fx.gore;
-  return gibsToSpawn(1, fill, 0, g.chunkCount[0], g.chunkCount[1], g.gibFillCap);
 }
 
 function spawn(
@@ -186,47 +177,63 @@ export function fxImpact(
   }
 }
 
-/** death burst — shockwave ring, flesh chunks (organic deaths only), glowing embers */
+/** death burst — shockwave ring, real-image sprite fragments (organic deaths only), glowing embers */
 export function fxKill(
   state: State,
   x: number,
   y: number,
-  color: RGB,
+  _color: RGB,
   glow: RGB,
   big: boolean,
   flesh = true,
+  spriteKey = "",
+  face = 0,
+  rad = 0,
 ): void {
   const g = CONFIG.fx.gore;
   const n = big ? 22 : 12;
   spawn(state, x, y, 0, 0, big ? 0.32 : 0.22, big ? 46 : 26, glow, "ring", 0);
 
-  // Flesh chunks: organic deaths only (a machine doesn't bleed — deployable destruction passes flesh=false).
-  if (flesh) {
-    const fill = state.particles.length / CONFIG.fx.maxParticles;
-    const chunks = deathChunkCount(fill);
-    // Flesh tone: enemy color blended toward the wound/blood tint so chunks read as body, not sparks.
-    const cc: RGB = [
-      lerp(color[0], g.woundTint[0], 0.6),
-      lerp(color[1], g.woundTint[1], 0.6),
-      lerp(color[2], g.woundTint[2], 0.6),
-    ];
-    for (let i = 0; i < chunks; i++) {
-      const a = rand(0, 6.28);
-      const sp = rand(60, big ? 240 : 180);
-      // The first chunkDecalMax chunks settle into decals (Task 2); the rest fly and fade.
-      spawn(
-        state,
-        x,
-        y,
-        Math.cos(a) * sp,
-        Math.sin(a) * sp,
-        rand(0.35, 0.7),
-        rand(g.chunkSize[0], g.chunkSize[1]),
-        cc,
-        "chunk",
-        4,
-        i < g.chunkDecalMax,
-      );
+  // Real-image fragments: organic deaths with a known sprite + radius only (machines pass flesh=false / "").
+  if (flesh && spriteKey && rad > 0) {
+    const N = g.gridN;
+    const cells = N * N;
+    // All-or-nothing: never spawn a partial (half-eaten) set. Ring/embers/blood still fire below.
+    if (state.particles.length + cells <= CONFIG.fx.maxParticles) {
+      const drawSize = 2 * rad * CONFIG.render.spriteScale; // matches the enemy draw size (rad*2*scale)
+      const cellSz = drawSize / N; // on-screen size of one fragment
+      const ang = face + CONFIG.render.spriteFaceOffset; // parent draw rotation
+      const ca = Math.cos(ang);
+      const sa = Math.sin(ang);
+      let idx = 0;
+      for (let cy = 0; cy < N; cy++) {
+        for (let cx = 0; cx < N; cx++) {
+          const o = cellOffset(cx, cy, N, drawSize);
+          const wx = x + o.lx * ca - o.ly * sa; // local offset rotated into world
+          const wy = y + o.lx * sa + o.ly * ca;
+          const sp = rand(g.fragSpeed[0], g.fragSpeed[1]);
+          const dir = Math.atan2(wy - y, wx - x) + rand(-0.5, 0.5); // fly outward-ish
+          const life = rand(g.fragLife[0], g.fragLife[1]);
+          state.particles.push({
+            x: wx,
+            y: wy,
+            vx: Math.cos(dir) * sp,
+            vy: Math.sin(dir) * sp,
+            life,
+            maxLife: life,
+            r: cellSz, // fragment on-screen size (used by the draw loop)
+            rot: ang, // start aligned to the body, then tumble via drag-free spin below
+            color: [1, 1, 1],
+            kind: "frag",
+            drag: 4,
+            spriteKey,
+            cellX: cx,
+            cellY: cy,
+            settle: idx < g.fragDecalMax,
+          });
+          idx++;
+        }
+      }
     }
   }
 

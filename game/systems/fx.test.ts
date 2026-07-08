@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONFIG } from "../config";
-import { deathChunkCount, gibsToSpawn, goreIntensity } from "./fx";
+import { gibsToSpawn, goreIntensity } from "./fx";
 
 const DMG_REF = 90;
 const LOW = 0.33;
@@ -67,19 +66,5 @@ describe("gibsToSpawn", () => {
 
   it("throttles the count down as the buffer fills", () => {
     expect(gibsToSpawn(1, 0.5, 0.5, 2, 7, 0.85)).toBe(4); // round(7 * 0.5 = 3.5) = 4
-  });
-});
-
-describe("deathChunkCount", () => {
-  it("returns the max chunk count on an empty particle buffer (death is full intensity)", () => {
-    // fill=0 ⇒ gibsToSpawn(1, 0, 0, min, max, cap) = round(max * 1) = max
-    expect(deathChunkCount(0)).toBe(CONFIG.fx.gore.chunkCount[1]);
-  });
-  it("throttles toward zero as the particle buffer fills", () => {
-    expect(deathChunkCount(0.5)).toBeLessThan(CONFIG.fx.gore.chunkCount[1]);
-    expect(deathChunkCount(1)).toBe(0);
-  });
-  it("is throttled off once past the gib fill cap", () => {
-    expect(deathChunkCount(CONFIG.fx.gore.gibFillCap)).toBe(0);
   });
 });

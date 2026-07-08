@@ -299,7 +299,7 @@ export interface Pickup {
   bob: number;
 }
 
-export type ParticleKind = "spark" | "shard" | "ring" | "smoke" | "chunk";
+export type ParticleKind = "spark" | "shard" | "ring" | "smoke" | "frag";
 
 interface Particle {
   x: number;
@@ -313,7 +313,11 @@ interface Particle {
   color: [number, number, number];
   kind: ParticleKind;
   drag: number;
-  /** flesh chunk that settles into a decal on expiry (set by fxKill for the first chunkDecalMax chunks) */
+  /** real-image fragment (gore shatter): the sprite KEY + sub-cell it draws (game.ts resolves key→layer) */
+  spriteKey?: string;
+  cellX?: number;
+  cellY?: number;
+  /** fragment settles into a decal on expiry (set by fxKill for the first fragDecalMax fragments) */
   settle?: boolean;
 }
 

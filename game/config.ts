@@ -89,9 +89,9 @@ export const CONFIG = {
       gibFillCap: 0.85, // skip gibs once the particle buffer is this full (reserve muzzle/spark headroom)
       woundTint: [0.5, 0.04, 0.05] as [number, number, number], // blood color the body bleeds toward as hp → 0
       woundDarken: 0.18, // max darkening at 0 hp (small, so finisher targets stay visible in-cone)
-      chunkCount: [8, 14] as [number, number], // death flesh-chunk count range (via gibsToSpawn at intensity 1); a shatter is bigger than a hit gib
-      chunkSize: [3, 7] as [number, number], // death-chunk radius range (larger than shard 1.5–4.5)
-      chunkDecalMax: 3, // max chunks that settle into decals PER kill (bounds lingering-decal load; see Task 2)
+      fragSpeed: [60, 240] as [number, number], // outward fly speed range
+      fragLife: [0.45, 0.8] as [number, number], // fragment particle lifetime (s) before fade
+      fragDecalMax: 3, // max fragments that settle into decals per kill (Task 3)
     },
   },
   // Action-feel: motion / prop / particle / payoff tuning for timed player actions.
@@ -375,4 +375,7 @@ export const CONFIG = {
     phantomStepLockout: 0.6, // s after a real footfall during which no phantom step fires (owned by stalkerFx)
     phantomStepIntervalMax: 4, // mean seconds between phantom steps at the ambient max rate (dread≈0)
   },
+  // Sprite-render constants shared between game.ts (draw loop) and fx.ts (fragment spawn).
+  // fx.ts cannot import game.ts (circular: game.ts → fx.ts), so these live in CONFIG.
+  render: { spriteScale: 2.6, spriteFaceOffset: Math.PI / 2 },
 };
