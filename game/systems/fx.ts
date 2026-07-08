@@ -189,6 +189,7 @@ export function fxKill(
   spriteKey = "",
   face = 0,
   rad = 0,
+  hitDir: number | null = null,
 ): void {
   const g = CONFIG.fx.gore;
   const n = big ? 22 : 12;
@@ -211,14 +212,18 @@ export function fxKill(
           const o = cellOffset(cx, cy, N, drawSize);
           const wx = x + o.lx * ca - o.ly * sa; // local offset rotated into world
           const wy = y + o.lx * sa + o.ly * ca;
-          const sp = rand(g.fragSpeed[0], g.fragSpeed[1]);
-          const dir = Math.atan2(wy - y, wx - x) + rand(-0.5, 0.5); // fly outward-ish
+          // Velocity = a strong forward LAUNCH in the killing-shot direction (coned) + a small
+          // radial SEPARATION so pieces bloom apart. hitDir null (melee/client) → launch radially.
+          const ro = Math.atan2(wy - y, wx - x); // radial-out from body center
+          const baseDir = (hitDir ?? ro) + rand(-g.fragCone, g.fragCone);
+          const launch = rand(g.fragLaunch[0], g.fragLaunch[1]);
+          const sep = rand(g.fragSep[0], g.fragSep[1]);
           const life = rand(g.fragLife[0], g.fragLife[1]);
           state.particles.push({
             x: wx,
             y: wy,
-            vx: Math.cos(dir) * sp,
-            vy: Math.sin(dir) * sp,
+            vx: Math.cos(baseDir) * launch + Math.cos(ro) * sep,
+            vy: Math.sin(baseDir) * launch + Math.sin(ro) * sep,
             life,
             maxLife: life,
             r: cellSz, // fragment on-screen size (used by the draw loop)

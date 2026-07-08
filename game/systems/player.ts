@@ -278,7 +278,11 @@ function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
   });
   // swap-and-pop removal is index-based, so kill from the highest index down
   dead.sort((a, b) => b - a);
-  for (const zi of dead) killZombie(state, zi);
+  for (const zi of dead) {
+    const dz = state.zombies[zi];
+    // melee: gore flies away from the attacker (the swing's push direction)
+    killZombie(state, zi, dz ? Math.atan2(dz.y - p.y, dz.x - p.x) : null);
+  }
 
   // landing a hit punches a beat of hitstop (solo only — hitstopT slows the WHOLE sim, so in
   // co-op it would freeze the shared host view on every teammate's swing; same guard as killZombie)
