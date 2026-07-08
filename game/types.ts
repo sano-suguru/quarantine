@@ -299,7 +299,7 @@ export interface Pickup {
   bob: number;
 }
 
-export type ParticleKind = "spark" | "shard" | "ring" | "smoke";
+export type ParticleKind = "spark" | "shard" | "ring" | "smoke" | "frag";
 
 interface Particle {
   x: number;
@@ -313,6 +313,12 @@ interface Particle {
   color: [number, number, number];
   kind: ParticleKind;
   drag: number;
+  /** real-image fragment (gore shatter): the sprite KEY + sub-cell it draws (game.ts resolves key→layer) */
+  spriteKey?: string;
+  cellX?: number;
+  cellY?: number;
+  /** fragment settles into a decal on expiry (set by fxKill for the first fragDecalMax fragments) */
+  settle?: boolean;
 }
 
 interface Decal {
@@ -323,6 +329,11 @@ interface Decal {
   color: [number, number, number];
   life: number;
   maxLife: number;
+  /** real-image fragment decal (gore): sprite KEY + sub-cell + on-screen size (game.ts resolves key→layer); plain blood leaves undefined */
+  spriteKey?: string;
+  cellX?: number;
+  cellY?: number;
+  size?: number;
 }
 
 /** A line segment in world space (shelter wall / opening). */

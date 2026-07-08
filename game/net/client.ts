@@ -246,7 +246,18 @@ export class Client {
       if (!nextIds.has(z.id)) {
         const t = ENEMY_TYPES[z.type];
         const big = z.type === "brute";
-        fxKill(st, z.x, z.y, (t?.color ?? GREY) as RGB, (t?.glow ?? GREY) as RGB, big);
+        fxKill(
+          st,
+          z.x,
+          z.y,
+          (t?.color ?? GREY) as RGB,
+          (t?.glow ?? GREY) as RGB,
+          big,
+          true,
+          t?.sprite ?? "",
+          0,
+          t?.radius ?? 0,
+        );
         Audio.kill(big);
       }
     }
@@ -338,7 +349,7 @@ export class Client {
         if (d.ammoFrac <= 0.02) {
           fxImpact(st, d.x, d.y, 0, color); // soft power-down on RTB
         } else {
-          fxKill(st, d.x, d.y, color, color, true); // loud destruction burst
+          fxKill(st, d.x, d.y, color, color, true, false); // loud destruction burst (no flesh — it's a machine)
         }
       }
     }

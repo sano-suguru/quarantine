@@ -57,11 +57,11 @@ const deployableSeen = new Map<number, number>();
 
 // Sprite zombies are drawn at this multiple of the hitbox diameter (rad*2), > 1 so the
 // illustration reads instead of minifying to mush at the collision size. Feel knob.
-const SPRITE_SCALE = 2.6;
+const SPRITE_SCALE = CONFIG.render.spriteScale;
 // The illustration's FRONT is its bottom edge (local -y). rot = face + this offset points that
 // front at the target from any direction (world +y = screen down → +90° aligns -y with face).
 // If the sprite faces a quarter/half turn off on device, nudge this by ±PI/2 or PI.
-const SPRITE_FACE_OFFSET = Math.PI / 2;
+const SPRITE_FACE_OFFSET = CONFIG.render.spriteFaceOffset;
 // Hit-flash strength for sprites: on a hit the tint is multiplied by (1 + fl*this), i.e. an
 // overbright pop (a texture multiply can't lerp to pure white like the SDF fill does). Feel knob.
 const SPRITE_FLASH = 1.5;
@@ -559,7 +559,15 @@ export function draw(): void {
   for (const d of state.decals) {
     const cap = CONFIG.fx.blood.maxAlpha;
     const a = Math.min(cap, (d.life / d.maxLife) * cap);
-    R.circle(d.x, d.y, d.r, d.color[0], d.color[1], d.color[2], a);
+    if (d.spriteKey) {
+      const dl = R.spriteLayer(d.spriteKey);
+      if (dl < 0) continue;
+      const dk = CONFIG.fx.gore.fragDecalDarken;
+      const dsz = d.size ?? 8; // cell size captured at settle (matches the flying fragment); fallback if absent
+      R.spriteFragQuad(d.x, d.y, dsz, dsz, d.rot, dl, d.cellX ?? 0, d.cellY ?? 0, dk, dk, dk, a);
+    } else {
+      R.circle(d.x, d.y, d.r, d.color[0], d.color[1], d.color[2], a);
+    }
   }
 
   // --- shelter: stone walls + boarded openings, world loot caches, fortifications ---
@@ -567,13 +575,31 @@ export function draw(): void {
   drawCaches(R);
   drawDeployables(R);
 
-  // --- normal particles (shards / smoke) ---
+  // --- normal particles (shards / smoke / flesh fragments) ---
   for (const pt of state.particles) {
     const a = pt.life / pt.maxLife;
     if (pt.kind === "shard")
       R.rect(pt.x, pt.y, pt.r * 2, pt.r, pt.rot, pt.color[0], pt.color[1], pt.color[2], a);
     else if (pt.kind === "smoke")
       R.circle(pt.x, pt.y, pt.r, pt.color[0], pt.color[1], pt.color[2], a * 0.5);
+    else if (pt.kind === "frag" && pt.spriteKey) {
+      const fl = R.spriteLayer(pt.spriteKey);
+      if (fl >= 0)
+        R.spriteFragQuad(
+          pt.x,
+          pt.y,
+          pt.r,
+          pt.r,
+          pt.rot,
+          fl,
+          pt.cellX ?? 0,
+          pt.cellY ?? 0,
+          1,
+          1,
+          1,
+          a,
+        );
+    }
   }
 
   // --- zombies ---

@@ -77,6 +77,7 @@ export const CONFIG = {
       maxAlpha: 0.6, // fresh-pool peak alpha (drawn fade is life/maxLife * maxAlpha)
     },
     gore: {
+      gridN: 4, // NxN sub-cell grid for sprite fragmentation (gore death-shatter)
       dmgRef: 90, // damage that saturates the "weapon weight" base intensity
       lowHpBand: 0.33, // hp fraction below which the finisher bonus ramps in
       finisherBonus: 0.6, // extra intensity for a near-lethal / killing hit
@@ -88,6 +89,13 @@ export const CONFIG = {
       gibFillCap: 0.85, // skip gibs once the particle buffer is this full (reserve muzzle/spark headroom)
       woundTint: [0.5, 0.04, 0.05] as [number, number, number], // blood color the body bleeds toward as hp → 0
       woundDarken: 0.18, // max darkening at 0 hp (small, so finisher targets stay visible in-cone)
+      fragLaunch: [180, 360] as [number, number], // forward launch speed in the killing-shot direction (strong)
+      fragSep: [20, 70] as [number, number], // small radial separation so pieces bloom apart
+      fragCone: 0.7, // half-angle (rad) of the forward spray cone around the shot direction
+      fragLife: [0.45, 0.8] as [number, number], // fragment particle lifetime (s) before fade
+      fragDecalMax: 3, // max fragments that settle into decals per kill (Task 3)
+      fragDecalLife: [8, 16] as [number, number], // settled-fragment decal life (s) — shorter than blood.life
+      fragDecalDarken: 0.5, // brightness multiplier for a settled fragment (dried stain)
     },
   },
   // Action-feel: motion / prop / particle / payoff tuning for timed player actions.
@@ -371,4 +379,7 @@ export const CONFIG = {
     phantomStepLockout: 0.6, // s after a real footfall during which no phantom step fires (owned by stalkerFx)
     phantomStepIntervalMax: 4, // mean seconds between phantom steps at the ambient max rate (dread≈0)
   },
+  // Sprite-render constants shared between game.ts (draw loop) and fx.ts (fragment spawn).
+  // fx.ts cannot import game.ts (circular: game.ts → fx.ts), so these live in CONFIG.
+  render: { spriteScale: 2.6, spriteFaceOffset: Math.PI / 2 },
 };

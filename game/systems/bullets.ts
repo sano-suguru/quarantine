@@ -1,4 +1,5 @@
 import { CONFIG } from "../config";
+import { ENEMY_TYPES } from "../data/enemies";
 import { Audio } from "../engine/audio";
 import { segmentHitsSegment } from "../engine/geometry";
 import { len } from "../engine/math";
@@ -58,7 +59,7 @@ export function sysBullets(state: State, dt: number): void {
           } else {
             dead = true;
           }
-          if (z.hp <= 0) killZombie(state, zi);
+          if (z.hp <= 0) killZombie(state, zi, dir); // gore flies in the shot direction
         }
       });
       // Stalker hit test: single-entity distance check (stalker isn't in state.hash).
@@ -79,11 +80,12 @@ export function sysBullets(state: State, dt: number): void {
   }
 }
 
-export function killZombie(state: State, idx: number): void {
+export function killZombie(state: State, idx: number, hitDir: number | null = null): void {
   const z = state.zombies[idx];
   if (!z) return;
   const big = z.type === "brute";
-  fxKill(state, z.x, z.y, z.color, z.glow, big);
+  const sprite = ENEMY_TYPES[z.type]?.sprite ?? "";
+  fxKill(state, z.x, z.y, z.color, z.glow, big, true, sprite, Math.atan2(z.vy, z.vx), z.r, hitDir);
   Audio.kill(big);
   // hit-stop slows the WHOLE sim and cam-shake is a local-view kick — in co-op these
   // would slow/shake the shared host view on every player's kill, so apply solo only

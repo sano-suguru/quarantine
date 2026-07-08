@@ -1,4 +1,5 @@
 import { CONFIG } from "../config";
+import { cellOffset } from "../engine/fragment";
 import { clamp, lerp, mixRGB, rand } from "../engine/math";
 import type { ParticleKind, State } from "../types";
 
@@ -54,6 +55,7 @@ function spawn(
   color: RGB,
   kind: ParticleKind,
   drag: number,
+  settle = false,
 ): void {
   if (state.particles.length >= CONFIG.fx.maxParticles) return;
   state.particles.push({
@@ -68,6 +70,7 @@ function spawn(
     color,
     kind,
     drag,
+    settle,
   });
 }
 
@@ -174,33 +177,72 @@ export function fxImpact(
   }
 }
 
-/** death burst — shockwave ring, viscera shards, glowing embers */
+/** death burst — shockwave ring, real-image sprite fragments (organic deaths only), glowing embers */
 export function fxKill(
   state: State,
   x: number,
   y: number,
-  color: RGB,
+  _color: RGB,
   glow: RGB,
   big: boolean,
+  flesh = true,
+  spriteKey = "",
+  face = 0,
+  rad = 0,
+  hitDir: number | null = null,
 ): void {
+  const g = CONFIG.fx.gore;
   const n = big ? 22 : 12;
   spawn(state, x, y, 0, 0, big ? 0.32 : 0.22, big ? 46 : 26, glow, "ring", 0);
-  for (let i = 0; i < n; i++) {
-    const a = rand(0, 6.28);
-    const sp = rand(60, big ? 240 : 180);
-    spawn(
-      state,
-      x,
-      y,
-      Math.cos(a) * sp,
-      Math.sin(a) * sp,
-      rand(0.25, 0.6),
-      rand(1.5, big ? 4.5 : 3),
-      color,
-      "shard",
-      4,
-    );
+
+  // Real-image fragments: organic deaths with a known sprite + radius only (machines pass flesh=false / "").
+  if (flesh && spriteKey && rad > 0) {
+    const N = g.gridN;
+    const cells = N * N;
+    // All-or-nothing: never spawn a partial (half-eaten) set. Ring/embers/blood still fire below.
+    if (state.particles.length + cells <= CONFIG.fx.maxParticles) {
+      const drawSize = 2 * rad * CONFIG.render.spriteScale; // matches the enemy draw size (rad*2*scale)
+      const cellSz = drawSize / N; // on-screen size of one fragment
+      const ang = face + CONFIG.render.spriteFaceOffset; // parent draw rotation
+      const ca = Math.cos(ang);
+      const sa = Math.sin(ang);
+      let idx = 0;
+      for (let cy = 0; cy < N; cy++) {
+        for (let cx = 0; cx < N; cx++) {
+          const o = cellOffset(cx, cy, N, drawSize);
+          const wx = x + o.lx * ca - o.ly * sa; // local offset rotated into world
+          const wy = y + o.lx * sa + o.ly * ca;
+          // Velocity = a strong forward LAUNCH in the killing-shot direction (coned) + a small
+          // radial SEPARATION so pieces bloom apart. hitDir null (melee/client) → launch radially.
+          const ro = Math.atan2(wy - y, wx - x); // radial-out from body center
+          const baseDir = (hitDir ?? ro) + rand(-g.fragCone, g.fragCone);
+          const launch = rand(g.fragLaunch[0], g.fragLaunch[1]);
+          const sep = rand(g.fragSep[0], g.fragSep[1]);
+          const life = rand(g.fragLife[0], g.fragLife[1]);
+          state.particles.push({
+            x: wx,
+            y: wy,
+            vx: Math.cos(baseDir) * launch + Math.cos(ro) * sep,
+            vy: Math.sin(baseDir) * launch + Math.sin(ro) * sep,
+            life,
+            maxLife: life,
+            r: cellSz, // fragment on-screen size (used by the draw loop)
+            rot: ang, // start aligned to the body, then tumble via drag-free spin below
+            color: [1, 1, 1],
+            kind: "frag",
+            drag: 4,
+            spriteKey,
+            cellX: cx,
+            cellY: cy,
+            settle: idx < g.fragDecalMax,
+          });
+          idx++;
+        }
+      }
+    }
   }
+
+  // Embers (glowing sparks) — kept for both organic and machine deaths.
   for (let i = 0; i < n / 2; i++) {
     const a = rand(0, 6.28);
     const sp = rand(60, 220);
@@ -217,7 +259,8 @@ export function fxKill(
       5,
     );
   }
-  bloodPool(state, x, y, big);
+
+  if (flesh) bloodPool(state, x, y, big);
 }
 
 /** a small satisfying pop when an item is collected */
@@ -363,6 +406,35 @@ function bloodPool(state: State, x: number, y: number, big: boolean, dir?: numbe
   }
 }
 
+function pushFragDecal(
+  state: State,
+  x: number,
+  y: number,
+  rot: number,
+  size: number,
+  spriteKey: string,
+  cellX: number,
+  cellY: number,
+): void {
+  const cfg = CONFIG.fx.blood;
+  if (state.decals.length >= cfg.maxDecals) state.decals.shift();
+  const fl = CONFIG.fx.gore.fragDecalLife;
+  const life = rand(fl[0], fl[1]);
+  state.decals.push({
+    x,
+    y,
+    r: 0,
+    rot,
+    color: [1, 1, 1],
+    life,
+    maxLife: life,
+    spriteKey,
+    cellX,
+    cellY,
+    size,
+  });
+}
+
 function pushDecal(state: State, x: number, y: number, r: number, color: RGB): void {
   const cfg = CONFIG.fx.blood;
   if (state.decals.length >= cfg.maxDecals) state.decals.shift();
@@ -385,6 +457,8 @@ export function sysFx(state: State, dt: number): void {
     const p = P[i] as (typeof P)[number];
     p.life -= dt;
     if (p.life <= 0) {
+      if (p.kind === "frag" && p.settle && p.spriteKey)
+        pushFragDecal(state, p.x, p.y, p.rot, p.r, p.spriteKey, p.cellX ?? 0, p.cellY ?? 0);
       P[i] = P[P.length - 1] as (typeof P)[number];
       P.pop();
       continue;
