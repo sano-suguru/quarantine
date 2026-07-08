@@ -77,6 +77,7 @@ export const CONFIG = {
       maxAlpha: 0.6, // fresh-pool peak alpha (drawn fade is life/maxLife * maxAlpha)
     },
     gore: {
+      gridN: 4, // NxN sub-cell grid for sprite fragmentation (gore death-shatter)
       dmgRef: 90, // damage that saturates the "weapon weight" base intensity
       lowHpBand: 0.33, // hp fraction below which the finisher bonus ramps in
       finisherBonus: 0.6, // extra intensity for a near-lethal / killing hit

@@ -1,4 +1,5 @@
 import { CONFIG } from "../config";
+import { packFragCell } from "./fragment";
 import bloodFrag from "./shaders/blood.frag?raw";
 import bloodVert from "./shaders/blood.vert?raw";
 import gridFrag from "./shaders/grid.frag?raw";
@@ -8,7 +9,7 @@ import instanceVert from "./shaders/instance.vert?raw";
 import { SPRITE_ASSETS, spriteIndex, unreadyRequiredSprites } from "./spriteAssets";
 import { packSprites, uvRect } from "./spritePack";
 
-const FLOATS = 10;
+const FLOATS = 11;
 
 /** shape flags — must match instance.frag */
 export const SHAPE = { rect: 0, circle: 1, glow: 2, ring: 3, tri: 4, hex: 5, slash: 6, sprite: 16 };
@@ -83,10 +84,13 @@ const MAX_SPRITES = 32; // must match instance.frag
 const SPRITE_GUTTER = 2; // px between packed sprites; pairs with uvRect's half-texel inset
 let u_sprites: WebGLUniformLocation | null;
 let u_spriteRects: WebGLUniformLocation | null;
+let u_gridN: WebGLUniformLocation | null;
+let u_atlasTexel: WebGLUniformLocation | null;
 let atlasTex: WebGLTexture;
 const spriteRects = new Float32Array(MAX_SPRITES * 4); // [u0,v0,uW,vH] * MAX_SPRITES, zero-init
 const spriteReady: boolean[] = []; // per index, true once its texels are uploaded
 let spritesReadyPromise: Promise<void> | null = null;
+let atlasSize = 1; // px size of the square sprite atlas; feeds u_atlasTexel (half-texel guard)
 
 interface Layer {
   vao: WebGLVertexArrayObject;
@@ -137,6 +141,7 @@ function makeLayer(): Layer {
   set(3, 1, 16);
   set(4, 4, 20);
   set(5, 1, 36);
+  set(6, 1, 40); // a_frag (sprite sub-cell; 0 = whole sprite)
   gl.bindVertexArray(null);
   return { vao, vbo, data, count: 0 };
 }
@@ -167,6 +172,8 @@ function init(cv: HTMLCanvasElement): void {
   u_dim = gl.getUniformLocation(instProg, "u_dim");
   u_sprites = gl.getUniformLocation(instProg, "u_sprites");
   u_spriteRects = gl.getUniformLocation(instProg, "u_spriteRects");
+  u_gridN = gl.getUniformLocation(instProg, "u_gridN");
+  u_atlasTexel = gl.getUniformLocation(instProg, "u_atlasTexel");
   // 1x1 transparent atlas so the sampler is COMPLETE from frame 0 (before art loads / if none).
   atlasTex = gl.createTexture() as WebGLTexture;
   gl.bindTexture(gl.TEXTURE_2D, atlasTex);
@@ -324,6 +331,7 @@ function write(
   b: number,
   a: number,
   shape: number,
+  frag = 0,
 ): void {
   if (layer.count >= CONFIG.maxInstances) return;
   const o = layer.count * FLOATS;
@@ -338,6 +346,7 @@ function write(
   d[o + 7] = b;
   d[o + 8] = a;
   d[o + 9] = shape;
+  d[o + 10] = frag;
   layer.count++;
 }
 
@@ -387,6 +396,7 @@ async function loadSprites(): Promise<void> {
   const sizes = imgs.map((im) => (im ? { w: im.width, h: im.height } : { w: 1, h: 1 }));
   const maxAtlas = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
   const packed = packSprites(sizes, SPRITE_GUTTER, maxAtlas);
+  atlasSize = packed.atlas;
 
   gl.bindTexture(gl.TEXTURE_2D, atlasTex);
   gl.texImage2D(
@@ -429,6 +439,36 @@ function spriteQuad(
   a: number,
 ): void {
   write(normal, x, y, w, h, rot, r, g, b, a, SHAPE.sprite + index);
+}
+
+function spriteFragQuad(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  rot: number,
+  index: number,
+  cx: number,
+  cy: number,
+  r: number,
+  g: number,
+  b: number,
+  a: number,
+): void {
+  write(
+    normal,
+    x,
+    y,
+    w,
+    h,
+    rot,
+    r,
+    g,
+    b,
+    a,
+    SHAPE.sprite + index,
+    packFragCell(cx, cy, CONFIG.fx.gore.gridN),
+  );
 }
 
 function spriteLayer(key: string): number {
@@ -632,6 +672,8 @@ function flush(camX: number, camY: number): void {
   gl.bindTexture(gl.TEXTURE_2D, atlasTex);
   gl.uniform1i(u_sprites, 0);
   gl.uniform4fv(u_spriteRects, spriteRects);
+  gl.uniform1f(u_gridN, CONFIG.fx.gore.gridN);
+  gl.uniform1f(u_atlasTexel, 1 / atlasSize);
 
   // normal pass (bodies, ground): fully darkened outside the light
   gl.uniform1f(u_emissive, 0);
@@ -681,6 +723,7 @@ export const Renderer = {
   addLight,
   sprite,
   spriteQuad,
+  spriteFragQuad,
   spriteLayer,
   spritesReady,
   circle,

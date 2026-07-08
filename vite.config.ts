@@ -37,6 +37,7 @@ export default defineConfig({
         "game/meta.ts",
         "game/engine/math.ts",
         "game/engine/geometry.ts",
+        "game/engine/fragment.ts",
         "game/engine/spatialHash.ts",
         "game/engine/players.ts",
         "game/net/snapshot.ts",

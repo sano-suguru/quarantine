@@ -2,6 +2,9 @@
 precision mediump float;
 #define MAX_LIGHTS 8
 in vec2 v_local; in vec4 v_color; in float v_shape; in vec2 v_world;
+flat in float v_frag;
+uniform float u_gridN;
+uniform float u_atlasTexel;
 uniform int u_lightCount;              // active flashlights (one per player)
 uniform vec2 u_lightPos[MAX_LIGHTS];   // each light's world origin
 uniform vec2 u_lightAim[MAX_LIGHTS];   // each light's normalized aim direction
@@ -160,10 +163,20 @@ void main(){
   } else if(s >= 16){
     int i = s - 16;
     vec4 rc = u_spriteRects[i];
-    // VFLIP: the vertex shader flips clip-space Y (-clip.y); whether the texture's V must also flip
-    // depends on the PNG's row order. Start with (0.5 - v_local.y); if the sprite renders upside
-    // down on device, change this one line to (v_local.y + 0.5). Verified by looking (exit crit 2).
-    vec2 uv = rc.xy + vec2(v_local.x + 0.5, 0.5 - v_local.y) * rc.zw;
+    vec2 uv;
+    if(v_frag != 0.0){
+      float cellIdx = v_frag - 1.0;              // 0 .. N*N-1
+      float cxc = mod(cellIdx, u_gridN);
+      float cyc = floor(cellIdx / u_gridN);
+      vec2 cellSz = rc.zw / u_gridN;             // sub-rect size in atlas UV
+      vec2 base   = rc.xy + vec2(cxc, cyc) * cellSz;
+      uv = base + vec2(v_local.x + 0.5, 0.5 - v_local.y) * cellSz;
+      // interior cell boundaries aren't inset by uvRect — clamp by half a texel to stop bleed
+      vec2 hlf = vec2(u_atlasTexel * 0.5);
+      uv = clamp(uv, base + hlf, base + cellSz - hlf);
+    } else {
+      uv = rc.xy + vec2(v_local.x + 0.5, 0.5 - v_local.y) * rc.zw;
+    }
     vec4 t = texture(u_sprites, uv);
     if(t.a < 0.5) discard;
     frag = vec4(t.rgb, t.a) * v_color;
