@@ -406,6 +406,35 @@ function bloodPool(state: State, x: number, y: number, big: boolean, dir?: numbe
   }
 }
 
+function pushFragDecal(
+  state: State,
+  x: number,
+  y: number,
+  rot: number,
+  size: number,
+  spriteKey: string,
+  cellX: number,
+  cellY: number,
+): void {
+  const cfg = CONFIG.fx.blood;
+  if (state.decals.length >= cfg.maxDecals) state.decals.shift();
+  const fl = CONFIG.fx.gore.fragDecalLife;
+  const life = rand(fl[0], fl[1]);
+  state.decals.push({
+    x,
+    y,
+    r: 0,
+    rot,
+    color: [1, 1, 1],
+    life,
+    maxLife: life,
+    spriteKey,
+    cellX,
+    cellY,
+    size,
+  });
+}
+
 function pushDecal(state: State, x: number, y: number, r: number, color: RGB): void {
   const cfg = CONFIG.fx.blood;
   if (state.decals.length >= cfg.maxDecals) state.decals.shift();
@@ -428,6 +457,8 @@ export function sysFx(state: State, dt: number): void {
     const p = P[i] as (typeof P)[number];
     p.life -= dt;
     if (p.life <= 0) {
+      if (p.kind === "frag" && p.settle && p.spriteKey)
+        pushFragDecal(state, p.x, p.y, p.rot, p.r, p.spriteKey, p.cellX ?? 0, p.cellY ?? 0);
       P[i] = P[P.length - 1] as (typeof P)[number];
       P.pop();
       continue;

@@ -329,6 +329,11 @@ interface Decal {
   color: [number, number, number];
   life: number;
   maxLife: number;
+  /** real-image fragment decal (gore): sprite KEY + sub-cell + on-screen size (game.ts resolves key→layer); plain blood leaves undefined */
+  spriteKey?: string;
+  cellX?: number;
+  cellY?: number;
+  size?: number;
 }
 
 /** A line segment in world space (shelter wall / opening). */

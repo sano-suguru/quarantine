@@ -559,7 +559,15 @@ export function draw(): void {
   for (const d of state.decals) {
     const cap = CONFIG.fx.blood.maxAlpha;
     const a = Math.min(cap, (d.life / d.maxLife) * cap);
-    R.circle(d.x, d.y, d.r, d.color[0], d.color[1], d.color[2], a);
+    if (d.spriteKey) {
+      const dl = R.spriteLayer(d.spriteKey);
+      if (dl < 0) continue;
+      const dk = CONFIG.fx.gore.fragDecalDarken;
+      const dsz = d.size ?? 8; // cell size captured at settle (matches the flying fragment); fallback if absent
+      R.spriteFragQuad(d.x, d.y, dsz, dsz, d.rot, dl, d.cellX ?? 0, d.cellY ?? 0, dk, dk, dk, a);
+    } else {
+      R.circle(d.x, d.y, d.r, d.color[0], d.color[1], d.color[2], a);
+    }
   }
 
   // --- shelter: stone walls + boarded openings, world loot caches, fortifications ---

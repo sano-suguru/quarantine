@@ -94,6 +94,8 @@ export const CONFIG = {
       fragCone: 0.7, // half-angle (rad) of the forward spray cone around the shot direction
       fragLife: [0.45, 0.8] as [number, number], // fragment particle lifetime (s) before fade
       fragDecalMax: 3, // max fragments that settle into decals per kill (Task 3)
+      fragDecalLife: [8, 16] as [number, number], // settled-fragment decal life (s) — shorter than blood.life
+      fragDecalDarken: 0.5, // brightness multiplier for a settled fragment (dried stain)
     },
   },
   // Action-feel: motion / prop / particle / payoff tuning for timed player actions.
