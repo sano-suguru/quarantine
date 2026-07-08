@@ -31,6 +31,7 @@ Adds the ability to draw one cell of a sprite. No caller yet (that's Task 2), so
 - Create: `game/engine/fragment.ts`, `game/engine/fragment.test.ts`
 - Modify: `game/engine/renderer.ts` (`FLOATS`, `makeLayer`, `write`, new `spriteFragQuad`, `atlasSize` module var, `u_gridN`/`u_atlasTexel` uniforms + `flush` sets them, export `spriteFragQuad`)
 - Modify: `game/engine/shaders/instance.vert`, `game/engine/shaders/instance.frag`
+- Modify: `vite.config.ts` (add `"game/engine/fragment.ts"` to the coverage `include` allowlist, alongside `math.ts`/`geometry.ts` — so the pure helpers' coverage counts)
 
 **Interfaces:**
 - Produces:
@@ -284,15 +285,19 @@ Replace the sprite branch (`instance.frag`, the `} else if(s >= 16){ ... }` bloc
   } else {
 ```
 
-- [ ] **Step 9: Typecheck, lint, test, build (shaders compile at build)**
+- [ ] **Step 9: Add fragment.ts to coverage include**
+
+In `vite.config.ts`, add `"game/engine/fragment.ts"` to the coverage `include` array (next to `"game/engine/math.ts"`/`"game/engine/geometry.ts"`) so its pure-helper coverage counts, matching the math/geometry precedent.
+
+- [ ] **Step 10: Typecheck, lint, test, build (shaders compile at build)**
 
 Run: `bun run typecheck && bun run lint && bun run test -- fragment && bun run build`
 Expected: all clean; `fragment` tests pass; `build` succeeds (GLSL imported as strings — a syntax error won't fail build, but tsc/vite must be green).
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add game/engine/fragment.ts game/engine/fragment.test.ts game/engine/renderer.ts game/engine/shaders/instance.vert game/engine/shaders/instance.frag
+git add game/engine/fragment.ts game/engine/fragment.test.ts game/engine/renderer.ts game/engine/shaders/instance.vert game/engine/shaders/instance.frag vite.config.ts
 git commit -m "feat(render): per-instance sprite sub-cell (fragCell) for gore fragmentation"
 ```
 
@@ -522,7 +527,7 @@ The capped fragments (marked `settle` in Task 2) drop darkened real-pixel decals
 
 **Interfaces:**
 - Consumes: `Particle.settle/spriteKey/cellX/cellY` (Task 2); `R.spriteFragQuad`/`R.spriteLayer`; `CONFIG.fx.gore.fragDecalLife`/`fragDecalDarken`.
-- Produces: `Decal` gains `spriteKey?: string; cellX?: number; cellY?: number` (reuses existing `rot`).
+- Produces: `Decal` gains `spriteKey?: string; cellX?: number; cellY?: number; size?: number` (reuses existing `rot`; `size` = the fragment's cell size captured at settle).
 
 - [ ] **Step 1: CONFIG — add decal fields**
 
@@ -538,10 +543,11 @@ In `game/config.ts`, in `fx.gore` after `fragDecalMax`:
 In `game/types.ts`, add to the `Decal` interface (after `maxLife`):
 
 ```ts
-  /** real-image fragment decal (gore): sprite KEY + sub-cell (game.ts resolves key→layer); plain blood leaves undefined */
+  /** real-image fragment decal (gore): sprite KEY + sub-cell + on-screen size (game.ts resolves key→layer); plain blood leaves undefined */
   spriteKey?: string;
   cellX?: number;
   cellY?: number;
+  size?: number;
 ```
 
 - [ ] **Step 3: `pushFragDecal` + settle on expiry**
@@ -549,21 +555,21 @@ In `game/types.ts`, add to the `Decal` interface (after `maxLife`):
 In `game/systems/fx.ts`, add a sibling to `pushDecal`:
 
 ```ts
-function pushFragDecal(state: State, x: number, y: number, rot: number, spriteKey: string, cellX: number, cellY: number): void {
+function pushFragDecal(state: State, x: number, y: number, rot: number, size: number, spriteKey: string, cellX: number, cellY: number): void {
   const cfg = CONFIG.fx.blood;
   if (state.decals.length >= cfg.maxDecals) state.decals.shift();
   const fl = CONFIG.fx.gore.fragDecalLife;
   const life = rand(fl[0], fl[1]);
-  state.decals.push({ x, y, r: 0, rot, color: [1, 1, 1], life, maxLife: life, spriteKey, cellX, cellY });
+  state.decals.push({ x, y, r: 0, rot, color: [1, 1, 1], life, maxLife: life, spriteKey, cellX, cellY, size });
 }
 ```
 
-In `sysFx`'s particle-expiry branch (`fx.ts`, the `if (p.life <= 0) { … }` block), **before** the swap-pop assignment:
+In `sysFx`'s particle-expiry branch (`fx.ts`, the `if (p.life <= 0) { … }` block), **before** the swap-pop assignment (`p.r` is the fragment's cell size, set by `fxKill` — pass it so the settled decal matches the flying piece's size, no hardcoded radius):
 
 ```ts
     if (p.life <= 0) {
       if (p.kind === "frag" && p.settle && p.spriteKey)
-        pushFragDecal(state, p.x, p.y, p.rot, p.spriteKey, p.cellX ?? 0, p.cellY ?? 0);
+        pushFragDecal(state, p.x, p.y, p.rot, p.r, p.spriteKey, p.cellX ?? 0, p.cellY ?? 0);
       P[i] = P[P.length - 1] as (typeof P)[number];
       P.pop();
       continue;
@@ -582,7 +588,7 @@ In `game/game.ts`, the decal loop (`game.ts:559-562`), branch on fragment-decals
       const dl = R.spriteLayer(d.spriteKey);
       if (dl < 0) continue;
       const dk = CONFIG.fx.gore.fragDecalDarken;
-      const dsz = (2 * 32 * SPRITE_SCALE) / CONFIG.fx.gore.gridN;
+      const dsz = d.size ?? 8; // cell size captured at settle (matches the flying fragment); fallback if absent
       R.spriteFragQuad(d.x, d.y, dsz, dsz, d.rot, dl, d.cellX ?? 0, d.cellY ?? 0, dk, dk, dk, a);
     } else {
       R.circle(d.x, d.y, d.r, d.color[0], d.color[1], d.color[2], a);
