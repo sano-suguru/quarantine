@@ -1,5 +1,7 @@
 # Gore: Death Shatter + Lingering Blood-Flesh Design
 
+> **SUPERSEDED (2026-07-08)** by `2026-07-08-gore-real-image-shatter-design.md`. This *abstract* hex-chunk approach was built (Task 1 on `feat/gore-death-shatter`) and playtested as too subtle / not the real image; replaced by real-sprite fragmentation. Kept for history. The `fxKill` `flesh` guard + deployable gating from this spec's Task 1 are retained by the successor.
+
 **Date:** 2026-07-08
 **Status:** Brainstormed & approved (option A, "all-recommended"); **rubber-duck reviewed and revised** (named the correct draw-dispatch loop, reuse the existing gib mechanism instead of a parallel counter, `flesh` guard so deployable destruction doesn't bleed, capped chunk-decals per kill so blood pools aren't evicted); **pending user review**, then plan.
 **Kind:** Feel/juice upgrade to the existing gore FX. Sharpens the crowd-sweep satisfaction (SAS3 pillar) without touching the renderer, shaders, or art.
