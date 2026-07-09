@@ -57,8 +57,10 @@ function assistAim(state: State, px: number, py: number): number | null {
     const dy = z.y - py;
     const d2 = dx * dx + dy * dy;
     if (d2 > r2) continue; // beyond flashlight range
-    if (!inViewport(z.x, z.y, state.cam.x, state.cam.y, half.x, half.y, CONFIG.flashlight.range))
-      continue; // off-screen
+    // 24 wu buffer: zombie is substantially on-screen before it becomes targetable,
+    // avoiding edge jitter without letting off-screen enemies past the gate.
+    const VIEWPORT_MARGIN = 24;
+    if (!inViewport(z.x, z.y, state.cam.x, state.cam.y, half.x, half.y, VIEWPORT_MARGIN)) continue; // off-screen
     if (!hasLineOfSight(px, py, z.x, z.y, state.walls)) continue; // wall-occluded
     const score = z.id === aimTargetId ? d2 / (1.4 * 1.4) : d2; // hysteresis: stick to current
     if (score < bestScore) {
@@ -150,8 +152,11 @@ export function sampleLocalInput(state: State): PlayerInput {
   // auto-fire: fire whenever a target is visible. Semi-auto weapons pulse firing off every
   // other sample so the sim's firedThisHold gate (cleared when !inp.firing) lets them re-fire.
   const isAuto = effWeapon(p, p.weapon).auto;
-  firePulse = !firePulse;
+  // Reset pulse when no target so a fresh engagement always fires on sample 1.
+  if (target === null) firePulse = false;
+  // Read-then-toggle: semi-auto fires on the current pulse value, then flips for next sample.
   const firing = target !== null && (isAuto || !firePulse);
+  firePulse = !firePulse;
 
   const input: PlayerInput = {
     moveX,
