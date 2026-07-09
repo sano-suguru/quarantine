@@ -1,5 +1,6 @@
+import { inViewport, resolveAim, resolveHotbarSlot } from "../autoAim";
 import { CONFIG } from "../config";
-import { cycleWeaponSlot } from "../data/arsenal";
+import { cycleWeaponSlot, effWeapon } from "../data/arsenal";
 import { isUpgradeableWeapon, WEAPON_ORDER } from "../data/weapons";
 import { localPlayer } from "../engine/players";
 import { Renderer } from "../engine/renderer";
@@ -14,9 +15,9 @@ import { emptyInput, type PlayerInput } from "./playerInput";
  * `PlayerInput`. This is the ONLY place outside the engine boundary that reads `Input`,
  * the mouse, or the canvas for sim purposes — systems stay pure and read `player.input`.
  *
- * Edge fields (reload/heal/lightToggle/weaponSlot) are rising-edge detected against the
- * previous sample so a single press fires once. Aim is computed here (cam-relative) so the
- * camera/mouse never have to travel over the network — only the resulting angle does.
+ * Edge fields (reload/heal/weaponSlot) are rising-edge detected against the previous sample
+ * so a single press fires once. Aim is auto-derived (nearest visible in-viewport zombie →
+ * movement heading → held last heading). The mouse never aims.
  */
 
 // previous-frame key snapshot for rising-edge detection
@@ -24,21 +25,29 @@ let prevKeys = new Set<string>();
 // aim-assist: id of the zombie currently auto-targeted (for hysteresis, so the aim/light
 // don't flicker between two equidistant enemies). -1 = none.
 let aimTargetId = -1;
+// module-local heading so the gun holds its last facing when the player stops moving and
+// no zombie is on-screen.
+let lastHeading = 0;
 // mouse-wheel weapon-switch debounce (module-local, like prevKeys/aimTargetId):
 // wheelArmed = may switch on the next wheel activity; re-armed after a quiet gap.
 // lastSampleMs = performance.now() of the previous sampleLocalInput call; a large gap means
 // we were non-live (shop/pause/settings/tab-away) and should drop stale wheel accumulation.
 let wheelArmed = true;
 let lastSampleMs = 0;
+// semi-auto re-trigger pulse: toggled each sample so the sim's firedThisHold gate clears
+// between shots when the weapon is on continuous-target semi-auto.
+let firePulse = false;
 
 /**
- * Opt-in auto-aim: angle to the nearest zombie within the flashlight's reach (what you can
- * see). The current target gets a stickiness discount so the cone doesn't jitter between
- * two similar-distance enemies. Returns null when no zombie is in range (caller keeps the
- * mouse aim). Client-local — only the resulting angle ever crosses the wire.
+ * Auto-aim: angle to the nearest zombie within the flashlight's range AND within the
+ * visible viewport. The current target gets a stickiness discount so the cone doesn't
+ * jitter between two similar-distance enemies. Returns null when no zombie qualifies
+ * (caller falls back to movement heading / last heading). Client-local — only the
+ * resulting angle ever crosses the wire.
  */
 function assistAim(state: State, px: number, py: number): number | null {
   const r2 = CONFIG.flashlight.range * CONFIG.flashlight.range;
+  const half = Renderer.worldToScreenHalf();
   let best: { x: number; y: number; id: number } | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
   // NOTE: iterates state.zombies only — state.stalker is a separate slot and is intentionally
@@ -47,8 +56,10 @@ function assistAim(state: State, px: number, py: number): number | null {
     const dx = z.x - px;
     const dy = z.y - py;
     const d2 = dx * dx + dy * dy;
-    if (d2 > r2) continue;
-    if (!hasLineOfSight(px, py, z.x, z.y, state.walls)) continue; // skip wall-occluded zombies
+    if (d2 > r2) continue; // beyond flashlight range
+    if (!inViewport(z.x, z.y, state.cam.x, state.cam.y, half.x, half.y, CONFIG.flashlight.range))
+      continue; // off-screen
+    if (!hasLineOfSight(px, py, z.x, z.y, state.walls)) continue; // wall-occluded
     const score = z.id === aimTargetId ? d2 / (1.4 * 1.4) : d2; // hysteresis: stick to current
     if (score < bestScore) {
       bestScore = score;
@@ -96,36 +107,28 @@ export function sampleLocalInput(state: State): PlayerInput {
   if (held("KeyA") || held("ArrowLeft")) moveX -= 1;
   if (held("KeyD") || held("ArrowRight")) moveX += 1;
 
-  // aim: map the mouse (screen space) through the camera to a world-space angle
-  const half = Renderer.worldToScreenHalf();
-  const cv = document.getElementById("game") as HTMLCanvasElement;
-  const mxN = (Input.mouseX / cv.clientWidth) * 2 - 1;
-  const myN = (Input.mouseY / cv.clientHeight) * 2 - 1;
-  const wx = state.cam.x + mxN * half.x;
-  const wy = state.cam.y + myN * half.y;
-  let aim = Math.atan2(wy - p.y, wx - p.x);
-  // opt-in aim assist: override the mouse angle with auto-aim at the nearest visible zombie
-  // (falls back to the mouse angle when no enemy is in range). Light follows aim, so this also
-  // auto-points the flashlight — an accepted trade for accessibility (off by default).
-  if (getSettings().aimAssist) {
-    const a = assistAim(state, p.x, p.y);
-    if (a !== null) aim = a;
-  }
+  // unified auto scheme: gun auto-aims at the nearest visible in-viewport zombie; with no
+  // target the light/gun follow the movement heading; idle holds the last heading.
+  // The mouse never aims.
+  const target = assistAim(state, p.x, p.y); // null when no valid zombie is on-screen
+  const aim = resolveAim(target, moveX, moveY, lastHeading);
+  lastHeading = aim; // persist the resting facing
 
-  // weapon switch: first newly-pressed number key → slot index
+  // weapon switch: number keys Digit1..Digit3 → loadout hotbar slot → absolute WEAPON_ORDER index
+  const loadout = getSettings().loadout;
   let weaponSlot: number | null = null;
-  for (let i = 1; i <= 9; i++) {
+  for (let i = 1; i <= 3; i++) {
     if (edge(`Digit${i}`)) {
-      weaponSlot = i - 1;
+      weaponSlot = resolveHotbarSlot(loadout, WEAPON_ORDER, i - 1);
       break;
     }
   }
 
   // Mouse-wheel weapon switch — only if a number key didn't already claim the slot. One switch
   // per wheel "burst" (re-arm only after wheelBurstGapMs of silence) so trackpad inertia can't
-  // spin through the arsenal. Cycles owned, non-melee weapons; the knife stays number-key only.
-  // Always drain the wheel accumulator, even when a number key already claimed the slot this
-  // frame, so a stale delta never carries across frames (spec: no pile-up on number-key wins).
+  // spin through the arsenal. Cycles only within the loadout. Always drain the wheel
+  // accumulator, even when a number key already claimed the slot this frame, so a stale delta
+  // never carries across frames (spec: no pile-up on number-key wins).
   const w = Input.wheel;
   Input.wheel = 0;
   if (weaponSlot === null) {
@@ -133,7 +136,7 @@ export function sampleLocalInput(state: State): PlayerInput {
     if (wheelArmed && w !== 0) {
       const slot = cycleWeaponSlot(
         WEAPON_ORDER,
-        (id) => !!state.owned[id] && isUpgradeableWeapon(id),
+        (id) => !!state.owned[id] && isUpgradeableWeapon(id) && loadout.includes(id),
         p.weapon,
         Math.sign(w),
       );
@@ -144,15 +147,20 @@ export function sampleLocalInput(state: State): PlayerInput {
     }
   }
 
+  // auto-fire: fire whenever a target is visible. Semi-auto weapons pulse firing off every
+  // other sample so the sim's firedThisHold gate (cleared when !inp.firing) lets them re-fire.
+  const isAuto = effWeapon(p, p.weapon).auto;
+  firePulse = !firePulse;
+  const firing = target !== null && (isAuto || !firePulse);
+
   const input: PlayerInput = {
     moveX,
     moveY,
     aim,
-    firing: Input.firing,
+    firing,
     interactHeld: held("KeyE"),
     reload: edge("KeyR"),
     heal: edge("KeyH"),
-    lightToggle: edge("KeyF"),
     weaponSlot,
   };
 
