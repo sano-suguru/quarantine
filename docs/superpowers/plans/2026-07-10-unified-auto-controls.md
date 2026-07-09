@@ -15,7 +15,8 @@
 - **Co-op wire:** any change to `snapshot.ts` encode/decode, `NetMsg`/`CoopEvent`, or Hello fields **requires bumping `PROTOCOL_VERSION` (`game/net/net.ts:19`)**. The golden-byte test in `snapshot.test.ts` fails on encode changes — bump, don't silence.
 - **Single-player sim rules, enemy/wave/weapon-stat/economy data, and the co-op flow stay behaviorally unchanged** — only controls/light/Stalker-ward change.
 - **`STALKER_STATES` wire enum order must stay stable** — never delete/reorder entries; unreachable states stay as dead entries.
-- **Branch:** `feat/unified-auto-controls` (already created; spec committed).
+- **Branch:** `feat/unified-auto-controls` (already created; spec + plan committed).
+- **Push timing (SDD note):** `bun run typecheck` only goes green again at the end of **Task 6**. Tasks 2–5 leave intentional type errors (removed `aimAssist`/`lightToggle`/`lightOn` callers fixed progressively). **Commit each task, but do NOT `git push` until Task 14** — the pre-push hook (`typecheck` + `test`) will (correctly) reject a mid-phase push. Per-task `commit` is fine (pre-commit is Biome only).
 - **Feel-first:** control/light/Stalker feel cannot be asserted from code — it is handed to the user for playtest (Task 15).
 
 ---
@@ -31,7 +32,7 @@
 - `game/net/snapshot.ts` **(modify)** — retire the `lightOn` flag bit; keep `STALKER_STATES` stable.
 - `game/net/net.ts` **(modify)** — bump `PROTOCOL_VERSION`.
 - `game/systems/player.ts`, `game/systems/flashlight.ts`, `game/systems/flashlight.test.ts` **(modify)** — remove toggle/manual-battery; battery auto-drains.
-- `game/systems/stalker.ts`, `game/systems/stalkerFx.ts`, `game/systems/bullets.ts` **(modify)** — remove ward machinery; retire `flinchStalker`.
+- `game/systems/stalker.ts`, `game/systems/stalkerFx.ts`, `game/systems/stalkerPhantom.ts` (+ `stalkerPhantom.test.ts`), `game/systems/bullets.ts` **(modify)** — remove ward machinery; retire `flinchStalker`; drop `lightOn` refs.
 - `game/game.ts`, `game/main.ts` **(modify)** — drop crosshair-as-aim + `aimAssist` UI; drop `lightOn &&` guards; render cone/placement from `aim`.
 - `game/engine/renderer.ts`, `game/config.ts` **(modify)** — responsive portrait view-scale.
 - `index.html`, `game/style.css` **(modify)** — portrait HUD, touch widgets, `touch-action`/`user-select`, safe-area.
@@ -114,26 +115,47 @@ export function resolveInputMode(env: {
 
 - [ ] **Step 1: Write the failing test**
 
+Use the **existing node-env `localStorage` stub pattern from `game/meta.test.ts`** — `vite.config.ts` is `environment: "node"` and **jsdom is NOT installed**, so `// @vitest-environment jsdom` would fail. Do not use `localStorage.clear()`.
+
 ```ts
-import { describe, expect, it, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getSettings, setLoadout, DEFAULT_LOADOUT } from "./settings";
 
 describe("settings loadout", () => {
-  beforeEach(() => localStorage.clear());
-  it("defaults to the starter 3-slot loadout", () => {
+  let store: Record<string, string>;
+  beforeEach(() => {
+    store = {};
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store[k] ?? null,
+      setItem: (k: string, v: string) => {
+        store[k] = v;
+      },
+      removeItem: (k: string) => {
+        delete store[k];
+      },
+    });
+    // getSettings caches in-module; re-import fresh per test to drop the cache.
+    vi.resetModules();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("defaults to the starter 3-slot loadout", async () => {
+    const { getSettings } = await import("./settings");
     expect(getSettings().loadout).toEqual(DEFAULT_LOADOUT);
   });
-  it("clamps a set loadout to at most 3 ids", () => {
+  it("clamps a set loadout to at most 3 ids", async () => {
+    const { setLoadout } = await import("./settings");
     expect(setLoadout(["pistol", "smg", "shotgun", "rifle"])).toEqual(["pistol", "smg", "shotgun"]);
   });
-  it("persists a set loadout", () => {
+  it("persists a set loadout", async () => {
+    const { getSettings, setLoadout } = await import("./settings");
     setLoadout(["magnum", "knife"]);
     expect(getSettings().loadout).toEqual(["magnum", "knife"]);
   });
 });
 ```
 
-> Note: `vite.config.ts` uses `environment: "node"`; if `localStorage` is absent in the test env, add `environment: "jsdom"` for this file via a top-of-file `// @vitest-environment jsdom` comment (Vitest per-file override). Verify by running the test.
+> The module-level `cached` in `settings.ts` persists across a test file; `vi.resetModules()` + per-test dynamic `import` gives each case a clean cache. (If `meta.test.ts` uses a simpler shape that works without `resetModules`, mirror whichever it actually does — check that file first.)
 
 - [ ] **Step 2: Run test to verify it fails** — `bun run test settings` → FAIL.
 
@@ -363,7 +385,7 @@ Add a module-local `let lastHeading = 0;` near `prevKeys`. Remove the now-unused
 - Modify: `game/main.ts` (crosshair block ~`469-479`; `aimAssist` UI at `~241,257`), `game/input.ts` (mouse combat handlers ~`22-31`).
 - Gate: `dev` playtest.
 
-- [ ] **Step 1:** In `game/input.ts`, remove the `mousedown`→`firing=true` and `mouseup`→`firing=false` handlers and the `firing` field (auto-fire now comes from `sampleLocalInput`). Keep `mousemove` **only if** menus need it; the shop/UI uses DOM click, so remove `mouseX/mouseY` combat use — retain them only if `main.ts` still reads them (after Step 2 it won't). Keep the `wheel` handler (used for weapon cycle) and `blur`.
+- [ ] **Step 1:** In `game/input.ts`, remove the `mousedown`→`firing=true` and `mouseup`→`firing=false` handlers and the `firing` field (auto-fire now comes from `sampleLocalInput`). Keep `mousemove` **only if** menus need it; the shop/UI uses DOM click, so remove `mouseX/mouseY` combat use — retain them only if `main.ts` still reads them (after Step 2 it won't). Keep the `wheel` handler (used for weapon cycle) and `blur` — but drop the `this.firing = false` line from the `blur` handler (`~44-48`) since the field is gone.
 
 - [ ] **Step 2:** In `game/main.ts`, delete the in-combat crosshair block (`cross` opacity/transform/classes, ~`469-479`) and the `#cross` element usage; hide `#cross` permanently (or remove the element in `index.html`). Remove the `settingAimAssist` button wiring (`~256-260`) and the `aimAssist` label refresh (`~241`).
 
@@ -392,11 +414,18 @@ Add a module-local `let lastHeading = 0;` near `prevKeys`. Remove the now-unused
 
 - [ ] **Step 4:** In `game/systems/flashlight.test.ts`, delete the `"is zero when switched off"` test (`16-18`) and shift the signature comment; keep the dead-battery→0 test. Update every remaining call to drop the `on` boolean argument.
 
-- [ ] **Step 5:** In `game/types.ts` remove `Player.lightOn`; in `game/engine/players.ts` remove its init (`~47`). In `game/game.ts` drop the `lightOn &&` conditions from the `lightDie` audio edge (`~239`) and the dust/darts gate (`~380`); the cone already renders from `pl.aim` — leave that. In `game/net/snapshot.ts`, stop writing/reading the `lightOn` flag bit (bit 0 of the flag byte near `:663`/`:803`) — **leave the bit unused; do NOT renumber `absent`/`swingKind`/`searching`.**
+- [ ] **Step 5:** Remove `Player.lightOn` and **every consumer** (grep `lightOn` first to confirm the full set):
+  - `game/types.ts` — remove `Player.lightOn`.
+  - `game/engine/players.ts:~47` — remove its init (`lightOn: true`).
+  - `game/systems/player.ts` — already handled (Step 1).
+  - `game/game.ts` — the cone-intensity call at `~513-515` passes `pl.lightOn` as `flashlightIntensity`'s 2nd arg; drop that arg (consistent with Step 3, which removed the `on` param). Drop the `lightOn &&` conditions from the `lightDie` audio edge (`~239`) and the dust/darts `lit` gate (`~380`).
+  - `game/systems/stalkerFx.ts:~48`, `game/systems/stalker.ts:~31` — drop the `pl.lightOn` arg from their `flashlightIntensity` calls (Step 3).
+  - `game/systems/stalkerPhantom.ts` + `game/systems/stalkerPhantom.test.ts:~44` — remove any `lightOn` reference (the test sets `lp.lightOn = false`; delete/adjust it).
+  - `game/net/snapshot.ts` — remove `SnapPlayer.lightOn` (`~71`), the `captureSnapshot` write (`~217 lightOn: p.lightOn`), the `applySnapshot` read (`~385 p.lightOn = sp.lightOn`), and the flag-byte pack/unpack of bit 0 (`~663` pack, `~803`/`~828` unpack). **Leave bit 0 unused — do NOT renumber `absent` (2) / `swingKind` (4|8) / `searching` (16); their shifts are hardcoded constants, so a hole is safe.**
 
 - [ ] **Step 6:** Bump `PROTOCOL_VERSION` in `game/net/net.ts` from `16` to `17`.
 
-- [ ] **Step 7: Gate** — `bun run test` (flashlight passes with new signature; the golden snapshot test fails on the flag-byte change → update its expected bytes in the same commit, confirming the change is intentional). Then `bun run typecheck` (the `aimAssist`/`lightToggle` references are gone) and `bun run dev`: light is always on, browns out as battery drains; no F key effect.
+- [ ] **Step 7: Gate** — `bun run test`: `flashlight.test.ts` passes with the new signature; the golden snapshot test fails because player `lightOn` was `true` (bit 0 set) and is now unset → **update the inline `fnv=` hash only; `len=304` is unchanged** (dropping a set bit doesn't change byte length). Update it in this commit, confirming the change is intentional (do not silence). Then `bun run typecheck` — now green (this is the first task where `aimAssist`/`lightToggle`/`lightOn` references are all gone) — and `bun run dev`: light is always on, browns out as battery drains; the F key does nothing.
 
 - [ ] **Step 8: Commit** — `git add -A && git commit -m "feat(light): auto flashlight — remove toggle, lightToggle, lightOn; bump protocol"`
 
@@ -506,7 +535,10 @@ Add a module-local `let lastHeading = 0;` near `prevKeys`. Remove the now-unused
 - Modify: `index.html` (buttons), `game/style.css`, `game/game.ts` (`updateHUD` show/hide + wiring), `game/main.ts` (tap → the same paths as `H`/`Q`/`E`).
 - Gate: `dev`.
 
-- [ ] **Step 1:** Add three bottom-right touch buttons (`#btn-heal`, `#btn-fortify`, `#btn-repair`), shown only under `body.mobile`. Heal → same path as the `H` handler (set the heal edge on the local input, or call the existing heal trigger); Fortify → same as `Q` (`deployPlace()`, respecting the existing 300ms throttle); Repair → sets `interactHeld` for a tick against the nearest damaged barricade.
+- [ ] **Step 1:** Add three bottom-right touch buttons (`#btn-heal`, `#btn-fortify`, `#btn-repair`), shown only under `body.mobile`. Wire each through the **input seam**, not the DOM keydown handlers (heal/repair are derived in `sampleLocalInput` via `edge("KeyH")`/`held("KeyE")`, so a DOM click can't reach them):
+  - Add touch intents to the `Input` singleton: `Input.touchHealPulse: boolean` (one-shot, set on tap, consumed next sample) and `Input.touchInteract: boolean` (true while `#btn-repair` is held via `touchstart`/`touchend`).
+  - In `sampleLocalInput`, OR them in: `heal: edge("KeyH") || consumeTouchHeal()`, `interactHeld: held("KeyE") || Input.touchInteract`.
+  - Fortify → call `deployPlace()` directly on tap (same as the `Q` keydown path in `main.ts:302-308`), respecting the existing 300ms `lastPlaceAt` throttle (share it — export/guard so the tap and `Q` don't double-place).
 
 - [ ] **Step 2:** In `updateHUD`, show Fortify only when the local player has a queued deployable, and Repair only when near a damaged barricade (reuse the `#prompt` proximity logic). Heal shows `×medkits`.
 
@@ -522,7 +554,7 @@ Add a module-local `let lastHeading = 0;` near `prevKeys`. Remove the now-unused
 - Modify: `index.html` (reuse/repurpose `#weapons-row`), `game/style.css`, `game/game.ts` (`updateHUD` renders the loadout slots with ammo/active state), `game/main.ts` or `input.ts` (tap → weaponSlot).
 - Gate: `typecheck`, `dev`.
 
-- [ ] **Step 1:** Render exactly the loadout (`getSettings().loadout`) as up to 3 icon slots in `#weapons-row`, always visible under `body.mobile` (and optionally on desktop). Show per-slot ammo/reserve and highlight the active weapon; use each weapon's `viz`/color for the icon.
+- [ ] **Step 1:** Update `buildWeaponSlots` (`game.ts:~1290`) to render exactly the loadout (`getSettings().loadout`) as up to 3 icon slots in `#weapons-row`, always visible under `body.mobile` (and optionally on desktop). **The current `slot-${i}` id + the per-frame highlight loop (`game.ts:~1257-1263`) index by absolute `WEAPON_ORDER` position — change both to index by loadout position** (slot `i` = `loadout[i]`), and highlight the slot whose id === the active `p.weapon` (not by absolute index), so a loadout that isn't a `WEAPON_ORDER` prefix still highlights correctly. Show per-slot ammo/reserve; use each weapon's `viz`/color for the icon.
 
 - [ ] **Step 2:** Tapping a slot sets the next `weaponSlot` via `resolveHotbarSlot(loadout, WEAPON_ORDER, i)` (feed it into the same input path number keys use). Guard against the touch also driving the stick (right-side region, Task 10).
 
@@ -551,6 +583,7 @@ Add a module-local `let lastHeading = 0;` near `prevKeys`. Remove the now-unused
 **Files:** none.
 
 - [ ] **Step 1:** `bun run dev`; verify on **desktop** (WASD only) and in **portrait device-mode / a real phone** that it is the same game with the same controls.
+- [ ] **Step 1b (co-op wire check):** the protocol bump + snapshot flag change touch the wire — do one **2-client host↔client session** (manual-SDP or room code) and confirm no desync: both players see auto-aim/fire, the always-on light cones, and the Stalker consistently; remote flashlight cones render along the remote player's `aim`; no snapshot pop. (CLAUDE.md requires netcode changes be played, not just compiled.)
 - [ ] **Step 2:** Walk the spec's feel checklist and report honestly to the user (do not claim feel works without playing):
   - One thumb (mobile) / WASD-only (PC) carries the whole loop.
   - The `aim`-driven light (threat when present, movement when clear) reads as atmospheric, not disorienting.
