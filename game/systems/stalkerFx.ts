@@ -45,7 +45,6 @@ function stalkerIsLitByLocal(lp: Player, sx: number, sy: number, t: number): boo
   if (lp.hp <= 0 || lp.absent) return false;
   const intensity = flashlightIntensity(
     lp.battery / FLC.batteryMax,
-    lp.lightOn,
     FLC.lowThreshold,
     FLC.flickerDepth,
     FLC.baseFlickerDepth,

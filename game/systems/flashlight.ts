@@ -1,6 +1,6 @@
 /**
  * Pure flashlight cone intensity, split out for unit testing.
- * Off or dead battery → 0 (cone gone, only the dim personal pool remains).
+ * Dead battery → 0 (cone gone, only the dim personal pool remains).
  *
  * Steady brightness eases down with the charge: full at/above `dimStart`, ramping to
  * `dimFloor` as the battery empties — a continuously weakening beam stands in for the old
@@ -17,7 +17,6 @@
  */
 export function flashlightIntensity(
   batteryFrac: number,
-  on: boolean,
   lowThreshold: number,
   flickerDepth: number,
   baseFlickerDepth: number,
@@ -25,7 +24,7 @@ export function flashlightIntensity(
   dimFloor: number,
   dimStart: number,
 ): number {
-  if (!on || batteryFrac <= 0) return 0;
+  if (batteryFrac <= 0) return 0;
   const t = Math.min(1, batteryFrac / dimStart);
   const base = dimFloor + (1 - dimFloor) * t;
   const depth = batteryFrac < lowThreshold ? flickerDepth : baseFlickerDepth;

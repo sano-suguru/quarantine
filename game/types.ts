@@ -145,8 +145,6 @@ export interface Player {
   dryT: number;
   /** flashlight charge remaining (0..CONFIG.flashlight.batteryMax) */
   battery: number;
-  /** whether the flashlight is switched on (off = no drain, near-blind) */
-  lightOn: boolean;
   /** medkits carried */
   medkits: number;
   /** purchase-ordered queue of bought-but-unplaced deployables (defId per entry). Buying a

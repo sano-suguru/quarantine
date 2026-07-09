@@ -25,10 +25,9 @@ function stalkerFlickerNoise(t: number): number {
 function playerWardsStalker(pl: Player, sx: number, sy: number, t: number): boolean {
   if (pl.hp <= 0 || pl.absent) return false;
 
-  // Gate first: light must actually be ON and have charge.
+  // Gate first: the light must actually have charge.
   const intensity = flashlightIntensity(
     pl.battery / FLC.batteryMax,
-    pl.lightOn,
     FLC.lowThreshold,
     FLC.flickerDepth,
     FLC.baseFlickerDepth,

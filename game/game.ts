@@ -236,7 +236,7 @@ function audioAmbience(dt: number): void {
   // local flashlight dying (battery → 0 while lit): a one-shot "going dark" cue. Edge-detected
   // from the local player's synced battery so it fires once on host/client/single alike.
   const batf = p.battery / CONFIG.flashlight.batteryMax;
-  if (p.lightOn && prevBattery > 0 && batf <= 0) Audio.lightDie();
+  if (prevBattery > 0 && batf <= 0) Audio.lightDie();
   prevBattery = batf;
 
   // per-zombie groans / cone-entry screeches, re-derived locally from the world
@@ -377,7 +377,7 @@ function spawnDart(lp: Player): void {
 function drawAtmosphere(R: typeof Renderer, lp: Player, ddt: number): void {
   const flc = CONFIG.flashlight;
   const ambient = ambientForClock(state.phase, state.phaseT, state.day);
-  const lit = lp.lightOn && lp.battery > 0 && ambient < 0.2; // only meaningful in the dark
+  const lit = lp.battery > 0 && ambient < 0.2; // only meaningful in the dark
   if (lit) {
     // dust motes: faint additive specks drifting in the beam
     for (const m of DUST) {
@@ -512,7 +512,6 @@ export function draw(): void {
     if (pl.hp <= 0 || pl.absent) continue;
     const baseIntensity = flashlightIntensity(
       pl.battery / flc.batteryMax,
-      pl.lightOn,
       flc.lowThreshold,
       flc.flickerDepth,
       flc.baseFlickerDepth,
