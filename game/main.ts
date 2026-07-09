@@ -41,7 +41,6 @@ import { bumpCoopEpoch, coopEpoch, isCoopEpochCurrent } from "./net/session";
 import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
 import { getTurnStatus, NETLOG, type PeerLink } from "./net/transport";
-import { getSettings, setAimAssist } from "./settings";
 import { sysCamera } from "./systems/camera";
 import { sysFx } from "./systems/fx";
 import { assertNever, el, hide, isEditableTarget, renderList, show } from "./ui";
@@ -226,7 +225,6 @@ async function main(): Promise<void> {
   renderArsenal(); // populate the ARSENAL overlay on first load
   wireCoop();
 
-  const cross = el("cross");
   const muteTag = el("mute");
   const netstat = el("netstat"); // ?netlog co-op net-stat readout
   let netAcc = 0;
@@ -238,7 +236,6 @@ async function main(): Promise<void> {
     muteTag.textContent = Audio.isMuted() ? "♪ muted [M]" : "";
   };
   const refreshSettings = (): void => {
-    el("settingAimAssist").textContent = getSettings().aimAssist ? "ON" : "OFF";
     el("settingMute").textContent = Audio.isMuted() ? "ON" : "OFF";
   };
   const openSettings = (): void => {
@@ -253,11 +250,6 @@ async function main(): Promise<void> {
   refreshMute();
   el("optionsBtn").onclick = openSettings;
   el("settingsClose").onclick = closeSettings;
-  el("settingAimAssist").onclick = () => {
-    setAimAssist(!getSettings().aimAssist);
-    refreshSettings();
-    Audio.ui(true);
-  };
   el("settingMute").onclick = () => {
     Audio.toggleMute();
     refreshMute();
@@ -464,18 +456,6 @@ async function main(): Promise<void> {
           }
         }
       }
-    }
-
-    // custom crosshair (hidden while downed — you're spectating, not aiming — or reconnecting)
-    if (st.running && !st.paused && !reconnecting && !settingsOpen && localPlayer(st).hp > 0) {
-      const me = localPlayer(st);
-      cross.style.opacity = "1";
-      cross.style.transform = `translate(${Input.mouseX}px,${Input.mouseY}px)`;
-      cross.classList.toggle("empty", me.dryT > 0);
-      cross.classList.toggle("fire", Input.firing && me.reloadT <= 0 && me.dryT <= 0);
-      cross.classList.toggle("reload", me.reloadT > 0);
-    } else {
-      cross.style.opacity = "0";
     }
 
     requestAnimationFrame(frame);
