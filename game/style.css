@@ -21,14 +21,25 @@ body {
   color: var(--ink);
   -webkit-user-select: none;
   user-select: none;
+  touch-action: none;
+  overscroll-behavior: none;
   /* Reveal after the critical inline boot style hid <body> to avoid the dev FOUC (see index.html). */
   visibility: visible;
+}
+/* Re-enable text selection and default input behavior for form fields —
+   the global user-select:none above must not block typing/selecting in lobby inputs. */
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  touch-action: auto;
 }
 #game {
   display: block;
   width: 100vw;
   height: 100vh;
   cursor: none;
+  touch-action: none;
 }
 
 /* persistent atmospheric vignette */
@@ -50,59 +61,6 @@ body {
   z-index: 3;
   opacity: 0;
   transition: opacity 0.12s ease-out;
-}
-
-/* custom crosshair */
-#cross {
-  position: fixed;
-  left: 0;
-  top: 0;
-  z-index: 4;
-  pointer-events: none;
-  width: 26px;
-  height: 26px;
-  margin: -13px 0 0 -13px;
-  transition:
-    transform 0.04s linear,
-    opacity 0.15s;
-}
-#cross::before,
-#cross::after {
-  content: "";
-  position: absolute;
-  background: var(--toxic);
-  box-shadow: 0 0 6px var(--toxic);
-}
-#cross::before {
-  left: 50%;
-  top: 0;
-  width: 2px;
-  height: 100%;
-  margin-left: -1px;
-}
-#cross::after {
-  top: 50%;
-  left: 0;
-  height: 2px;
-  width: 100%;
-  margin-top: -1px;
-}
-#cross.fire {
-  transform: scale(1.4);
-}
-#cross.reload::before,
-#cross.reload::after {
-  background: var(--amber);
-  box-shadow: 0 0 6px var(--amber);
-}
-/* dry-fire flinch: crosshair jolts inward and flashes blood-red */
-#cross.empty {
-  transform: scale(0.7);
-}
-#cross.empty::before,
-#cross.empty::after {
-  background: var(--blood);
-  box-shadow: 0 0 6px var(--blood);
 }
 
 #hud {
@@ -1451,4 +1409,47 @@ body {
   #start .torch {
     transition: none;
   }
+}
+
+/* ---- Mobile portrait HUD layout (body.mobile set by Task 10 on touch devices) ---- */
+/* All rules below are scoped under body.mobile so the desktop layout is untouched.   */
+body.mobile #hud {
+  /* Apply safe-area insets so nothing sits behind a notch or home indicator.
+     Bottom region is deliberately left free for the virtual stick (bottom-left)
+     and action cluster / hotbar (bottom-right / bottom-center) from Tasks 12/13. */
+  padding-top: max(14px, env(safe-area-inset-top));
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+/* Pin the passive readouts (flashlight, day, ammo, medkits, credits) to the top.
+   The bottom row is hidden on mobile — its content (ammo, phase, medkits/credits)
+   is moved to the top area or shown via a compact single-row layout. */
+body.mobile .hud-top {
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: flex-start;
+}
+
+/* Stack all readout blocks in a compact single row across the top.
+   hud-bottom is pushed out of view; a second .hud-top-row carries what was bottom. */
+body.mobile .hud-bottom {
+  /* Keep bottom row visible but push it up so it stays above the virtual controls zone.
+     Tasks 12/13 will finalize the bottom-center; for now, shift it up to stay clear. */
+  position: absolute;
+  top: max(60px, calc(env(safe-area-inset-top) + 48px));
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  align-items: flex-start;
+  pointer-events: none;
+}
+
+/* Scale down stat values slightly for portrait density */
+body.mobile .stat-val {
+  font-size: 16px;
+}
+
+body.mobile .hud-block {
+  min-width: 70px;
 }
