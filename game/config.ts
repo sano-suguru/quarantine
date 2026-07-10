@@ -344,9 +344,8 @@ export const CONFIG = {
   stalker: {
     spawnDist: 900, // spawns this far from the target, in the dark
     advanceSpeed: 95, // px/s while aggro in the dark
-    staggerSpeed: 40, // px/s backing off while staggered
-    staggerWindow: 1.1, // s the stagger lingers after the beam leaves
-    wardBatteryCost: 4, // battery units drained from the warding player per aggro→stagger edge
+    staggerSpeed: 40, // px/s backing off while staggered (kept for dead stagger→aggro fallback; unused in practice)
+    staggerWindow: 1.1, // s the stagger lingers after the beam leaves (kept for dead stagger state; unused in practice)
     contactDist: 34,
     contactDamage: 34,
     contactCd: 1.5, // s before it can grab again
@@ -367,9 +366,6 @@ export const CONFIG = {
     // Extended scare: hard flash → near-black collapse → camera drag toward the stalker.
     scareFlashBoost: 0.9, // added on top of the 0.7 base flash on a grab (both applied in game.ts)
     scareDragDist: 80, // world units the camera lurches toward the stalker during the scare
-    wardFadeOut: 0.9, // vis fade-out rate per second of SUSTAINED light — ~1.1s of held beam to fully melt it into the dark (fade only advances while lit; pauses when the beam leaves)
-    bulletKnockback: 60, // world-units impulse applied to the stalker along the bullet direction
-    bulletFlinch: 0.18, // vis dip on a bullet hit (clamped to 0.2 floor so it never fully vanishes)
     // --- phantom perception (Phase 1.5, stalkerPhantom.ts) — fake cues, render/audio-only ---
     phantomMax: 2, // concurrent fake silhouette cap
     phantomLife: 0.32, // fake silhouette lifetime (s), with sinusoidal fade in/out

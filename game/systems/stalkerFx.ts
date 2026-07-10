@@ -40,6 +40,8 @@ export function resetStalkerFx(): void {
 /**
  * Returns true if the stalker (sx, sy) is inside the local player's active flashlight cone.
  * A lit stalker does NOT trigger the telegraph — fear comes from the dark side.
+ * Note: with auto-flashlight always on, the stalker will rarely be "unlit", so telegraphs
+ * (footfalls, heartbeat, cone flicker) fire mostly when the stalker is behind/outside the cone.
  */
 function stalkerIsLitByLocal(lp: Player, sx: number, sy: number, t: number): boolean {
   if (lp.hp <= 0 || lp.absent) return false;
