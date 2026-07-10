@@ -1302,6 +1302,67 @@ body {
   color: var(--dim);
 }
 
+/* loadout row (arsenal + shop): chip strip for selecting ≤3 weapons */
+.loadout-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+  width: min(620px, 90vw);
+  justify-content: center;
+}
+.loadout-label {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--dim);
+  text-transform: uppercase;
+  margin-top: 14px;
+}
+.lchip {
+  pointer-events: auto;
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  padding: 4px 12px;
+  border: 1px solid rgba(125, 255, 79, 0.3);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--dim);
+  border-radius: 2px;
+  transition:
+    border-color 0.1s,
+    background 0.1s,
+    color 0.1s,
+    box-shadow 0.1s;
+}
+.lchip:hover {
+  border-color: var(--toxic);
+  color: var(--ink);
+  background: rgba(20, 40, 18, 0.45);
+}
+.lchip.active {
+  border-color: var(--toxic);
+  background: rgba(125, 255, 79, 0.18);
+  color: var(--toxic);
+  box-shadow: 0 0 10px rgba(125, 255, 79, 0.3);
+}
+.lchip.shake {
+  animation: chipshake 0.25s ease-out;
+}
+@keyframes chipshake {
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
 /* arsenal-screen overlay two-column layout */
 .ars-groups {
   display: flex;
