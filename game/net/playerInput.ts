@@ -20,8 +20,6 @@ export interface PlayerInput {
   reload: boolean;
   /** edge: use a medkit (H) */
   heal: boolean;
-  /** edge: toggle the flashlight (F) */
-  lightToggle: boolean;
   /** weapon-slot switch request: null = no change, 0..N = hotkey slot */
   weaponSlot: number | null;
 }
@@ -36,7 +34,6 @@ export function emptyInput(): PlayerInput {
     interactHeld: false,
     reload: false,
     heal: false,
-    lightToggle: false,
     weaponSlot: null,
   };
 }

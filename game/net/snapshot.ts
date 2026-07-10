@@ -68,7 +68,6 @@ interface SnapPlayer {
   switchT: number;
   healT: number;
   battery: number;
-  lightOn: boolean;
   muzzle: number;
   recoilX: number;
   recoilY: number;
@@ -214,7 +213,6 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
       switchT: p.switchT,
       healT: p.healT,
       battery: p.battery,
-      lightOn: p.lightOn,
       muzzle: p.muzzle,
       recoilX: p.recoilX,
       recoilY: p.recoilY,
@@ -382,7 +380,6 @@ export function applySnapshot(
     p.switchT = sp.switchT;
     p.healT = sp.healT;
     p.battery = sp.battery;
-    p.lightOn = sp.lightOn;
     p.muzzle = sp.muzzle;
     p.recoilX = sp.recoilX;
     p.recoilY = sp.recoilY;
@@ -619,7 +616,7 @@ export function encode(snap: Snapshot): ArrayBuffer {
   w.u32(snap.kills);
   w.u16(snap.waveN);
 
-  // players (few → keep float precision; pack lightOn into a flag byte). Per-player
+  // players (few → keep float precision; pack per-player flags into a flag byte). Per-player
   // economy (money/wlevel/muls) rides here too — individual wallets.
   w.u8(snap.players.length);
   for (const p of snap.players) {
@@ -660,7 +657,8 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.u8(Math.min(255, p.draftRerolls));
     w.u8(Math.min(255, p.draftFreePicksUsed));
     const swingKindBits = p.swingKind === "repair" ? 4 : p.swingKind === "mateHeal" ? 8 : 0;
-    w.u8((p.lightOn ? 1 : 0) | (p.absent ? 2 : 0) | (p.searching ? 16 : 0) | swingKindBits);
+    // bit 0 is unused (was lightOn, retired when the flashlight became always-on).
+    w.u8((p.absent ? 2 : 0) | (p.searching ? 16 : 0) | swingKindBits);
     w.u8(q01(p.swingT, MAX_SWING));
   }
 
@@ -800,7 +798,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
     const draftFreePicksUsed = r.u8();
     const pflags = r.u8();
     const swingT = dq01(r.u8(), MAX_SWING);
-    const lightOn = (pflags & 1) === 1;
+    // bit 0 (pflags & 1) is unused — was lightOn, retired when the flashlight became always-on.
     const absent = (pflags & 2) !== 0;
     const searching = (pflags & 16) !== 0;
     const swingKind: "" | "repair" | "mateHeal" =
@@ -825,7 +823,6 @@ export function decode(buf: ArrayBuffer): Snapshot {
       switchT,
       healT,
       battery,
-      lightOn,
       muzzle,
       recoilX,
       recoilY,

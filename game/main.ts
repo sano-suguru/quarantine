@@ -24,6 +24,7 @@ import {
   updateHUD,
 } from "./game";
 import { Input } from "./input";
+import { applyInputMode } from "./inputMode";
 import {
   type ClientLobbyDisplayState,
   clientLobbyWaitModel,
@@ -41,7 +42,7 @@ import { bumpCoopEpoch, coopEpoch, isCoopEpochCurrent } from "./net/session";
 import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
 import { getTurnStatus, NETLOG, type PeerLink } from "./net/transport";
-import { getSettings, setAimAssist } from "./settings";
+import { getSettings } from "./settings";
 import { sysCamera } from "./systems/camera";
 import { sysFx } from "./systems/fx";
 import { assertNever, el, hide, isEditableTarget, renderList, show } from "./ui";
@@ -214,8 +215,57 @@ async function main(): Promise<void> {
   const canvas = el<HTMLCanvasElement>("game");
   Renderer.init(canvas);
   Input.init(canvas);
+  applyInputMode(getSettings().inputModeOverride);
 
   el("startBtn").onclick = () => void startSingleRun();
+
+  // --- Mobile action buttons (#btn-heal, #btn-fortify, #btn-repair) ---
+  // Routed through the Input seam (not keydown) so they reach sampleLocalInput.
+  // Heal: one-shot pulse (set on touchstart, consumed once by sampleLocalInput).
+  const btnHeal = el<HTMLButtonElement>("btn-heal");
+  btnHeal.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault(); // stop scroll / ghost-click
+      Input.touchHealPulse = true;
+    },
+    { passive: false },
+  );
+
+  // Repair: held while finger is down (touchstart → touchend/cancel).
+  const btnRepair = el<HTMLButtonElement>("btn-repair");
+  btnRepair.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      Input.touchInteract = true;
+    },
+    { passive: false },
+  );
+  const clearRepair = (e: TouchEvent): void => {
+    e.preventDefault();
+    Input.touchInteract = false;
+  };
+  btnRepair.addEventListener("touchend", clearRepair, { passive: false });
+  btnRepair.addEventListener("touchcancel", clearRepair, { passive: false });
+
+  // Fortify: calls deployPlace() with the same 300ms throttle as the Q key path.
+  const btnFortify = el<HTMLButtonElement>("btn-fortify");
+  btnFortify.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      const st = getState();
+      if (!st.running || st.inShop || settingsOpen || reconnecting) return;
+      if (localPlayer(st).hp <= 0) return;
+      const now = performance.now();
+      if (now - lastPlaceAt < 300) return;
+      lastPlaceAt = now;
+      deployPlace();
+    },
+    { passive: false },
+  );
+
   el("restartBtn").onclick = () => {
     endCoop(); // game-over → title must fully drop any co-op mode/links (was leaking a ghost peer)
     toTitle();
@@ -226,7 +276,6 @@ async function main(): Promise<void> {
   renderArsenal(); // populate the ARSENAL overlay on first load
   wireCoop();
 
-  const cross = el("cross");
   const muteTag = el("mute");
   const netstat = el("netstat"); // ?netlog co-op net-stat readout
   let netAcc = 0;
@@ -238,7 +287,6 @@ async function main(): Promise<void> {
     muteTag.textContent = Audio.isMuted() ? "♪ muted [M]" : "";
   };
   const refreshSettings = (): void => {
-    el("settingAimAssist").textContent = getSettings().aimAssist ? "ON" : "OFF";
     el("settingMute").textContent = Audio.isMuted() ? "ON" : "OFF";
   };
   const openSettings = (): void => {
@@ -253,11 +301,6 @@ async function main(): Promise<void> {
   refreshMute();
   el("optionsBtn").onclick = openSettings;
   el("settingsClose").onclick = closeSettings;
-  el("settingAimAssist").onclick = () => {
-    setAimAssist(!getSettings().aimAssist);
-    refreshSettings();
-    Audio.ui(true);
-  };
   el("settingMute").onclick = () => {
     Audio.toggleMute();
     refreshMute();
@@ -464,18 +507,6 @@ async function main(): Promise<void> {
           }
         }
       }
-    }
-
-    // custom crosshair (hidden while downed — you're spectating, not aiming — or reconnecting)
-    if (st.running && !st.paused && !reconnecting && !settingsOpen && localPlayer(st).hp > 0) {
-      const me = localPlayer(st);
-      cross.style.opacity = "1";
-      cross.style.transform = `translate(${Input.mouseX}px,${Input.mouseY}px)`;
-      cross.classList.toggle("empty", me.dryT > 0);
-      cross.classList.toggle("fire", Input.firing && me.reloadT <= 0 && me.dryT <= 0);
-      cross.classList.toggle("reload", me.reloadT > 0);
-    } else {
-      cross.style.opacity = "0";
     }
 
     requestAnimationFrame(frame);

@@ -72,7 +72,7 @@ describe("snapshot binary round-trip", () => {
     expect(back.players[1]?.hp).toBeCloseTo(64, 5);
     expect(back.players[1]?.x).toBeCloseTo(250, 3);
 
-    // absent flag (packed into the player flag byte alongside lightOn) survives the round-trip,
+    // absent flag (packed into the player flag byte) survives the round-trip,
     // and the byte-packing doesn't bleed into the neighbouring player
     expect(back.players[1]?.absent).toBe(true);
     expect(back.players[0]?.absent).toBe(false);
@@ -131,7 +131,7 @@ describe("snapshot binary round-trip", () => {
     // +1 byte vs the pre-stalker golden: the stalker block always writes a presence byte (0 for null).
     // If this drifts again, bump PROTOCOL_VERSION in net.ts and regenerate here.
     expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
-      `"len=304 fnv=6c21e1c5"`,
+      `"len=304 fnv=443aad37"`,
     );
   });
 

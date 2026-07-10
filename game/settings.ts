@@ -1,30 +1,40 @@
 /**
- * Player-facing options that persist across sessions (localStorage), kept separate from
- * run-state and meta-progression. Read every frame by localInput (aim assist), so the value
- * is cached in memory and only re-read from storage on demand.
+ * Player-facing options persisted across sessions (localStorage), separate from run-state and
+ * meta. `loadout` = the ≤3 weapon ids shown on the (all-platform) hotbar. `inputModeOverride`
+ * lets a mis-detected device switch HUD mode. Cached in memory; safe to read per-frame.
  */
+import { STARTER_WEAPONS } from "./data/weapons";
+import type { InputMode } from "./inputMode";
 
 const KEY = "q_settings";
+export const MAX_LOADOUT = 3;
+export const DEFAULT_LOADOUT = STARTER_WEAPONS.filter((id) => id !== "knife").slice(0, MAX_LOADOUT);
 
 export interface Settings {
-  /** opt-in auto-aim: point the gun (and thus the flashlight) at the nearest zombie. OFF by
-   *  default — manual mouse aim is the horror default; this lowers the aiming skill wall. */
-  aimAssist: boolean;
+  loadout: string[];
+  inputModeOverride: InputMode | null;
 }
 
 function fresh(): Settings {
-  return { aimAssist: false };
+  return { loadout: [...DEFAULT_LOADOUT], inputModeOverride: null };
 }
 
 let cached: Settings | null = null;
 
-/** Current settings (cached in memory; safe to call per-frame). */
 export function getSettings(): Settings {
   if (cached) return cached;
   try {
     const raw = localStorage.getItem(KEY);
     const p = raw ? (JSON.parse(raw) as Partial<Settings>) : null;
-    cached = { aimAssist: typeof p?.aimAssist === "boolean" ? p.aimAssist : false };
+    const loadout =
+      Array.isArray(p?.loadout) && p.loadout.length
+        ? p.loadout.filter((x): x is string => typeof x === "string").slice(0, MAX_LOADOUT)
+        : [...DEFAULT_LOADOUT];
+    const ov = p?.inputModeOverride;
+    cached = {
+      loadout: loadout.length ? loadout : [...DEFAULT_LOADOUT],
+      inputModeOverride: ov === "mobile" || ov === "desktop" ? ov : null,
+    };
   } catch {
     cached = fresh();
   }
@@ -40,8 +50,12 @@ function save(s: Settings): void {
   }
 }
 
-/** Toggle/set the aim-assist option; returns the new value. */
-export function setAimAssist(on: boolean): boolean {
-  save({ ...getSettings(), aimAssist: on });
-  return on;
+export function setLoadout(ids: string[]): string[] {
+  const loadout = ids.slice(0, MAX_LOADOUT);
+  save({ ...getSettings(), loadout });
+  return loadout;
+}
+
+export function setInputModeOverride(m: InputMode | null): void {
+  save({ ...getSettings(), inputModeOverride: m });
 }

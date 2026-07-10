@@ -7,7 +7,6 @@ import type { State } from "../types";
 import { awardBounty } from "./economy";
 import { fxImpact, fxKill, goreIntensity } from "./fx";
 import { dropFromKill } from "./pickups";
-import { flinchStalker } from "./stalker";
 
 const STONE: [number, number, number] = [0.5, 0.52, 0.5];
 
@@ -62,16 +61,6 @@ export function sysBullets(state: State, dt: number): void {
           if (z.hp <= 0) killZombie(state, zi, dir); // gore flies in the shot direction
         }
       });
-      // Stalker hit test: single-entity distance check (stalker isn't in state.hash).
-      // Only when visible (vis > 0.1) — a faded stalker can't be hit.
-      // After wall-stop and zombie-query so a wall-blocked bullet doesn't connect.
-      if (!dead && state.stalker && state.stalker.vis > 0.1) {
-        const sk = state.stalker;
-        if (len(sk.x - b.x, sk.y - b.y) < CONFIG.stalker.contactDist + b.r) {
-          flinchStalker(state, b.x, b.y, b.vx * inv, b.vy * inv);
-          dead = true;
-        }
-      }
     }
     if (dead) {
       B[bi] = B[B.length - 1] as (typeof B)[number];

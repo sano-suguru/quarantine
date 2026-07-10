@@ -76,14 +76,8 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   p.noise *= CONFIG.ai.perception.noise.decay;
   if (p.noise < 0.5) p.noise = 0;
 
-  // F = toggle the flashlight (off = no drain, near-blind). Edge, consumed below.
-  if (inp.lightToggle) {
-    p.lightOn = !p.lightOn;
-    Audio.click();
-  }
-
-  // drain the flashlight while it's on
-  if (p.lightOn && p.battery > 0) {
+  // drain the flashlight (always on)
+  if (p.battery > 0) {
     p.battery = Math.max(0, p.battery - CONFIG.flashlight.drainPerSec * dt);
   }
 
@@ -206,7 +200,6 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   // consume one-shot edges so multiple sim sub-steps in a frame don't re-fire them
   inp.reload = false;
   inp.heal = false;
-  inp.lightToggle = false;
   inp.weaponSlot = null;
 
   // decay feel timers (visual offsets / cooldowns)

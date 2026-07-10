@@ -21,14 +21,25 @@ body {
   color: var(--ink);
   -webkit-user-select: none;
   user-select: none;
+  touch-action: none;
+  overscroll-behavior: none;
   /* Reveal after the critical inline boot style hid <body> to avoid the dev FOUC (see index.html). */
   visibility: visible;
+}
+/* Re-enable text selection and default input behavior for form fields —
+   the global user-select:none above must not block typing/selecting in lobby inputs. */
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  touch-action: manipulation;
 }
 #game {
   display: block;
   width: 100vw;
   height: 100vh;
   cursor: none;
+  touch-action: none;
 }
 
 /* persistent atmospheric vignette */
@@ -50,59 +61,6 @@ body {
   z-index: 3;
   opacity: 0;
   transition: opacity 0.12s ease-out;
-}
-
-/* custom crosshair */
-#cross {
-  position: fixed;
-  left: 0;
-  top: 0;
-  z-index: 4;
-  pointer-events: none;
-  width: 26px;
-  height: 26px;
-  margin: -13px 0 0 -13px;
-  transition:
-    transform 0.04s linear,
-    opacity 0.15s;
-}
-#cross::before,
-#cross::after {
-  content: "";
-  position: absolute;
-  background: var(--toxic);
-  box-shadow: 0 0 6px var(--toxic);
-}
-#cross::before {
-  left: 50%;
-  top: 0;
-  width: 2px;
-  height: 100%;
-  margin-left: -1px;
-}
-#cross::after {
-  top: 50%;
-  left: 0;
-  height: 2px;
-  width: 100%;
-  margin-top: -1px;
-}
-#cross.fire {
-  transform: scale(1.4);
-}
-#cross.reload::before,
-#cross.reload::after {
-  background: var(--amber);
-  box-shadow: 0 0 6px var(--amber);
-}
-/* dry-fire flinch: crosshair jolts inward and flashes blood-red */
-#cross.empty {
-  transform: scale(0.7);
-}
-#cross.empty::before,
-#cross.empty::after {
-  background: var(--blood);
-  box-shadow: 0 0 6px var(--blood);
 }
 
 #hud {
@@ -170,18 +128,58 @@ body {
   margin-top: 7px;
 }
 .wslot {
+  --wslot-color: var(--amber);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   font-size: 10px;
   letter-spacing: 0.12em;
   padding: 3px 8px;
   border: 1px solid var(--dim);
   color: var(--dim);
   border-radius: 2px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
 .wslot.active {
   color: var(--bg);
-  background: var(--amber);
-  border-color: var(--amber);
-  box-shadow: 0 0 12px rgba(255, 179, 71, 0.5);
+  background: var(--wslot-color);
+  border-color: var(--wslot-color);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--wslot-color) 50%, transparent);
+}
+.wslot-name {
+  font-size: 10px;
+}
+.wslot-ammo {
+  font-size: 9px;
+  opacity: 0.8;
+  letter-spacing: 0.05em;
+}
+
+/* ---- Mobile weapon hotbar: fixed bottom-center, above safe area ---- */
+body.mobile #weapons-row {
+  position: fixed;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  pointer-events: auto;
+  margin-top: 0;
+}
+body.mobile .wslot {
+  min-width: 60px;
+  min-height: 50px;
+  padding: 8px 12px;
+  font-size: 11px;
+  border-radius: 6px;
+  justify-content: center;
+  border-width: 1.5px;
+  pointer-events: auto;
+  touch-action: none;
 }
 #ammo .stat-val {
   color: var(--amber);
@@ -1302,6 +1300,67 @@ body {
   color: var(--dim);
 }
 
+/* loadout row (arsenal + shop): chip strip for selecting ≤3 weapons */
+.loadout-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+  width: min(620px, 90vw);
+  justify-content: center;
+}
+.loadout-label {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--dim);
+  text-transform: uppercase;
+  margin-top: 14px;
+}
+.lchip {
+  pointer-events: auto;
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  padding: 4px 12px;
+  border: 1px solid rgba(125, 255, 79, 0.3);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--dim);
+  border-radius: 2px;
+  transition:
+    border-color 0.1s,
+    background 0.1s,
+    color 0.1s,
+    box-shadow 0.1s;
+}
+.lchip:hover {
+  border-color: var(--toxic);
+  color: var(--ink);
+  background: rgba(20, 40, 18, 0.45);
+}
+.lchip.active {
+  border-color: var(--toxic);
+  background: rgba(125, 255, 79, 0.18);
+  color: var(--toxic);
+  box-shadow: 0 0 10px rgba(125, 255, 79, 0.3);
+}
+.lchip.shake {
+  animation: chipshake 0.25s ease-out;
+}
+@keyframes chipshake {
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
 /* arsenal-screen overlay two-column layout */
 .ars-groups {
   display: flex;
@@ -1390,4 +1449,116 @@ body {
   #start .torch {
     transition: none;
   }
+}
+
+/* ---- Mobile portrait HUD layout (body.mobile set by Task 10 on touch devices) ---- */
+/* All rules below are scoped under body.mobile so the desktop layout is untouched.   */
+body.mobile #hud {
+  /* Apply safe-area insets so nothing sits behind a notch or home indicator.
+     Bottom region is deliberately left free for the virtual stick (bottom-left)
+     and action cluster / hotbar (bottom-right / bottom-center) from Tasks 12/13. */
+  padding-top: max(14px, env(safe-area-inset-top));
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+/* Pin the passive readouts (flashlight, day, ammo, medkits, credits) to the top.
+   The bottom row is hidden on mobile — its content (ammo, phase, medkits/credits)
+   is moved to the top area or shown via a compact single-row layout. */
+body.mobile .hud-top {
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: flex-start;
+}
+
+/* Stack all readout blocks in a compact single row across the top.
+   hud-bottom is pushed out of view; a second .hud-top-row carries what was bottom. */
+body.mobile .hud-bottom {
+  /* Keep bottom row visible but push it up so it stays above the virtual controls zone.
+     Tasks 12/13 will finalize the bottom-center; for now, shift it up to stay clear. */
+  position: absolute;
+  top: max(60px, calc(env(safe-area-inset-top) + 48px));
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  align-items: flex-start;
+  pointer-events: none;
+}
+
+/* Scale down stat values slightly for portrait density */
+body.mobile .stat-val {
+  font-size: 16px;
+}
+
+body.mobile .hud-block {
+  min-width: 70px;
+}
+
+/* ---- Mobile action button cluster (#action-btns) ----
+   Bottom-right, above the safe-area home indicator. Thumb-reachable.
+   Only rendered under body.mobile (shown/hidden by updateHUD). */
+#action-btns {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: auto;
+}
+#action-btns.hidden {
+  display: none;
+}
+.act-btn {
+  pointer-events: auto;
+  cursor: pointer;
+  border: 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--bg);
+  background: var(--toxic);
+  padding: 14px 20px;
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 1px var(--toxic),
+    0 0 18px rgba(125, 255, 79, 0.4);
+  opacity: 0.88;
+  /* large tap target without enlarging the visual */
+  min-width: 88px;
+  min-height: 54px;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    opacity 0.1s,
+    transform 0.1s;
+}
+.act-btn:active {
+  opacity: 1;
+  transform: scale(0.96);
+}
+.act-btn.hidden {
+  display: none;
+}
+.act-btn-heal {
+  /* amber for heal — distinct from fortify/repair */
+  background: var(--amber);
+  box-shadow:
+    0 0 0 1px var(--amber),
+    0 0 18px rgba(255, 179, 71, 0.4);
+  color: var(--bg);
+}
+.act-btn-fortify {
+  background: var(--toxic);
+  color: var(--bg);
+}
+.act-btn-repair {
+  /* blood-red for repair to stand out when barricade is damaged */
+  background: var(--blood);
+  box-shadow:
+    0 0 0 1px var(--blood),
+    0 0 18px rgba(255, 77, 77, 0.4);
 }

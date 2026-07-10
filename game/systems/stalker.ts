@@ -4,52 +4,9 @@ import { len } from "../engine/math";
 import { sampleFlow } from "../engine/navfield";
 import { nearestPlayer } from "../engine/players";
 import type { Player, State } from "../types";
-import { flashlightIntensity } from "./flashlight";
-import { fxHurt, fxImpact } from "./fx";
+import { fxHurt } from "./fx";
 
 const CFG = CONFIG.stalker;
-const FLC = CONFIG.flashlight;
-
-// Time-correlated flicker noise (reuses same approach as game.ts flickerNoise, seeded by 0).
-function stalkerFlickerNoise(t: number): number {
-  const base = 0.5 + 0.3 * Math.sin(t * 9.1) + 0.2 * Math.sin(t * 23.7);
-  const surge = Math.max(0, Math.sin(t * 2.3)) ** 6;
-  return Math.max(0, Math.min(1, base * 0.5 + surge));
-}
-
-/**
- * Returns true if the given player's flashlight cone covers the stalker's position AND
- * the flashlight is actually on (flashlightIntensity > 0). A player in the dark must
- * NOT ward the stalker — else turning off the light would still be "safe".
- */
-function playerWardsStalker(pl: Player, sx: number, sy: number, t: number): boolean {
-  if (pl.hp <= 0 || pl.absent) return false;
-
-  // Gate first: light must actually be ON and have charge.
-  const intensity = flashlightIntensity(
-    pl.battery / FLC.batteryMax,
-    pl.lightOn,
-    FLC.lowThreshold,
-    FLC.flickerDepth,
-    FLC.baseFlickerDepth,
-    stalkerFlickerNoise(t),
-    FLC.dimFloor,
-    FLC.dimStart,
-  );
-  if (intensity <= 0) return false;
-
-  // Cone check: direction from player to stalker must be within the flashlight half-angle.
-  const dx = sx - pl.x;
-  const dy = sy - pl.y;
-  const dist = len(dx, dy) || 1;
-  if (dist > FLC.range) return false;
-
-  const coneCos = Math.cos(FLC.halfAngle);
-  const aimX = Math.cos(pl.aim);
-  const aimY = Math.sin(pl.aim);
-  const dot = (dx / dist) * aimX + (dy / dist) * aimY;
-  return dot > coneCos;
-}
 
 /**
  * Return the "loudest" living player (highest noise), breaking ties by distance.
@@ -72,24 +29,11 @@ function loudestPlayer(state: State, sx: number, sy: number): Player | null {
   return best;
 }
 
-/**
- * Return the first living player whose flashlight currently wards the stalker, or null.
- * Used both to determine whether a ward is active and to identify who pays the battery cost.
- */
-function wardingPlayer(state: State, sx: number, sy: number): Player | null {
-  for (const pl of state.players) {
-    if (playerWardsStalker(pl, sx, sy, state.time)) return pl;
-  }
-  return null;
-}
-
 export function sysStalker(state: State, dt: number): void {
   const s = state.stalker;
   if (!s) return;
 
   const target = loudestPlayer(state, s.x, s.y);
-  const warder = wardingPlayer(state, s.x, s.y);
-  const lit = warder !== null;
 
   // Decay contact cooldown
   if (s.contactCd > 0) s.contactCd -= dt;
@@ -114,15 +58,6 @@ export function sysStalker(state: State, dt: number): void {
 
     case "aggro": {
       if (!target) break;
-
-      if (lit) {
-        // Caught in the beam → stagger. Nick the warding player's battery once on this edge
-        // (tiny cost so warding isn't entirely free; the ward is a flick, not a hold).
-        warder.battery = Math.max(0, warder.battery - CFG.wardBatteryCost);
-        s.state = "stagger";
-        s.staggerT = CFG.staggerWindow;
-        break;
-      }
 
       // Advance toward target with flow-field routing + aim-bias
       const dx = target.x - s.x;
@@ -182,33 +117,9 @@ export function sysStalker(state: State, dt: number): void {
     }
 
     case "stagger": {
-      // The beam is sustained pressure: while actively lit it backs away and fades (vis block
-      // below); when the beam leaves it holds (no recede, vis paused) for a grace, then resumes
-      // the hunt. Only holding the beam all the way to vis<=0 banishes it.
-      if (lit) {
-        s.staggerT = CFG.staggerWindow; // refresh the look-away grace while the beam holds
-        if (target) {
-          const dx = s.x - target.x;
-          const dy = s.y - target.y;
-          const d = len(dx, dy) || 1;
-          s.x += (dx / d) * CFG.staggerSpeed * dt; // back away from the beam...
-          s.y += (dy / d) * CFG.staggerSpeed * dt;
-          s.face = Math.atan2(target.y - s.y, target.x - s.x); // ...while still staring at the player
-        }
-      } else {
-        s.staggerT -= dt; // beam left: hold position + vis (see vis block); count down the grace
-      }
-
-      // Held in the beam all the way to gone → relocate to a fresh far dark spot and return to lull.
-      // vis stays at 0 so it fades back in gradually as it re-approaches.
-      if (s.vis <= 0) {
-        placeStalker(state, s);
-        s.state = "lull";
-        break;
-      }
-
-      // Grace expired without finishing the ward → it resumes the hunt (vis recovers as it advances).
-      if (s.staggerT <= 0) s.state = "aggro";
+      // Dead state — wire index preserved for co-op snapshot stability (do not reorder or delete).
+      // Light-ward was removed; this state is no longer reachable. Fall back to aggro immediately.
+      s.state = "aggro";
       break;
     }
 
@@ -234,21 +145,14 @@ export function sysStalker(state: State, dt: number): void {
     }
   }
 
-  // Fade out only while ACTIVELY warded (staggered AND lit) — the longer you hold the beam, the
-  // more it melts into the dark. When the beam leaves mid-ward, vis holds (paused) so re-lighting
-  // resumes the chip-away. Otherwise (advancing/lull/retreat) it fades back in.
-  if (s.state === "stagger") {
-    if (lit) s.vis = Math.max(0, s.vis - dt * CFG.wardFadeOut);
-    // else: hold vis (waiting mid-ward)
-  } else {
-    s.vis = Math.min(1, s.vis + dt * 2);
-  }
+  // Vis always fades in as the stalker approaches — no ward fade-out path remains.
+  s.vis = Math.min(1, s.vis + dt * 2);
 }
 
 /**
- * Place (or relocate) the stalker at spawnDist from the nearest living player,
- * at an angle away from the player's aim (enter from the blind side).
- * Mutates s in place — call this for both initial spawn and ward-triggered relocates.
+ * Place the stalker at spawnDist from the nearest living player, at an angle
+ * away from that player's aim (enter from the blind side). Mutates s in place.
+ * Only called on spawn now — the ward-triggered relocate path was removed.
  */
 function placeStalker(state: State, s: NonNullable<State["stalker"]>): void {
   const target = nearestPlayer(state, 0, 0);
@@ -260,36 +164,6 @@ function placeStalker(state: State, s: NonNullable<State["stalker"]>): void {
   s.x = target.x + Math.cos(awayFromAim) * dist;
   s.y = target.y + Math.sin(awayFromAim) * dist;
   s.face = Math.atan2(target.y - s.y, target.x - s.x);
-}
-
-/**
- * React to a bullet impact: knockback along the bullet direction + a brief vis dip (flinch
- * flicker). No hp, no death, no stagger/banish — light is still the only real ward.
- * Skipped entirely when the stalker is not visible (vis <= 0.1) so a faded/vanished stalker
- * can't be interacted with.
- */
-export function flinchStalker(
-  state: State,
-  bx: number,
-  by: number,
-  dirX: number,
-  dirY: number,
-): void {
-  const s = state.stalker;
-  if (!s || s.vis <= 0.1) return;
-
-  // Knockback: push along the bullet's travel direction
-  const dl = len(dirX, dirY) || 1;
-  s.x += (dirX / dl) * CFG.bulletKnockback;
-  s.y += (dirY / dl) * CFG.bulletKnockback;
-
-  // Vis dip: a cold recoil flicker; floor at 0.2 so it doesn't accidentally trigger the
-  // ward-stagger vanish path (which only fires when vis hits 0 inside "stagger" state).
-  s.vis = Math.max(0.2, s.vis - CFG.bulletFlinch);
-
-  // Cold spark at the hit point (purple tint — matches the stalker's grab flash colour).
-  const coldSpark: [number, number, number] = [0.6, 0.1, 0.9];
-  fxImpact(state, bx, by, Math.atan2(dirY, dirX), coldSpark);
 }
 
 /**

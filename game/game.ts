@@ -1,3 +1,4 @@
+import { resolveHotbarSlot } from "./autoAim";
 import { CONFIG } from "./config";
 import {
   cardItem,
@@ -22,8 +23,10 @@ import { Audio } from "./engine/audio";
 import { type LightCandidate, selectLights } from "./engine/lights";
 import { anyAlive, cameraTarget, localPlayer, nearestPlayer, revivePlayer } from "./engine/players";
 import { Renderer, SHAPE } from "./engine/renderer";
+import { Input } from "./input";
 import { addSalvage, buyUnlock, loadMeta } from "./meta";
 import { Net } from "./net/net";
+import { DEFAULT_LOADOUT, getSettings, MAX_LOADOUT, setLoadout } from "./settings";
 import { newState } from "./state";
 import { actionMotion, deriveActionChannel } from "./systems/actionFeel";
 import { sysAI } from "./systems/ai";
@@ -236,7 +239,7 @@ function audioAmbience(dt: number): void {
   // local flashlight dying (battery → 0 while lit): a one-shot "going dark" cue. Edge-detected
   // from the local player's synced battery so it fires once on host/client/single alike.
   const batf = p.battery / CONFIG.flashlight.batteryMax;
-  if (p.lightOn && prevBattery > 0 && batf <= 0) Audio.lightDie();
+  if (prevBattery > 0 && batf <= 0) Audio.lightDie();
   prevBattery = batf;
 
   // per-zombie groans / cone-entry screeches, re-derived locally from the world
@@ -377,7 +380,7 @@ function spawnDart(lp: Player): void {
 function drawAtmosphere(R: typeof Renderer, lp: Player, ddt: number): void {
   const flc = CONFIG.flashlight;
   const ambient = ambientForClock(state.phase, state.phaseT, state.day);
-  const lit = lp.lightOn && lp.battery > 0 && ambient < 0.2; // only meaningful in the dark
+  const lit = lp.battery > 0 && ambient < 0.2; // only meaningful in the dark
   if (lit) {
     // dust motes: faint additive specks drifting in the beam
     for (const m of DUST) {
@@ -512,7 +515,6 @@ export function draw(): void {
     if (pl.hp <= 0 || pl.absent) continue;
     const baseIntensity = flashlightIntensity(
       pl.battery / flc.batteryMax,
-      pl.lightOn,
       flc.lowThreshold,
       flc.flickerDepth,
       flc.baseFlickerDepth,
@@ -1253,14 +1255,18 @@ export function updateHUD(): void {
   promptEl.classList.toggle("show", ip !== null);
 
   el("money").textContent = String(p.money);
-  // weapon slot highlight (slots are built per run from owned weapons)
+  // weapon slot highlight — indexed by LOADOUT position (slot-0 = loadout[0], etc.)
+  // so a loadout that isn't a WEAPON_ORDER prefix still highlights the right slot.
+  const loadoutNow = getSettings().loadout;
   if (p.weapon !== lastWeapon) {
     lastWeapon = p.weapon;
-    for (let i = 0; i < WEAPON_ORDER.length; i++) {
+    for (let i = 0; i < loadoutNow.length; i++) {
       const slot = document.getElementById(`slot-${i}`);
-      if (slot) slot.classList.toggle("active", WEAPON_ORDER[i] === p.weapon);
+      if (slot) slot.classList.toggle("active", loadoutNow[i] === p.weapon);
     }
   }
+  // update per-slot ammo every frame (mag drains per shot, not just on switch)
+  updateHotbarAmmo(p);
 
   // damage flash overlay
   const fl = el("flash");
@@ -1269,6 +1275,23 @@ export function updateHUD(): void {
 
   // downed spectator banner (co-op): you're out until the next dawn
   el("downed").classList.toggle("show", p.hp <= 0);
+
+  // Mobile action buttons: only shown under body.mobile while in an active run (not in shop)
+  if (document.body.classList.contains("mobile") && state.running && !state.inShop) {
+    show("action-btns");
+    // Heal: always visible; show medkit count
+    el("btn-heal-count").textContent = `×${p.medkits}`;
+    // Fortify: visible only when the local player has a queued deployable
+    const hasFortify = p.deployQueue.length > 0;
+    if (hasFortify) show("btn-fortify");
+    else hide("btn-fortify");
+    // Repair: visible when near a damaged barricade (reuse the interactPrompt logic)
+    const hasRepair = ip === "[E] repair";
+    if (hasRepair) show("btn-repair");
+    else hide("btn-repair");
+  } else {
+    hide("action-btns");
+  }
 
   // pause overlay is state-driven (so a host pause shows on every client via the
   // snapshot); the shop has its own overlay and also sets paused, so suppress it there.
@@ -1286,19 +1309,63 @@ function announce(label: string, n: number): void {
   b.classList.add("show");
 }
 
-/** Build the HUD weapon row from the weapons owned this run (number = hotkey). */
+/**
+ * Update per-slot ammo/reserve text for all hotbar slots.
+ * Active weapon uses p.ammo; inactive weapons use p.mags[id] (saved mag).
+ */
+function updateHotbarAmmo(p: Player): void {
+  const loadout = getSettings().loadout;
+  for (let i = 0; i < loadout.length; i++) {
+    const id = loadout[i] as string;
+    const w = WEAPONS[id];
+    if (!w) continue;
+    const ammoEl = document.getElementById(`slot-${i}-ammo`);
+    if (!ammoEl) continue;
+    if (w.melee) {
+      ammoEl.textContent = "∞";
+    } else {
+      const mag = id === p.weapon ? p.ammo : (p.mags[id] ?? 0);
+      const rsv = p.reserve[id] ?? 0;
+      ammoEl.textContent = `${mag}·${rsv}`;
+    }
+  }
+}
+
+/** Build the HUD weapon hotbar from the loadout (≤3 slots, indexed by loadout position). */
 function buildWeaponSlots(): void {
   const row = el("weapons-row");
   row.innerHTML = "";
-  for (let i = 0; i < WEAPON_ORDER.length; i++) {
-    const id = WEAPON_ORDER[i] as string;
+  const loadout = getSettings().loadout;
+  for (let i = 0; i < loadout.length; i++) {
+    const id = loadout[i] as string;
     if (!state.owned[id]) continue;
     const w = WEAPONS[id];
     if (!w) continue;
     const s = document.createElement("span");
     s.className = "wslot";
     s.id = `slot-${i}`;
-    s.textContent = `${i + 1} ${w.name}`;
+    // icon color: use the weapon's defined color (first viz part or weapon color)
+    const [r, g, b] = w.color;
+    s.style.setProperty(
+      "--wslot-color",
+      `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`,
+    );
+    const label = document.createElement("span");
+    label.className = "wslot-name";
+    label.textContent = `${i + 1} ${w.name}`;
+    const ammoSpan = document.createElement("span");
+    ammoSpan.className = "wslot-ammo";
+    ammoSpan.id = `slot-${i}-ammo`;
+    ammoSpan.textContent = "";
+    s.appendChild(label);
+    s.appendChild(ammoSpan);
+    // tap → weaponSlot via resolveHotbarSlot → same path as number keys
+    const hotbarIndex = i;
+    s.addEventListener("pointerdown", (e) => {
+      e.preventDefault(); // don't also trigger canvas stick
+      const absSlot = resolveHotbarSlot(getSettings().loadout, WEAPON_ORDER, hotbarIndex);
+      if (absSlot !== null) Input.touchWeaponSlot = absSlot;
+    });
     row.appendChild(s);
   }
   lastWeapon = ""; // force a re-highlight on the next HUD tick
@@ -1306,6 +1373,9 @@ function buildWeaponSlots(): void {
 
 export function startGame(): void {
   state = newState();
+  // Drop any unowned ids from the loadout before the run begins (ownership may have changed
+  // since last session or since the Arsenal was last opened).
+  reconcileLoadout(state.owned);
   Renderer.setWalls(state.walls);
   deployableSeen.clear();
   state.running = true;
@@ -1461,6 +1531,9 @@ function renderShop(): void {
   const rbtn = el<HTMLButtonElement>("rerollBtn");
   rbtn.onclick = () => draftReroll();
   rbtn.classList.toggle("off", me.money < rc || me.draftOffer.length === 0);
+
+  // loadout selection strip (owned weapons this run)
+  renderLoadout("shop-loadout", state.owned);
 
   // fortify list (deployables) — existing .srow look
   const forts = storeItems(state, me);
@@ -1632,6 +1705,66 @@ export function toTitle(): void {
   show("start");
 }
 
+/**
+ * Drop unowned ids from the loadout; if that empties it, reset to DEFAULT_LOADOUT ∩ owned.
+ * Call at run start and whenever ownership changes (e.g. after renderArsenal/unlock).
+ */
+function reconcileLoadout(owned: Record<string, boolean>): void {
+  const filtered = getSettings().loadout.filter((id) => owned[id]);
+  if (filtered.length > 0) {
+    setLoadout(filtered);
+  } else {
+    const fallback = DEFAULT_LOADOUT.filter((id) => owned[id]);
+    setLoadout(fallback.length > 0 ? fallback : DEFAULT_LOADOUT.slice(0, 1));
+  }
+}
+
+/**
+ * Render the loadout chip strip into `containerId`. Each chip toggles its weapon id in the
+ * persistent loadout (capped at MAX_LOADOUT; over-cap attempts shake the chip).
+ * `owned` is the set of weapon ids available this screen (meta.unlocked for arsenal, state.owned for shop).
+ */
+function renderLoadout(containerId: string, owned: Record<string, boolean>): void {
+  const container = el(containerId);
+  const currentLoadout = getSettings().loadout;
+  // Build chips in WEAPON_ORDER for consistent ordering (knife included)
+  const chips = WEAPON_ORDER.filter((id) => owned[id]);
+  const sig = chips.map((id) => `${id}:${currentLoadout.includes(id) ? 1 : 0}`).join(",");
+  if (container.dataset.lsig === sig) return; // no change — skip rebuild
+  container.dataset.lsig = sig;
+  container.innerHTML = "";
+  for (const id of chips) {
+    const w = WEAPONS[id];
+    if (!w) continue;
+    const active = currentLoadout.includes(id);
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = `lchip${active ? " active" : ""}`;
+    chip.textContent = w.name;
+    chip.onclick = () => {
+      const loadout = getSettings().loadout;
+      if (loadout.includes(id)) {
+        // deselect
+        setLoadout(loadout.filter((x) => x !== id));
+      } else if (loadout.length < MAX_LOADOUT) {
+        // select (maintain WEAPON_ORDER)
+        const next = WEAPON_ORDER.filter((wid) => loadout.includes(wid) || wid === id);
+        setLoadout(next.slice(0, MAX_LOADOUT));
+      } else {
+        // at cap — shake the chip briefly as feedback
+        chip.classList.add("shake");
+        chip.addEventListener("animationend", () => chip.classList.remove("shake"), { once: true });
+        Audio.ui(false);
+        return;
+      }
+      Audio.ui(true);
+      // re-render this strip (and the sibling strip if both are visible)
+      renderLoadout(containerId, owned);
+    };
+    container.appendChild(chip);
+  }
+}
+
 /** Render the dedicated ARSENAL overlay: SALVAGE balance + WEAPONS and CARDS unlock groups. */
 export function renderArsenal(): void {
   const meta = loadMeta();
@@ -1672,6 +1805,16 @@ export function renderArsenal(): void {
     );
   draw("ars-weapons", weaponRows);
   draw("ars-cards", cardRows);
+
+  // Build the owned map from meta (unlocked + starters are always owned between runs)
+  const ownedForArsenal: Record<string, boolean> = {};
+  for (const id of WEAPON_ORDER) {
+    // A weapon is available in the arsenal if it's a starter or has been unlocked
+    const isUnlockable = UNLOCKABLE.some((u) => u.id === id);
+    if (!isUnlockable || meta.unlocked[id]) ownedForArsenal[id] = true;
+  }
+  reconcileLoadout(ownedForArsenal);
+  renderLoadout("ars-loadout", ownedForArsenal);
 }
 
 function unlockNode(id: string, price: number): void {
