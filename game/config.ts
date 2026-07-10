@@ -217,7 +217,7 @@ export const CONFIG = {
     dustColor: [0.82, 0.8, 0.7] as [number, number, number],
     shadowFloor: 0.02, // brightness of a wall-shadowed point (darker than nightAmbient so shadows truly hide)
     occludeFloor: true, // occlude the floor (grid.frag) too; set false as a low-end perf fallback
-    viewportAimMargin: 24, // wu buffer: zombie must be this far inside screen edge to be aim-assist targetable
+    viewportAimMargin: 24, // wu the auto-aim viewport rect is expanded OUTWARD by — a zombie up to this far past the visible edge stays targetable (so one whose body is partly on-screen isn't ignored; ≈ a zombie radius) and it debounces the exact edge
   },
   heal: {
     duration: 2.0, // seconds a medkit takes (rooted + can't fire)

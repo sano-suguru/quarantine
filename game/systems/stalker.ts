@@ -150,9 +150,9 @@ export function sysStalker(state: State, dt: number): void {
 }
 
 /**
- * Place (or relocate) the stalker at spawnDist from the nearest living player,
- * at an angle away from the player's aim (enter from the blind side).
- * Mutates s in place — call this for initial spawn and relocates.
+ * Place the stalker at spawnDist from the nearest living player, at an angle
+ * away from that player's aim (enter from the blind side). Mutates s in place.
+ * Only called on spawn now — the ward-triggered relocate path was removed.
  */
 function placeStalker(state: State, s: NonNullable<State["stalker"]>): void {
   const target = nearestPlayer(state, 0, 0);
