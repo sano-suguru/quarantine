@@ -24,6 +24,7 @@ import {
   updateHUD,
 } from "./game";
 import { Input } from "./input";
+import { applyInputMode } from "./inputMode";
 import {
   type ClientLobbyDisplayState,
   clientLobbyWaitModel,
@@ -41,6 +42,7 @@ import { bumpCoopEpoch, coopEpoch, isCoopEpochCurrent } from "./net/session";
 import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
 import { getTurnStatus, NETLOG, type PeerLink } from "./net/transport";
+import { getSettings } from "./settings";
 import { sysCamera } from "./systems/camera";
 import { sysFx } from "./systems/fx";
 import { assertNever, el, hide, isEditableTarget, renderList, show } from "./ui";
@@ -213,6 +215,7 @@ async function main(): Promise<void> {
   const canvas = el<HTMLCanvasElement>("game");
   Renderer.init(canvas);
   Input.init(canvas);
+  applyInputMode(getSettings().inputModeOverride);
 
   el("startBtn").onclick = () => void startSingleRun();
   el("restartBtn").onclick = () => {

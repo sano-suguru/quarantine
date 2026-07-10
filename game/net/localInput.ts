@@ -104,10 +104,17 @@ export function sampleLocalInput(state: State): PlayerInput {
 
   let moveX = 0;
   let moveY = 0;
-  if (held("KeyW") || held("ArrowUp")) moveY -= 1;
-  if (held("KeyS") || held("ArrowDown")) moveY += 1;
-  if (held("KeyA") || held("ArrowLeft")) moveX -= 1;
-  if (held("KeyD") || held("ArrowRight")) moveX += 1;
+  if (document.body.classList.contains("mobile") && Input.touch.active) {
+    // On mobile, the virtual stick drives movement. WASD may still fire harmlessly (a physical
+    // keyboard paired with a touch device) but touch takes precedence when active.
+    moveX = Input.touch.dx;
+    moveY = Input.touch.dy;
+  } else {
+    if (held("KeyW") || held("ArrowUp")) moveY -= 1;
+    if (held("KeyS") || held("ArrowDown")) moveY += 1;
+    if (held("KeyA") || held("ArrowLeft")) moveX -= 1;
+    if (held("KeyD") || held("ArrowRight")) moveX += 1;
+  }
 
   // unified auto scheme: gun auto-aims at the nearest visible in-viewport zombie; with no
   // target the light/gun follow the movement heading; idle holds the last heading.
