@@ -234,8 +234,13 @@ function resize(): void {
   canvas.width = Math.floor(canvas.clientWidth * dpr);
   canvas.height = Math.floor(canvas.clientHeight * dpr);
   gl.viewport(0, 0, canvas.width, canvas.height);
-  viewHalfX = canvas.clientWidth / 2 / CONFIG.zoom;
-  viewHalfY = canvas.clientHeight / 2 / CONFIG.zoom;
+  const portrait = canvas.clientHeight > canvas.clientWidth;
+  const effectiveZoom =
+    document.body.classList.contains("mobile") && portrait
+      ? CONFIG.zoom * CONFIG.zoomMobileMul
+      : CONFIG.zoom;
+  viewHalfX = canvas.clientWidth / 2 / effectiveZoom;
+  viewHalfY = canvas.clientHeight / 2 / effectiveZoom;
 }
 
 function begin(): void {

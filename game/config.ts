@@ -2,6 +2,9 @@ export const CONFIG = {
   simHz: 60,
   arena: 1600,
   zoom: 1.0,
+  // Portrait-mobile view-scale: effective zoom = zoom * zoomMobileMul when body.mobile + portrait.
+  // Widens the world slice so the player sees more on a narrow phone screen. Desktop is unaffected.
+  zoomMobileMul: 0.62,
   maxInstances: 40000,
   // co-op networking (host-authoritative). client interpolation / prediction params.
   net: {
