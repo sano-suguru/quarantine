@@ -133,6 +133,13 @@ export function sampleLocalInput(state: State): PlayerInput {
     }
   }
 
+  // Hotbar tap (mobile): set by the slot's pointerdown listener in game.ts (already an absolute
+  // WEAPON_ORDER index via resolveHotbarSlot). Consumed here so a single tap = one switch.
+  if (weaponSlot === null && Input.touchWeaponSlot !== null) {
+    weaponSlot = Input.touchWeaponSlot;
+  }
+  Input.touchWeaponSlot = null; // always drain, even when a key already claimed the slot
+
   // Mouse-wheel weapon switch — only if a number key didn't already claim the slot. One switch
   // per wheel "burst" (re-arm only after wheelBurstGapMs of silence) so trackpad inertia can't
   // spin through the arsenal. Cycles only within the loadout. Always drain the wheel

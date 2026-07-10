@@ -1,3 +1,4 @@
+import { resolveHotbarSlot } from "./autoAim";
 import { CONFIG } from "./config";
 import {
   cardItem,
@@ -22,6 +23,7 @@ import { Audio } from "./engine/audio";
 import { type LightCandidate, selectLights } from "./engine/lights";
 import { anyAlive, cameraTarget, localPlayer, nearestPlayer, revivePlayer } from "./engine/players";
 import { Renderer, SHAPE } from "./engine/renderer";
+import { Input } from "./input";
 import { addSalvage, buyUnlock, loadMeta } from "./meta";
 import { Net } from "./net/net";
 import { DEFAULT_LOADOUT, getSettings, MAX_LOADOUT, setLoadout } from "./settings";
@@ -1253,14 +1255,18 @@ export function updateHUD(): void {
   promptEl.classList.toggle("show", ip !== null);
 
   el("money").textContent = String(p.money);
-  // weapon slot highlight (slots are built per run from owned weapons)
+  // weapon slot highlight — indexed by LOADOUT position (slot-0 = loadout[0], etc.)
+  // so a loadout that isn't a WEAPON_ORDER prefix still highlights the right slot.
+  const loadoutNow = getSettings().loadout;
   if (p.weapon !== lastWeapon) {
     lastWeapon = p.weapon;
-    for (let i = 0; i < WEAPON_ORDER.length; i++) {
+    for (let i = 0; i < loadoutNow.length; i++) {
       const slot = document.getElementById(`slot-${i}`);
-      if (slot) slot.classList.toggle("active", WEAPON_ORDER[i] === p.weapon);
+      if (slot) slot.classList.toggle("active", loadoutNow[i] === p.weapon);
     }
   }
+  // update per-slot ammo every frame (mag drains per shot, not just on switch)
+  updateHotbarAmmo(p);
 
   // damage flash overlay
   const fl = el("flash");
@@ -1303,19 +1309,63 @@ function announce(label: string, n: number): void {
   b.classList.add("show");
 }
 
-/** Build the HUD weapon row from the weapons owned this run (number = hotkey). */
+/**
+ * Update per-slot ammo/reserve text for all hotbar slots.
+ * Active weapon uses p.ammo; inactive weapons use p.mags[id] (saved mag).
+ */
+function updateHotbarAmmo(p: Player): void {
+  const loadout = getSettings().loadout;
+  for (let i = 0; i < loadout.length; i++) {
+    const id = loadout[i] as string;
+    const w = WEAPONS[id];
+    if (!w) continue;
+    const ammoEl = document.getElementById(`slot-${i}-ammo`);
+    if (!ammoEl) continue;
+    if (w.melee) {
+      ammoEl.textContent = "∞";
+    } else {
+      const mag = id === p.weapon ? p.ammo : (p.mags[id] ?? 0);
+      const rsv = p.reserve[id] ?? 0;
+      ammoEl.textContent = `${mag}·${rsv}`;
+    }
+  }
+}
+
+/** Build the HUD weapon hotbar from the loadout (≤3 slots, indexed by loadout position). */
 function buildWeaponSlots(): void {
   const row = el("weapons-row");
   row.innerHTML = "";
-  for (let i = 0; i < WEAPON_ORDER.length; i++) {
-    const id = WEAPON_ORDER[i] as string;
+  const loadout = getSettings().loadout;
+  for (let i = 0; i < loadout.length; i++) {
+    const id = loadout[i] as string;
     if (!state.owned[id]) continue;
     const w = WEAPONS[id];
     if (!w) continue;
     const s = document.createElement("span");
     s.className = "wslot";
     s.id = `slot-${i}`;
-    s.textContent = `${i + 1} ${w.name}`;
+    // icon color: use the weapon's defined color (first viz part or weapon color)
+    const [r, g, b] = w.color;
+    s.style.setProperty(
+      "--wslot-color",
+      `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`,
+    );
+    const label = document.createElement("span");
+    label.className = "wslot-name";
+    label.textContent = `${i + 1} ${w.name}`;
+    const ammoSpan = document.createElement("span");
+    ammoSpan.className = "wslot-ammo";
+    ammoSpan.id = `slot-${i}-ammo`;
+    ammoSpan.textContent = "";
+    s.appendChild(label);
+    s.appendChild(ammoSpan);
+    // tap → weaponSlot via resolveHotbarSlot → same path as number keys
+    const hotbarIndex = i;
+    s.addEventListener("pointerdown", (e) => {
+      e.preventDefault(); // don't also trigger canvas stick
+      const absSlot = resolveHotbarSlot(getSettings().loadout, WEAPON_ORDER, hotbarIndex);
+      if (absSlot !== null) Input.touchWeaponSlot = absSlot;
+    });
     row.appendChild(s);
   }
   lastWeapon = ""; // force a re-highlight on the next HUD tick

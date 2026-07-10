@@ -25,6 +25,9 @@ export const Input = {
   touchHealPulse: false,
   /** True while #btn-repair is held (touchstart→touchend/cancel). Ored into interactHeld. */
   touchInteract: false,
+  /** One-shot hotbar tap: absolute WEAPON_ORDER index to switch to. Set by a slot tap in
+   *  game.ts, consumed (reset to null) by the next sampleLocalInput call. */
+  touchWeaponSlot: null as number | null,
 
   init(canvas: HTMLCanvasElement): void {
     addEventListener("keydown", (e) => {
