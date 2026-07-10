@@ -1270,6 +1270,23 @@ export function updateHUD(): void {
   // downed spectator banner (co-op): you're out until the next dawn
   el("downed").classList.toggle("show", p.hp <= 0);
 
+  // Mobile action buttons: only shown under body.mobile while in an active run
+  if (document.body.classList.contains("mobile") && state.running) {
+    show("action-btns");
+    // Heal: always visible; show medkit count
+    el("btn-heal-count").textContent = `×${p.medkits}`;
+    // Fortify: visible only when the local player has a queued deployable
+    const hasFortify = p.deployQueue.length > 0;
+    if (hasFortify) show("btn-fortify");
+    else hide("btn-fortify");
+    // Repair: visible when near a damaged barricade (reuse the interactPrompt logic)
+    const hasRepair = ip === "[E] repair";
+    if (hasRepair) show("btn-repair");
+    else hide("btn-repair");
+  } else {
+    hide("action-btns");
+  }
+
   // pause overlay is state-driven (so a host pause shows on every client via the
   // snapshot); the shop has its own overlay and also sets paused, so suppress it there.
   if (state.paused && !state.inShop) show("pause");

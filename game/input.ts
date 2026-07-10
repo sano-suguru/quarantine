@@ -20,6 +20,11 @@ export const Input = {
   wheelLastMs: 0,
   /** Virtual movement stick driven by touch events on the left half of the canvas. */
   touch: { active: false, dx: 0, dy: 0 } as TouchStick,
+  /** One-shot heal pulse from the #btn-heal touch button. Set true on tap, consumed (reset to false)
+   *  by the next sampleLocalInput call so a single tap = exactly one heal. */
+  touchHealPulse: false,
+  /** True while #btn-repair is held (touchstart→touchend/cancel). Ored into interactHeld. */
+  touchInteract: false,
 
   init(canvas: HTMLCanvasElement): void {
     addEventListener("keydown", (e) => {

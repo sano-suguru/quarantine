@@ -218,6 +218,54 @@ async function main(): Promise<void> {
   applyInputMode(getSettings().inputModeOverride);
 
   el("startBtn").onclick = () => void startSingleRun();
+
+  // --- Mobile action buttons (#btn-heal, #btn-fortify, #btn-repair) ---
+  // Routed through the Input seam (not keydown) so they reach sampleLocalInput.
+  // Heal: one-shot pulse (set on touchstart, consumed once by sampleLocalInput).
+  const btnHeal = el<HTMLButtonElement>("btn-heal");
+  btnHeal.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault(); // stop scroll / ghost-click
+      Input.touchHealPulse = true;
+    },
+    { passive: false },
+  );
+
+  // Repair: held while finger is down (touchstart → touchend/cancel).
+  const btnRepair = el<HTMLButtonElement>("btn-repair");
+  btnRepair.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      Input.touchInteract = true;
+    },
+    { passive: false },
+  );
+  const clearRepair = (e: TouchEvent): void => {
+    e.preventDefault();
+    Input.touchInteract = false;
+  };
+  btnRepair.addEventListener("touchend", clearRepair, { passive: false });
+  btnRepair.addEventListener("touchcancel", clearRepair, { passive: false });
+
+  // Fortify: calls deployPlace() with the same 300ms throttle as the Q key path.
+  const btnFortify = el<HTMLButtonElement>("btn-fortify");
+  btnFortify.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      const st = getState();
+      if (!st.running || settingsOpen || reconnecting) return;
+      if (localPlayer(st).hp <= 0) return;
+      const now = performance.now();
+      if (now - lastPlaceAt < 300) return;
+      lastPlaceAt = now;
+      deployPlace();
+    },
+    { passive: false },
+  );
+
   el("restartBtn").onclick = () => {
     endCoop(); // game-over → title must fully drop any co-op mode/links (was leaking a ghost peer)
     toTitle();

@@ -1453,3 +1453,71 @@ body.mobile .stat-val {
 body.mobile .hud-block {
   min-width: 70px;
 }
+
+/* ---- Mobile action button cluster (#action-btns) ----
+   Bottom-right, above the safe-area home indicator. Thumb-reachable.
+   Only rendered under body.mobile (shown/hidden by updateHUD). */
+#action-btns {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: auto;
+}
+#action-btns.hidden {
+  display: none;
+}
+.act-btn {
+  pointer-events: auto;
+  cursor: pointer;
+  border: 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--bg);
+  background: var(--toxic);
+  padding: 14px 20px;
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 1px var(--toxic),
+    0 0 18px rgba(125, 255, 79, 0.4);
+  opacity: 0.88;
+  /* large tap target without enlarging the visual */
+  min-width: 88px;
+  min-height: 54px;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    opacity 0.1s,
+    transform 0.1s;
+}
+.act-btn:active {
+  opacity: 1;
+  transform: scale(0.96);
+}
+.act-btn.hidden {
+  display: none;
+}
+.act-btn-heal {
+  /* amber for heal — distinct from fortify/repair */
+  background: var(--amber);
+  box-shadow:
+    0 0 0 1px var(--amber),
+    0 0 18px rgba(255, 179, 71, 0.4);
+  color: var(--bg);
+}
+.act-btn-fortify {
+  background: var(--toxic);
+}
+.act-btn-repair {
+  /* blood-red for repair to stand out when barricade is damaged */
+  background: var(--blood);
+  box-shadow:
+    0 0 0 1px var(--blood),
+    0 0 18px rgba(255, 77, 77, 0.4);
+}

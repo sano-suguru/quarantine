@@ -165,14 +165,18 @@ export function sampleLocalInput(state: State): PlayerInput {
   const firing = target !== null && (isAuto || !firePulse);
   firePulse = !firePulse;
 
+  // consume the one-shot touch heal pulse (reset it so a single tap = one heal)
+  const touchHeal = Input.touchHealPulse;
+  Input.touchHealPulse = false;
+
   const input: PlayerInput = {
     moveX,
     moveY,
     aim,
     firing,
-    interactHeld: held("KeyE"),
+    interactHeld: held("KeyE") || Input.touchInteract,
     reload: edge("KeyR"),
-    heal: edge("KeyH"),
+    heal: edge("KeyH") || touchHeal,
     weaponSlot,
   };
 
