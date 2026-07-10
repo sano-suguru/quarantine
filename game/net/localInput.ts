@@ -57,10 +57,18 @@ function assistAim(state: State, px: number, py: number): number | null {
     const dy = z.y - py;
     const d2 = dx * dx + dy * dy;
     if (d2 > r2) continue; // beyond flashlight range
-    // 24 wu buffer: zombie is substantially on-screen before it becomes targetable,
-    // avoiding edge jitter without letting off-screen enemies past the gate.
-    const VIEWPORT_MARGIN = 24;
-    if (!inViewport(z.x, z.y, state.cam.x, state.cam.y, half.x, half.y, VIEWPORT_MARGIN)) continue; // off-screen
+    if (
+      !inViewport(
+        z.x,
+        z.y,
+        state.cam.x,
+        state.cam.y,
+        half.x,
+        half.y,
+        CONFIG.flashlight.viewportAimMargin,
+      )
+    )
+      continue; // off-screen
     if (!hasLineOfSight(px, py, z.x, z.y, state.walls)) continue; // wall-occluded
     const score = z.id === aimTargetId ? d2 / (1.4 * 1.4) : d2; // hysteresis: stick to current
     if (score < bestScore) {

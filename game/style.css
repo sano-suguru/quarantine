@@ -32,7 +32,7 @@ input,
 textarea {
   -webkit-user-select: text;
   user-select: text;
-  touch-action: auto;
+  touch-action: manipulation;
 }
 #game {
   display: block;
@@ -1553,6 +1553,7 @@ body.mobile .hud-block {
 }
 .act-btn-fortify {
   background: var(--toxic);
+  color: var(--bg);
 }
 .act-btn-repair {
   /* blood-red for repair to stand out when barricade is damaged */

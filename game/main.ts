@@ -256,7 +256,7 @@ async function main(): Promise<void> {
     (e) => {
       e.preventDefault();
       const st = getState();
-      if (!st.running || settingsOpen || reconnecting) return;
+      if (!st.running || st.inShop || settingsOpen || reconnecting) return;
       if (localPlayer(st).hp <= 0) return;
       const now = performance.now();
       if (now - lastPlaceAt < 300) return;

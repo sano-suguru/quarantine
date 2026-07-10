@@ -1276,8 +1276,8 @@ export function updateHUD(): void {
   // downed spectator banner (co-op): you're out until the next dawn
   el("downed").classList.toggle("show", p.hp <= 0);
 
-  // Mobile action buttons: only shown under body.mobile while in an active run
-  if (document.body.classList.contains("mobile") && state.running) {
+  // Mobile action buttons: only shown under body.mobile while in an active run (not in shop)
+  if (document.body.classList.contains("mobile") && state.running && !state.inShop) {
     show("action-btns");
     // Heal: always visible; show medkit count
     el("btn-heal-count").textContent = `×${p.medkits}`;
@@ -1749,7 +1749,7 @@ function renderLoadout(containerId: string, owned: Record<string, boolean>): voi
       } else if (loadout.length < MAX_LOADOUT) {
         // select (maintain WEAPON_ORDER)
         const next = WEAPON_ORDER.filter((wid) => loadout.includes(wid) || wid === id);
-        setLoadout(next.filter((wid) => loadout.includes(wid) || wid === id).slice(0, MAX_LOADOUT));
+        setLoadout(next.slice(0, MAX_LOADOUT));
       } else {
         // at cap — shake the chip briefly as feedback
         chip.classList.add("shake");
