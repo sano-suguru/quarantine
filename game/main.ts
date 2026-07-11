@@ -4,6 +4,7 @@ import { PLAYER_COLORS } from "./data/players";
 import { Audio } from "./engine/audio";
 import { localPlayer } from "./engine/players";
 import { Renderer } from "./engine/renderer";
+import { drainFxEvents } from "./fx-drain";
 import {
   audioLoops,
   clientAmbience,
@@ -420,6 +421,7 @@ async function main(): Promise<void> {
       update(step);
       hAcc -= step;
     }
+    drainFxEvents(getState()); // host is a player too: play its own cues + clear the buffer
     hNet += dt;
     if (hNet >= sendStep) {
       hNet = 0;
@@ -450,6 +452,7 @@ async function main(): Promise<void> {
           update(step);
           rAcc -= step;
         }
+        drainFxEvents(st); // consume the tick's cues → audio/particles
       }
     } else if (Net.mode === "client") {
       // no authoritative sim — predict our player, interpolate the world, ship input.
