@@ -1,18 +1,18 @@
-import { CONFIG } from "../config";
-import { packFragCell } from "./fragment";
+import { CONFIG } from "../../sim/config";
+import { packFragCell } from "../../sim/engine/fragment";
+import { SHAPE } from "../../sim/engine/shapes";
 import bloodFrag from "./shaders/blood.frag?raw";
 import bloodVert from "./shaders/blood.vert?raw";
 import gridFrag from "./shaders/grid.frag?raw";
 import gridVert from "./shaders/grid.vert?raw";
 import instanceFrag from "./shaders/instance.frag?raw";
 import instanceVert from "./shaders/instance.vert?raw";
-import { SHAPE } from "./shapes";
 import { SPRITE_ASSETS, spriteIndex, unreadyRequiredSprites } from "./spriteAssets";
 import { packSprites, uvRect } from "./spritePack";
 
 const FLOATS = 11;
 
-export { SHAPE } from "./shapes";
+export { SHAPE } from "../../sim/engine/shapes";
 
 let gl: WebGL2RenderingContext;
 let canvas: HTMLCanvasElement;

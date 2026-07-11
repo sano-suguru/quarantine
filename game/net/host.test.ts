@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { CONFIG } from "../config";
-import { makePlayer } from "../engine/players";
+import { CONFIG } from "../../sim/config";
+import { makePlayer } from "../../sim/engine/players";
+import type { State } from "../../sim/types";
 import { getState } from "../game";
-import type { State } from "../types";
 import { Host, pickSlot } from "./host";
 import type { NetMsg } from "./net";
 import { emptyInput } from "./playerInput";

@@ -2,10 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CONFIG } from "./config";
 import { HOME, POIS } from "./data/map";
 import { STARTER_WEAPONS } from "./data/weapons";
-import { allocId, newState } from "./state";
+import { allocId, newState, setUnlockProvider } from "./state";
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  setUnlockProvider(() => ({})); // reset the injected meta-unlocks to the sim default
 });
 
 describe("newState", () => {
@@ -49,11 +50,8 @@ describe("newState", () => {
     expect(s.owned.rifle).toBeFalsy(); // rifle is unlocked via SALVAGE, not a starter
   });
 
-  it("adds meta-unlocked weapons to owned when localStorage carries them", () => {
-    vi.stubGlobal("localStorage", {
-      getItem: () => JSON.stringify({ version: 1, salvage: 0, unlocked: { rifle: true } }),
-      setItem: () => {},
-    });
+  it("adds meta-unlocked weapons to owned when the provider carries them", () => {
+    setUnlockProvider(() => ({ rifle: true }));
     const s = newState();
     expect(s.owned.rifle).toBe(true);
     // starters still owned alongside the unlock
@@ -61,17 +59,8 @@ describe("newState", () => {
   });
 
   it("splits card: unlocks into unlockedCards, weapon unlocks into owned", () => {
-    vi.stubGlobal("localStorage", {
-      getItem: () =>
-        JSON.stringify({
-          version: 1,
-          salvage: 0,
-          unlocked: { rifle: true, "card:scavenger": true },
-        }),
-      setItem: () => {},
-    });
+    setUnlockProvider(() => ({ rifle: true, "card:scavenger": true }));
     const s = newState();
-    vi.unstubAllGlobals();
     expect(s.owned.rifle).toBe(true);
     expect(s.owned["card:scavenger"]).toBeUndefined(); // not a weapon
     expect(s.unlockedCards["card:scavenger"]).toBe(true);

@@ -1,6 +1,6 @@
 import { CONFIG } from "../config";
 import { revivePlayer } from "../engine/players";
-import { pushFx } from "../sim/events";
+import { pushFx } from "../events";
 import type { Player, State } from "../types";
 
 /**

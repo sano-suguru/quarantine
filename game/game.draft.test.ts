@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { CONFIG } from "./config";
-import { addPlayer, localPlayer } from "./engine/players";
+import { CONFIG } from "../sim/config";
+import { addPlayer, localPlayer } from "../sim/engine/players";
+import { newState } from "../sim/state";
 import { applyDraftReroll, applyDraftTake, rollDraft } from "./game";
-import { newState } from "./state";
 
 describe("draft apply (host-authoritative)", () => {
   it("rollDraft fills an offer of offerSize and resets free/rerolls", () => {

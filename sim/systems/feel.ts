@@ -1,5 +1,5 @@
 import { CONFIG } from "../config";
-import { pushFx } from "../sim/events";
+import { pushFx } from "../events";
 import type { Player, State, WeaponDef } from "../types";
 
 /**

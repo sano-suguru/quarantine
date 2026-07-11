@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { addPlayer, localPlayer } from "./engine/players";
+import { addPlayer, localPlayer } from "../sim/engine/players";
+import { newState } from "../sim/state";
 import { applyBuy, update } from "./game";
-import { newState } from "./state";
 
 describe("applyBuy (Fortify purchase, host-authoritative)", () => {
   const fortId = "deploy:ammostation"; // Supply Station, cost 70 (DEPLOYABLE_TYPES.ammostation)

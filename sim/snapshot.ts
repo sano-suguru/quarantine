@@ -1,12 +1,12 @@
-import { CONFIG } from "../config";
-import { CARD_ORDER } from "../data/arsenal";
-import { DEPLOYABLE_TYPES } from "../data/deployables";
-import { ENEMY_TYPES } from "../data/enemies";
-import { PICKUP_TYPES } from "../data/pickups";
-import { WEAPON_ORDER } from "../data/weapons";
-import { lerp } from "../engine/math";
-import { makePlayer } from "../engine/players";
-import type { Bullet, Deployable, Pickup, SiegePhase, Stalker, State, Zombie } from "../types";
+import { CONFIG } from "./config";
+import { CARD_ORDER } from "./data/arsenal";
+import { DEPLOYABLE_TYPES } from "./data/deployables";
+import { ENEMY_TYPES } from "./data/enemies";
+import { PICKUP_TYPES } from "./data/pickups";
+import { WEAPON_ORDER } from "./data/weapons";
+import { lerp } from "./engine/math";
+import { makePlayer } from "./engine/players";
+import type { Bullet, Deployable, Pickup, SiegePhase, Stalker, State, Zombie } from "./types";
 
 /**
  * Host-authoritative world snapshot: the host captures one each network tick and

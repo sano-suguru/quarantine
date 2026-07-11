@@ -1,4 +1,4 @@
-import type { FxEvent, State } from "../types";
+import type { FxEvent, State } from "./types";
 
 /** Append a discrete cue. Systems call this instead of Audio/fx directly. */
 export function pushFx(state: State, e: FxEvent): void {

@@ -48,7 +48,7 @@ for (const type of Object.keys(ENEMY_TYPES)) requiredKeys.add(`groan_${type}`);
 
 // keys that have at least one generated file on disk (<key>.mp3 or <key>_<n>.mp3), enumerated
 // via the same Vite glob the runtime uses (no node:fs → no @types/node needed; works in vitest).
-const sfxFiles = import.meta.glob("../audio/sfx/*.mp3");
+const sfxFiles = import.meta.glob("../../game/audio/sfx/*.mp3");
 const filePresentKeys = new Set<string>();
 for (const path of Object.keys(sfxFiles)) {
   const base = (path.split("/").pop() ?? "").slice(0, -4);

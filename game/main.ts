@@ -1,8 +1,10 @@
 import "./style.css";
-import { CONFIG } from "./config";
-import { PLAYER_COLORS } from "./data/players";
+import { CONFIG } from "../sim/config";
+import { PLAYER_COLORS } from "../sim/data/players";
+import { localPlayer } from "../sim/engine/players";
+import { sysCamera } from "../sim/systems/camera";
+import { sysFx } from "../sim/systems/fx";
 import { Audio } from "./engine/audio";
-import { localPlayer } from "./engine/players";
 import { Renderer } from "./engine/renderer";
 import { drainFxEvents } from "./fx-drain";
 import {
@@ -45,8 +47,6 @@ import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
 import { getTurnStatus, NETLOG, type PeerLink } from "./net/transport";
 import { getSettings } from "./settings";
-import { sysCamera } from "./systems/camera";
-import { sysFx } from "./systems/fx";
 import { assertNever, el, hide, isEditableTarget, renderList, show } from "./ui";
 
 // host lobby gate: host builds the world on "Host co-op" but the sim stays frozen

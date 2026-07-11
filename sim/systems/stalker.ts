@@ -2,7 +2,7 @@ import { CONFIG } from "../config";
 import { len } from "../engine/math";
 import { sampleFlow } from "../engine/navfield";
 import { nearestPlayer } from "../engine/players";
-import { pushFx } from "../sim/events";
+import { pushFx } from "../events";
 import type { Player, State } from "../types";
 
 const CFG = CONFIG.stalker;

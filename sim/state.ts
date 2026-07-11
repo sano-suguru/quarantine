@@ -4,8 +4,22 @@ import { STARTER_WEAPONS } from "./data/weapons";
 import { clamp } from "./engine/math";
 import { makePlayer } from "./engine/players";
 import { SpatialHash } from "./engine/spatialHash";
-import { loadMeta } from "./meta";
 import type { Barricade, Cache, Segment, State } from "./types";
+
+/**
+ * Meta-unlock provider seam. The sim closure must not reach the browser (it also runs headless
+ * on the authoritative server), and `game/meta.ts` is a `localStorage` wrapper — so `newState`
+ * can't import it directly without dragging DOM into `sim/`. Instead the DOM entry (`game/main.ts`)
+ * injects a provider that returns the persisted `unlocked` id→bool map; the sim keeps the ownership
+ * derivation (weapon vs `card:` split) below. Default = no persisted unlocks (starters only), which
+ * is exactly what tests without a stubbed provider expect.
+ */
+let unlockProvider: () => Record<string, boolean> = () => ({});
+
+/** Register the source of persisted meta-unlocks. Called once from the DOM entry at startup. */
+export function setUnlockProvider(fn: () => Record<string, boolean>): void {
+  unlockProvider = fn;
+}
 
 /** loot tier rises with distance from HOME (origin) */
 function tierFor(x: number, y: number): number {
@@ -23,12 +37,12 @@ export function allocId(state: State): number {
 
 export function newState(): State {
   // which weapons this run can use: starters always, plus meta-unlocked ones
-  const meta = loadMeta();
+  const unlocked = unlockProvider();
   const owned: Record<string, boolean> = {};
   const unlockedCards: Record<string, boolean> = {};
   for (const id of STARTER_WEAPONS) owned[id] = true;
-  for (const id of Object.keys(meta.unlocked)) {
-    if (!meta.unlocked[id]) continue;
+  for (const id of Object.keys(unlocked)) {
+    if (!unlocked[id]) continue;
     if (id.startsWith("card:"))
       unlockedCards[id] = true; // perk card unlocks (NOT weapons)
     else owned[id] = true; // weapon unlocks

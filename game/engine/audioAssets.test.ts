@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ENEMY_TYPES } from "../data/enemies";
-import { WEAPON_ORDER, WEAPONS } from "../data/weapons";
+import { ENEMY_TYPES } from "../../sim/data/enemies";
+import { WEAPON_ORDER, WEAPONS } from "../../sim/data/weapons";
 import { REQUIRED_SAMPLE_KEYS, sampleVariantCount } from "./audioAssets";
 
 // Fixed (non-dynamic) one-shot/loop keys audio.ts always plays. Mirrors game/data/sfx.test.ts so

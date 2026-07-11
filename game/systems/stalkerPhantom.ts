@@ -12,9 +12,9 @@
  * Called from game.ts `draw()` after `stalkerFx` (so it reads the same `dread`).
  */
 
-import { CONFIG } from "../config";
+import { CONFIG } from "../../sim/config";
+import type { Player, State } from "../../sim/types";
 import { Audio } from "../engine/audio";
-import type { Player, State } from "../types";
 import { phantomStepLocked } from "./stalkerFx";
 
 const SCFG = CONFIG.stalker;

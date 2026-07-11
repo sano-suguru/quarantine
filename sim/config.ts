@@ -1,3 +1,5 @@
+import type { IceServerConfig } from "./types";
+
 export const CONFIG = {
   simHz: 60,
   arena: 1600,
@@ -23,7 +25,7 @@ export const CONFIG = {
     signalUrl: "127.0.0.1:8787",
     // ICE servers for WebRTC. STUN only by default (covers most home↔home NATs). Add a
     // TURN entry here (no code change) if a peer behind symmetric NAT/CGNAT can't connect.
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }] as RTCIceServer[],
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }] as IceServerConfig[],
     // Non-trickle ICE bakes every candidate into ONE pasteable/relayed SDP, so we must not ship
     // before the useful candidates exist. Old code used a flat 3s that truncated slow srflx/relay
     // candidates on restrictive networks → guaranteed cross-NAT failure. See transport.ts.

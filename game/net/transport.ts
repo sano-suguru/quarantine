@@ -10,7 +10,7 @@
  * already contains every candidate — otherwise the paste connects to nothing.
  */
 
-import { CONFIG } from "../config";
+import { CONFIG } from "../../sim/config";
 
 type Role = "host" | "client";
 
@@ -242,7 +242,9 @@ export function getTurnStatus(): TurnStatus {
 let cachedIce: RTCIceServer[] | null = null;
 async function resolveIceServers(): Promise<RTCIceServer[]> {
   if (cachedIce) return cachedIce;
-  const base = CONFIG.net.iceServers;
+  // CONFIG.net.iceServers is typed structurally (IceServerConfig) so config.ts stays DOM-free;
+  // assert it still satisfies the real DOM RTCIceServer here, where DOM lib is available.
+  const base = CONFIG.net.iceServers satisfies RTCIceServer[];
   try {
     if (typeof location !== "undefined" && location.protocol === "https:") {
       const res = await fetch("/turn", { method: "POST" });

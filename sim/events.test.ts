@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { newState } from "../state";
 import { clearFx, pushFx } from "./events";
+import { newState } from "./state";
 
 describe("fxEvents buffer", () => {
   it("starts empty", () => {

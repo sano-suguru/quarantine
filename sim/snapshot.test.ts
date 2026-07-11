@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { CONFIG } from "../config";
-import { CARD_ORDER } from "../data/arsenal";
-import { DEPLOYABLE_TYPES } from "../data/deployables";
-import { addPlayer } from "../engine/players";
-import { allocId, newState } from "../state";
-import { spawnPickup } from "../systems/pickups";
-import { spawnZombie } from "../systems/wave";
-import type { Bullet, State } from "../types";
+import { CONFIG } from "./config";
+import { CARD_ORDER } from "./data/arsenal";
+import { DEPLOYABLE_TYPES } from "./data/deployables";
+import { addPlayer } from "./engine/players";
 import { applySnapshot, captureSnapshot, decode, encode, lerpSnapshots } from "./snapshot";
+import { allocId, newState } from "./state";
+import { spawnPickup } from "./systems/pickups";
+import { spawnZombie } from "./systems/wave";
+import type { Bullet, State } from "./types";
 
 /** A populated world: 2 players, a few zombies, a bullet, a pickup, damage + search progress. */
 function populated(): State {

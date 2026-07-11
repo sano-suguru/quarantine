@@ -1,21 +1,28 @@
-import { CONFIG } from "../config";
-import { effWeapon } from "../data/arsenal";
-import { DEPLOYABLE_TYPES } from "../data/deployables";
-import { ENEMY_TYPES } from "../data/enemies";
+import { CONFIG } from "../../sim/config";
+import { effWeapon } from "../../sim/data/arsenal";
+import { DEPLOYABLE_TYPES } from "../../sim/data/deployables";
+import { ENEMY_TYPES } from "../../sim/data/enemies";
+import { segMid } from "../../sim/engine/geometry";
+import { approach, rand } from "../../sim/engine/math";
+import { localPlayer } from "../../sim/engine/players";
+import { applySnapshot, decode, lerpSnapshots, type Snapshot } from "../../sim/snapshot";
+import { applyFireFeel } from "../../sim/systems/feel";
+import {
+  fxActionBurst,
+  fxHurt,
+  fxImpact,
+  fxKill,
+  fxMote,
+  goreIntensity,
+} from "../../sim/systems/fx";
+import { integrateMovement } from "../../sim/systems/player";
+import type { Bullet } from "../../sim/types";
 import { Audio } from "../engine/audio";
-import { segMid } from "../engine/geometry";
-import { approach, rand } from "../engine/math";
-import { localPlayer } from "../engine/players";
 import { drainFxEvents } from "../fx-drain";
 import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
-import { applyFireFeel } from "../systems/feel";
-import { fxActionBurst, fxHurt, fxImpact, fxKill, fxMote, goreIntensity } from "../systems/fx";
-import { integrateMovement } from "../systems/player";
-import type { Bullet } from "../types";
 import { advanceGhosts } from "./ghost";
 import { type NetMsg, PROTOCOL_VERSION } from "./net";
 import type { PlayerInput } from "./playerInput";
-import { applySnapshot, decode, lerpSnapshots, type Snapshot } from "./snapshot";
 import type { PeerLink } from "./transport";
 
 type RGB = [number, number, number];

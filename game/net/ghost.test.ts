@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CONFIG } from "../config";
-import type { Bullet } from "../types";
+import { CONFIG } from "../../sim/config";
+import type { Bullet } from "../../sim/types";
 import { advanceGhosts } from "./ghost";
 
 function ghost(over: Partial<Bullet> = {}): Bullet {

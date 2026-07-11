@@ -1,5 +1,5 @@
-import { CONFIG } from "../config";
-import type { Bullet } from "../types";
+import { CONFIG } from "../../sim/config";
+import type { Bullet } from "../../sim/types";
 
 /**
  * Advance client-predicted "ghost" tracers (visual-only, negative-id) one step and drop

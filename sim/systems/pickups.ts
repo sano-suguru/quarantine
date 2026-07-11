@@ -1,7 +1,7 @@
 import { CONFIG } from "../config";
 import { PICKUP_TYPES } from "../data/pickups";
 import { clamp, len, rand } from "../engine/math";
-import { pushFx } from "../sim/events";
+import { pushFx } from "../events";
 import { allocId } from "../state";
 import type { Player, State } from "../types";
 

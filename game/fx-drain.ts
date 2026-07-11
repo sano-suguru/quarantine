@@ -1,6 +1,5 @@
-import { ENEMY_TYPES } from "./data/enemies";
-import { Audio } from "./engine/audio";
-import { clearFx } from "./sim/events";
+import { ENEMY_TYPES } from "../sim/data/enemies";
+import { clearFx } from "../sim/events";
 import {
   fxActionBurst,
   fxDust,
@@ -10,8 +9,9 @@ import {
   fxMote,
   fxMuzzle,
   fxPickup,
-} from "./systems/fx";
-import type { State } from "./types";
+} from "../sim/systems/fx";
+import type { State } from "../sim/types";
+import { Audio } from "./engine/audio";
 import { announce } from "./ui";
 
 const GREY: [number, number, number] = [0.5, 0.5, 0.5];

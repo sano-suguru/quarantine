@@ -1,5 +1,4 @@
-import { resolveHotbarSlot } from "./autoAim";
-import { CONFIG } from "./config";
+import { CONFIG } from "../sim/config";
 import {
   cardItem,
   draftPool,
@@ -12,40 +11,56 @@ import {
   salvageEarned,
   salvageShare,
   storeItems,
-} from "./data/arsenal";
-import { DEPLOYABLE_TYPES, deployableCount, placeDeployable, placeSpot } from "./data/deployables";
-import { ENEMY_TYPES } from "./data/enemies";
-import { PICKUP_TYPES } from "./data/pickups";
-import { PLAYER_COLORS } from "./data/players";
-import { UNLOCKABLE_CARDS, UPGRADES } from "./data/upgrades";
-import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "./data/weapons";
+} from "../sim/data/arsenal";
+import {
+  DEPLOYABLE_TYPES,
+  deployableCount,
+  placeDeployable,
+  placeSpot,
+} from "../sim/data/deployables";
+import { ENEMY_TYPES } from "../sim/data/enemies";
+import { PICKUP_TYPES } from "../sim/data/pickups";
+import { PLAYER_COLORS } from "../sim/data/players";
+import { UNLOCKABLE_CARDS, UPGRADES } from "../sim/data/upgrades";
+import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "../sim/data/weapons";
+import { type LightCandidate, selectLights } from "../sim/engine/lights";
+import {
+  anyAlive,
+  cameraTarget,
+  localPlayer,
+  nearestPlayer,
+  revivePlayer,
+} from "../sim/engine/players";
+import { pushFx } from "../sim/events";
+import { newState, setUnlockProvider } from "../sim/state";
+import { actionMotion, deriveActionChannel } from "../sim/systems/actionFeel";
+import { sysAI } from "../sim/systems/ai";
+import { sysAssist } from "../sim/systems/assist";
+import { sysBullets } from "../sim/systems/bullets";
+import { sysCamera } from "../sim/systems/camera";
+import { sysDeployables } from "../sim/systems/deployables";
+import { flashlightIntensity } from "../sim/systems/flashlight";
+import { sysFx } from "../sim/systems/fx";
+import { integrityGrade } from "../sim/systems/integrity";
+import { sysPickups } from "../sim/systems/pickups";
+import { effectiveSearchTime, sysPlayer } from "../sim/systems/player";
+import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "../sim/systems/siege";
+import { spawnStalker, sysStalker } from "../sim/systems/stalker";
+import type { Player, State, WeaponDef } from "../sim/types";
+import { resolveHotbarSlot } from "./autoAim";
 import { Audio } from "./engine/audio";
-import { type LightCandidate, selectLights } from "./engine/lights";
-import { anyAlive, cameraTarget, localPlayer, nearestPlayer, revivePlayer } from "./engine/players";
 import { Renderer, SHAPE } from "./engine/renderer";
 import { Input } from "./input";
 import { addSalvage, buyUnlock, loadMeta } from "./meta";
 import { Net } from "./net/net";
 import { DEFAULT_LOADOUT, getSettings, MAX_LOADOUT, setLoadout } from "./settings";
-import { pushFx } from "./sim/events";
-import { newState } from "./state";
-import { actionMotion, deriveActionChannel } from "./systems/actionFeel";
-import { sysAI } from "./systems/ai";
-import { sysAssist } from "./systems/assist";
-import { sysBullets } from "./systems/bullets";
-import { sysCamera } from "./systems/camera";
-import { sysDeployables } from "./systems/deployables";
-import { flashlightIntensity } from "./systems/flashlight";
-import { sysFx } from "./systems/fx";
-import { integrityGrade } from "./systems/integrity";
-import { sysPickups } from "./systems/pickups";
-import { effectiveSearchTime, sysPlayer } from "./systems/player";
-import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "./systems/siege";
-import { spawnStalker, sysStalker } from "./systems/stalker";
 import { resetStalkerFx, stalkerFx } from "./systems/stalkerFx";
 import { resetStalkerPhantom, sysStalkerPhantom } from "./systems/stalkerPhantom";
-import type { Player, State, WeaponDef } from "./types";
 import { el, hide, renderList, show } from "./ui";
+
+// Feed persisted meta-unlocks into the (browser-free) sim closure. Registered before the first
+// `newState()` below so single-player boot state is identical to the old direct-`loadMeta` path.
+setUnlockProvider(() => loadMeta().unlocked);
 
 let state: State = newState();
 

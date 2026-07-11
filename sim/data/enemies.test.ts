@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { spriteIndex } from "../engine/spriteAssets";
+import { spriteIndex } from "../../game/engine/spriteAssets";
 import { ENEMY_TYPES } from "./enemies";
 
 // After the SDF draw path is removed, an enemy with no packed sprite would render invisible. This

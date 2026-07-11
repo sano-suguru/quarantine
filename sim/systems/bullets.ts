@@ -1,7 +1,7 @@
 import { CONFIG } from "../config";
 import { segmentHitsSegment } from "../engine/geometry";
 import { len } from "../engine/math";
-import { pushFx } from "../sim/events";
+import { pushFx } from "../events";
 import type { State } from "../types";
 import { awardBounty } from "./economy";
 import { goreIntensity } from "./fx";

@@ -2,7 +2,7 @@ import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { waveDef } from "../data/waves";
 import { clamp, len } from "../engine/math";
 import { nearestPlayer } from "../engine/players";
-import { pushFx } from "../sim/events";
+import { pushFx } from "../events";
 import { allocId } from "../state";
 import type { Deployable, DeployableDef, SiegePhase, State, Zombie } from "../types";
 import { spawnPickup } from "./pickups";

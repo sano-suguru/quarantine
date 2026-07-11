@@ -5,7 +5,7 @@
  * the first user gesture (the Deploy button) to satisfy autoplay policies, and the samples
  * begin decoding at the same moment.
  */
-import { CONFIG } from "../config";
+import { CONFIG } from "../../sim/config";
 import {
   loadSamples,
   playSample,

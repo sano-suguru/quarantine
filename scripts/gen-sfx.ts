@@ -18,7 +18,7 @@
  */
 import { existsSync } from "node:fs";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
-import { SFX, type SfxSpec } from "../game/data/sfx";
+import { SFX, type SfxSpec } from "../sim/data/sfx";
 
 const OUT_DIR = "game/audio/sfx";
 const OUTPUT_FORMAT = "mp3_44100_128"; // 192k needs Creator tier; drop to mp3_44100_64 if blocked

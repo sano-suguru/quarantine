@@ -1,13 +1,13 @@
+import { CONFIG } from "../../sim/config";
+import { cycleWeaponSlot, effWeapon } from "../../sim/data/arsenal";
+import { isUpgradeableWeapon, WEAPON_ORDER } from "../../sim/data/weapons";
+import { localPlayer } from "../../sim/engine/players";
+import { hasLineOfSight } from "../../sim/systems/perception";
+import type { State } from "../../sim/types";
 import { inViewport, resolveAim, resolveHotbarSlot } from "../autoAim";
-import { CONFIG } from "../config";
-import { cycleWeaponSlot, effWeapon } from "../data/arsenal";
-import { isUpgradeableWeapon, WEAPON_ORDER } from "../data/weapons";
-import { localPlayer } from "../engine/players";
 import { Renderer } from "../engine/renderer";
 import { Input } from "../input";
 import { getSettings } from "../settings";
-import { hasLineOfSight } from "../systems/perception";
-import type { State } from "../types";
 import { emptyInput, type PlayerInput } from "./playerInput";
 
 /**

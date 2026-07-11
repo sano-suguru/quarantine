@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { newState } from "../state";
+import { newState } from "../../sim/state";
 import { phantomStepLocked, resetStalkerFx, stalkerFx } from "./stalkerFx";
 import { phantomRateScale } from "./stalkerPhantom";
 

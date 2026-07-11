@@ -1,5 +1,5 @@
+import type { PlayerInput } from "../game/net/playerInput";
 import type { FlowField } from "./engine/navfield";
-import type { PlayerInput } from "./net/playerInput";
 
 export interface GunPart {
   /** forward offset along aim, world units (+ = toward muzzle) */
@@ -589,6 +589,18 @@ export interface State {
   navTick: number;
   /** discrete per-tick cue buffer: systems push, the client drains to audio/fx (see sim/events.ts) */
   fxEvents: FxEvent[];
+}
+
+/**
+ * WebRTC ICE-server config shape. Declared structurally (not via the DOM lib's `RTCIceServer`)
+ * so `sim/config.ts` stays inside the no-DOM sim boundary. It is a subset of lib.dom's
+ * `RTCIceServer`; `game/net/transport.ts` asserts assignability with `satisfies RTCIceServer[]`
+ * so drift is caught if that DOM type ever narrows.
+ */
+export interface IceServerConfig {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
 }
 
 /** Structural type so state.ts need not import the engine class directly. */

@@ -20,7 +20,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["game/**/*.test.ts"],
+    include: ["game/**/*.test.ts", "sim/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "text-summary", "html"],
@@ -30,17 +30,17 @@ export default defineConfig({
       // is validated by playtest, not unit tests (see CLAUDE.md), so it is excluded from the gate —
       // this is the documented testing boundary, not a way to dodge coverage on testable logic.
       include: [
-        "game/data/**",
-        "game/systems/**",
-        "game/config.ts",
-        "game/state.ts",
+        "sim/data/**",
+        "sim/systems/**",
+        "sim/config.ts",
+        "sim/state.ts",
         "game/meta.ts",
-        "game/engine/math.ts",
-        "game/engine/geometry.ts",
-        "game/engine/fragment.ts",
-        "game/engine/spatialHash.ts",
-        "game/engine/players.ts",
-        "game/net/snapshot.ts",
+        "sim/engine/math.ts",
+        "sim/engine/geometry.ts",
+        "sim/engine/fragment.ts",
+        "sim/engine/spatialHash.ts",
+        "sim/engine/players.ts",
+        "sim/snapshot.ts",
         "game/net/ghost.ts",
         "game/net/registry.ts",
         "game/net/host.ts",
@@ -48,7 +48,7 @@ export default defineConfig({
       exclude: [
         "**/*.test.ts",
         "**/*.d.ts",
-        "game/types.ts",
+        "sim/types.ts",
         // render / audio / shaders — feel, validated by playtest
         "game/engine/renderer.ts",
         "game/engine/audio.ts",
@@ -59,12 +59,12 @@ export default defineConfig({
         "game/ui.ts",
         "game/game.ts", // ~900-line update/draw/HUD loop is feel; its one pure fn (applyBuy) is covered by game.test.ts
         // feel/visual systems — CLAUDE.md: AI movement, camera, particles are not unit-tested
-        "game/systems/ai.ts",
-        "game/systems/camera.ts",
-        "game/systems/fx.ts",
+        "sim/systems/ai.ts",
+        "sim/systems/camera.ts",
+        "sim/systems/fx.ts",
         // the Stalker: AI movement/state machine + telegraph particles/audio — same feel boundary
         // as ai.ts/fx.ts. Its pure geometry (LOS/hearing) lives in perception.ts, which IS covered.
-        "game/systems/stalker.ts",
+        "sim/systems/stalker.ts",
         "game/systems/stalkerFx.ts",
         "game/systems/stalkerPhantom.ts",
         // net IO boundaries (WebRTC/WS/fetch/Worker)

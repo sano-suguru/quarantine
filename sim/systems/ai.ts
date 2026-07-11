@@ -6,7 +6,7 @@ import { len, rand } from "../engine/math";
 import { buildFlowField, sampleFlow } from "../engine/navfield";
 import { localPlayer, nearestPlayer } from "../engine/players";
 import { avoidHeading } from "../engine/steering";
-import { pushFx } from "../sim/events";
+import { pushFx } from "../events";
 import type { NavMode, Player, State, Zombie } from "../types";
 import { hasLineOfSight, heard } from "./perception";
 
