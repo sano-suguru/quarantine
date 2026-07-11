@@ -162,7 +162,7 @@ function resetAtmosphere(): void {
   resetStalkerPhantom();
 }
 
-export function update(dt: number): void {
+export function update(state: State, dt: number): void {
   if (!state.running || state.paused) return;
 
   // hitstop: briefly slow the sim on impactful kills

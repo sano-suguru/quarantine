@@ -418,7 +418,7 @@ async function main(): Promise<void> {
       localPlayer(st).input = settingsOpen ? emptyInput() : sampleLocalInput(st);
     hAcc += dt;
     while (hAcc >= step) {
-      update(step);
+      update(st, step);
       hAcc -= step;
     }
     drainFxEvents(getState()); // host is a player too: play its own cues + clear the buffer
@@ -449,7 +449,7 @@ async function main(): Promise<void> {
         rAcc += Math.min(dt, 0.1);
         if (live) localPlayer(st).input = sampleLocalInput(st);
         while (rAcc >= step) {
-          update(step);
+          update(st, step);
           rAcc -= step;
         }
         drainFxEvents(st); // consume the tick's cues → audio/particles
