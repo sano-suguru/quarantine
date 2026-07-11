@@ -87,7 +87,7 @@ export function killZombie(state: State, idx: number, hitDir: number | null = nu
     big,
     dir: Math.atan2(z.vy, z.vx),
     radius: z.r,
-    hitDir: hitDir ?? 0,
+    hitDir: hitDir ?? 0, // Phase-1 simplification: null→0 directional fallback; proper number|null widening deferred to Phase-2 wire review
   });
   // hit-stop slows the WHOLE sim and cam-shake is a local-view kick — in co-op these
   // would slow/shake the shared host view on every player's kill, so apply solo only
