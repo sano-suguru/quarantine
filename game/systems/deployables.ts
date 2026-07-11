@@ -2,9 +2,9 @@ import { DEPLOYABLE_TYPES } from "../data/deployables";
 import { waveDef } from "../data/waves";
 import { clamp, len } from "../engine/math";
 import { nearestPlayer } from "../engine/players";
+import { pushFx } from "../sim/events";
 import { allocId } from "../state";
 import type { Deployable, DeployableDef, SiegePhase, State, Zombie } from "../types";
-import { fxImpact, fxKill } from "./fx";
 import { spawnPickup } from "./pickups";
 
 /** Deployable damage multiplier. At night it IS the enemy `hpScale` for that night (the caller
@@ -59,8 +59,8 @@ export function sysDeployables(state: State, dt: number): void {
     if (destroyed || retired) {
       dead.push(i);
       if (destroyed)
-        fxKill(state, d.x, d.y, def.color, def.color, true, false); // loud destruction burst (no flesh — it's a machine)
-      else fxImpact(state, d.x, d.y, 0, def.color); // soft power-down on RTB
+        pushFx(state, { t: "deployDestroy", x: d.x, y: d.y, color: def.color, rtb: false }); // loud destruction burst (no flesh — it's a machine)
+      else pushFx(state, { t: "deployDestroy", x: d.x, y: d.y, color: def.color, rtb: true }); // soft power-down on RTB
     }
   }
   for (let k = dead.length - 1; k >= 0; k--) {

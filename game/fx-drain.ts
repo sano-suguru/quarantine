@@ -1,7 +1,7 @@
 import { ENEMY_TYPES } from "./data/enemies";
 import { Audio } from "./engine/audio";
 import { clearFx } from "./sim/events";
-import { fxActionBurst, fxDust, fxHurt, fxImpact, fxKill, fxMote } from "./systems/fx";
+import { fxActionBurst, fxDust, fxHurt, fxImpact, fxKill, fxMote, fxPickup } from "./systems/fx";
 import type { State } from "./types";
 
 const GREY: [number, number, number] = [0.5, 0.5, 0.5];
@@ -81,6 +81,15 @@ export function drainFxEvents(state: State): void {
         break;
       case "burst":
         fxActionBurst(state, e.x, e.y, e.color, e.ring);
+        break;
+      case "pickup":
+        fxPickup(state, e.x, e.y, e.glow);
+        Audio.pickup();
+        break;
+      case "deployDestroy":
+        if (e.rtb)
+          fxImpact(state, e.x, e.y, 0, e.color); // soft power-down on RTB
+        else fxKill(state, e.x, e.y, e.color, e.color, true, false); // machine destruction: flesh=false, def.color
         break;
       case "audio":
         drainAudioCue(e.cue);

@@ -499,7 +499,9 @@ export type FxEvent =
   | { t: "audio"; cue: string; arg?: number | string }
   | { t: "dust"; x: number; y: number; n: number }
   | { t: "mote"; x: number; y: number; color: [number, number, number] }
-  | { t: "burst"; x: number; y: number; color: [number, number, number]; ring: boolean };
+  | { t: "burst"; x: number; y: number; color: [number, number, number]; ring: boolean }
+  | { t: "pickup"; x: number; y: number; glow: [number, number, number] }
+  | { t: "deployDestroy"; x: number; y: number; color: [number, number, number]; rtb: boolean };
 
 /** Day = lit scavenge/repair window; night = the dark horde siege. */
 export type SiegePhase = "day" | "night";
