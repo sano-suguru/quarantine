@@ -1,7 +1,16 @@
 import { ENEMY_TYPES } from "./data/enemies";
 import { Audio } from "./engine/audio";
 import { clearFx } from "./sim/events";
-import { fxActionBurst, fxDust, fxHurt, fxImpact, fxKill, fxMote, fxPickup } from "./systems/fx";
+import {
+  fxActionBurst,
+  fxDust,
+  fxHurt,
+  fxImpact,
+  fxKill,
+  fxMote,
+  fxMuzzle,
+  fxPickup,
+} from "./systems/fx";
 import type { State } from "./types";
 
 const GREY: [number, number, number] = [0.5, 0.5, 0.5];
@@ -94,7 +103,11 @@ export function drainFxEvents(state: State): void {
       case "audio":
         drainAudioCue(e.cue);
         break;
-      // muzzle variant added by its system-conversion task
+      case "muzzle":
+        if (e.melee) Audio.melee();
+        else Audio.shot(e.weapon);
+        if (!e.melee) fxMuzzle(state, e.x, e.y, e.ang, e.color);
+        break;
     }
   }
   clearFx(state);

@@ -6,6 +6,7 @@ import { Audio } from "../engine/audio";
 import { segMid } from "../engine/geometry";
 import { approach, rand } from "../engine/math";
 import { localPlayer } from "../engine/players";
+import { drainFxEvents } from "../fx-drain";
 import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
 import { applyFireFeel } from "../systems/feel";
 import { fxActionBurst, fxHurt, fxImpact, fxKill, fxMote, goreIntensity } from "../systems/fx";
@@ -568,6 +569,7 @@ export class Client {
         // the host runs, so our predicted melee lunge / gun kick can never drift from authority.
         // The slash visual itself is the crescent drawn in drawPlayer off the predicted muzzle.
         applyFireFeel(st, lp, wd);
+        drainFxEvents(st); // play THIS client's predicted muzzle (shot/melee audio + muzzle sparks)
         // take ownership of the resulting feel so the per-frame re-impose keeps it smooth
         this.predRecoilX = lp.recoilX;
         this.predRecoilY = lp.recoilY;
