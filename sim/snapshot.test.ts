@@ -3,7 +3,14 @@ import { CONFIG } from "./config";
 import { CARD_ORDER } from "./data/arsenal";
 import { DEPLOYABLE_TYPES } from "./data/deployables";
 import { addPlayer } from "./engine/players";
-import { applySnapshot, captureSnapshot, decode, encode, lerpSnapshots } from "./snapshot";
+import {
+  applySnapshot,
+  captureSnapshot,
+  decode,
+  encode,
+  encodeSnapshot,
+  lerpSnapshots,
+} from "./snapshot";
 import { allocId, newState } from "./state";
 import { spawnPickup } from "./systems/pickups";
 import { spawnZombie } from "./systems/wave";
@@ -128,10 +135,10 @@ describe("snapshot binary round-trip", () => {
       h ^= b;
       h = Math.imul(h, 0x01000193);
     }
-    // +1 byte vs the pre-stalker golden: the stalker block always writes a presence byte (0 for null).
+    // +2 bytes vs the pre-fxEvents golden: the fxEvents section always writes a u16 count (0 for no events).
     // If this drifts again, bump PROTOCOL_VERSION in net.ts and regenerate here.
     expect(`len=${bytes.length} fnv=${(h >>> 0).toString(16)}`).toMatchInlineSnapshot(
-      `"len=304 fnv=443aad37"`,
+      `"len=306 fnv=770b418f"`,
     );
   });
 
@@ -319,6 +326,123 @@ describe("applySnapshot (id-matched apply to a client state)", () => {
     (host.players[0] as State["players"][number]).x = -500;
     applySnapshot(client, decode(encode(captureSnapshot(host, 2))), { skipLocalId: 0 });
     expect(client.players.find((p) => p.id === 0)?.x).toBe(9999);
+  });
+});
+
+describe("fxEvents round-trip", () => {
+  it("round-trips fxEvents (kill + audio:dawn survive encode/decode)", () => {
+    const s = newState();
+    s.fxEvents.push({
+      t: "kill",
+      x: 10,
+      y: 20,
+      type: "walker",
+      big: false,
+      dir: 1,
+      radius: 12,
+      hitDir: 0.5,
+    });
+    s.fxEvents.push({ t: "audio", cue: "dawn" });
+    const back = decode(encodeSnapshot(s, 7));
+    expect(back.fxEvents).toHaveLength(2);
+    expect(back.fxEvents[0]).toMatchObject({ t: "kill", type: "walker" });
+    expect(back.fxEvents[1]).toMatchObject({ t: "audio", cue: "dawn" });
+  });
+
+  it("round-trips all FxEvent variants", () => {
+    const s = newState();
+    s.fxEvents.push({
+      t: "kill",
+      x: 100,
+      y: -200,
+      type: "runner",
+      big: true,
+      dir: 2.5,
+      radius: 20,
+      hitDir: 1.2,
+    });
+    s.fxEvents.push({ t: "impact", x: 50, y: -50, ang: 1.5, color: [1, 0.5, 0], intensity: 0.8 });
+    s.fxEvents.push({ t: "hit", x: 30, y: -30 });
+    s.fxEvents.push({ t: "hurt", x: -10, y: 5, local: true });
+    s.fxEvents.push({
+      t: "muzzle",
+      x: 0,
+      y: 0,
+      ang: 0.3,
+      color: [1, 0.9, 0.5],
+      weapon: "pistol",
+      melee: false,
+    });
+    s.fxEvents.push({ t: "audio", cue: "reload" });
+    s.fxEvents.push({ t: "audio", cue: "heal", arg: 42 });
+    s.fxEvents.push({ t: "announce", label: "NIGHT", day: 3 });
+    s.fxEvents.push({ t: "dust", x: 80, y: -80, n: 5 });
+    s.fxEvents.push({ t: "mote", x: 10, y: 10, color: [0.2, 0.8, 0.4] });
+    s.fxEvents.push({ t: "burst", x: -20, y: 20, color: [1, 0, 0], ring: true });
+    s.fxEvents.push({ t: "pickup", x: 40, y: -40, glow: [0, 1, 0.5] });
+    s.fxEvents.push({ t: "deployDestroy", x: 60, y: -60, color: [0.8, 0.6, 0], rtb: false });
+    const back = decode(encodeSnapshot(s, 99));
+    expect(back.fxEvents).toHaveLength(13);
+
+    const kill = back.fxEvents[0];
+    expect(kill?.t).toBe("kill");
+    if (kill?.t === "kill") {
+      expect(kill.type).toBe("runner");
+      expect(kill.big).toBe(true);
+      expect(Math.abs(kill.x - 100)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(kill.y - -200)).toBeLessThanOrEqual(0.5);
+    }
+
+    const impact = back.fxEvents[1];
+    expect(impact?.t).toBe("impact");
+    if (impact?.t === "impact") {
+      expect(impact.color[0]).toBeCloseTo(1, 1);
+      expect(impact.color[1]).toBeCloseTo(0.5, 1);
+    }
+
+    expect(back.fxEvents[2]?.t).toBe("hit");
+    expect(back.fxEvents[3]?.t).toBe("hurt");
+    if (back.fxEvents[3]?.t === "hurt") expect(back.fxEvents[3].local).toBe(true);
+
+    const muzzle = back.fxEvents[4];
+    expect(muzzle?.t).toBe("muzzle");
+    if (muzzle?.t === "muzzle") {
+      expect(muzzle.weapon).toBe("pistol");
+      expect(muzzle.melee).toBe(false);
+    }
+
+    expect(back.fxEvents[5]?.t).toBe("audio");
+    if (back.fxEvents[5]?.t === "audio") expect(back.fxEvents[5].cue).toBe("reload");
+
+    const audioArg = back.fxEvents[6];
+    expect(audioArg?.t).toBe("audio");
+    if (audioArg?.t === "audio") {
+      expect(audioArg.cue).toBe("heal");
+      expect(audioArg.arg).toBeCloseTo(42, 3);
+    }
+
+    const announce = back.fxEvents[7];
+    expect(announce?.t).toBe("announce");
+    if (announce?.t === "announce") {
+      expect(announce.label).toBe("NIGHT");
+      expect(announce.day).toBe(3);
+    }
+
+    expect(back.fxEvents[8]?.t).toBe("dust");
+    if (back.fxEvents[8]?.t === "dust") expect(back.fxEvents[8].n).toBe(5);
+
+    expect(back.fxEvents[9]?.t).toBe("mote");
+    expect(back.fxEvents[10]?.t).toBe("burst");
+    if (back.fxEvents[10]?.t === "burst") expect(back.fxEvents[10].ring).toBe(true);
+    expect(back.fxEvents[11]?.t).toBe("pickup");
+    expect(back.fxEvents[12]?.t).toBe("deployDestroy");
+    if (back.fxEvents[12]?.t === "deployDestroy") expect(back.fxEvents[12].rtb).toBe(false);
+  });
+
+  it("empty fxEvents produces zero count and decodes to empty array", () => {
+    const s = newState();
+    const back = decode(encodeSnapshot(s, 1));
+    expect(back.fxEvents).toEqual([]);
   });
 });
 

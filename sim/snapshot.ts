@@ -6,7 +6,16 @@ import { PICKUP_TYPES } from "./data/pickups";
 import { WEAPON_ORDER } from "./data/weapons";
 import { lerp } from "./engine/math";
 import { makePlayer } from "./engine/players";
-import type { Bullet, Deployable, Pickup, SiegePhase, Stalker, State, Zombie } from "./types";
+import type {
+  Bullet,
+  Deployable,
+  FxEvent,
+  Pickup,
+  SiegePhase,
+  Stalker,
+  State,
+  Zombie,
+} from "./types";
 
 /**
  * Host-authoritative world snapshot: the host captures one each network tick and
@@ -25,6 +34,22 @@ import type { Bullet, Deployable, Pickup, SiegePhase, Stalker, State, Zombie } f
 const ENEMY_ORDER = Object.keys(ENEMY_TYPES);
 const PICKUP_ORDER = Object.keys(PICKUP_TYPES);
 const DEPLOYABLE_ORDER = Object.keys(DEPLOYABLE_TYPES);
+
+/** Stable ordered cue list for FxEvent audio variant. Append-only — reordering desyncs. */
+const AUDIO_CUES: string[] = [
+  "dawn",
+  "dryFire",
+  "heal",
+  "pickup",
+  "reload",
+  "reloadDone",
+  "repair",
+  "switchWeapon",
+  "waveStart",
+];
+
+/** Stable ordered label list for FxEvent announce variant. Append-only — reordering desyncs. */
+const ANNOUNCE_LABELS: string[] = ["DAY", "NIGHT"];
 
 /** Stalker state string → wire int (0=lull, 1=aggro, 2=stagger, 3=retreat). */
 const STALKER_STATES: Stalker["state"][] = ["lull", "aggro", "stagger", "retreat"];
@@ -178,6 +203,12 @@ export interface Snapshot {
    * never sees the stalker; the stalker is despawned via a separate withdraw cue.
    */
   stalker: SnapStalker;
+  /**
+   * Per-tick fx/audio events captured from `state.fxEvents`. Non-idempotent one-shot payloads —
+   * clients drain them (play SFX, spawn particles) on arrival. `applySnapshot` leaves them on the
+   * snapshot; the caller is responsible for draining. Empty array when no events this tick.
+   */
+  fxEvents: FxEvent[];
 }
 
 /** Read the current world into a logical snapshot. */
@@ -279,6 +310,7 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
             contactCd: state.stalker.contactCd,
           }
         : { present: false, x: 0, y: 0, face: 0, state: 0, vis: 0, contactCd: 0 },
+    fxEvents: state.fxEvents.slice(),
   };
 }
 
@@ -740,6 +772,147 @@ export function encode(snap: Snapshot): ArrayBuffer {
     w.u8(q01(snap.stalker.contactCd, CONFIG.stalker.contactCd)); // grab timer, quantized over its max
   }
 
+  // fxEvents section — non-idempotent one-shot cues; clients drain on arrival.
+  // Layout: [u16 count] then per event: [u8 tag] [fields...]
+  // Tags: 0=kill 1=impact 2=hit 3=hurt 4=muzzle 5=audio 6=announce 7=dust 8=mote 9=burst 10=pickup 11=deployDestroy
+  w.u16(snap.fxEvents.length);
+  for (const ev of snap.fxEvents) {
+    switch (ev.t) {
+      case "kill": {
+        // [u8 0] [i16 x] [i16 y] [u8 typeIdx] [u8 flags: bit0=big] [u8 dir/TAU] [u8 radius/255] [u8 hitDir/TAU]
+        w.u8(0);
+        w.i16(qpos(ev.x));
+        w.i16(qpos(ev.y));
+        const ki = ENEMY_ORDER.indexOf(ev.type);
+        w.u8(ki < 0 ? 0 : ki);
+        w.u8(ev.big ? 1 : 0);
+        w.u8(q01(((ev.dir % TAU) + TAU) % TAU, TAU));
+        w.u8(Math.max(0, Math.min(255, Math.round(ev.radius))));
+        w.u8(q01(((ev.hitDir % TAU) + TAU) % TAU, TAU));
+        break;
+      }
+      case "impact": {
+        // [u8 1] [i16 x] [i16 y] [u8 ang/TAU] [u8 r] [u8 g] [u8 b] [u8 intensity*255]
+        w.u8(1);
+        w.i16(qpos(ev.x));
+        w.i16(qpos(ev.y));
+        w.u8(q01(((ev.ang % TAU) + TAU) % TAU, TAU));
+        w.u8(Math.round(ev.color[0] * 255));
+        w.u8(Math.round(ev.color[1] * 255));
+        w.u8(Math.round(ev.color[2] * 255));
+        w.u8(Math.max(0, Math.min(255, Math.round(ev.intensity * 255))));
+        break;
+      }
+      case "hit": {
+        // [u8 2] [i16 x] [i16 y]
+        w.u8(2);
+        w.i16(qpos(ev.x));
+        w.i16(qpos(ev.y));
+        break;
+      }
+      case "hurt": {
+        // [u8 3] [i16 x] [i16 y] [u8 flags: bit0=local]
+        w.u8(3);
+        w.i16(qpos(ev.x));
+        w.i16(qpos(ev.y));
+        w.u8(ev.local ? 1 : 0);
+        break;
+      }
+      case "muzzle": {
+        // [u8 4] [i16 x] [i16 y] [u8 ang/TAU] [u8 r] [u8 g] [u8 b] [u8 weaponIdx] [u8 flags: bit0=melee]
+        w.u8(4);
+        w.i16(qpos(ev.x));
+        w.i16(qpos(ev.y));
+        w.u8(q01(((ev.ang % TAU) + TAU) % TAU, TAU));
+        w.u8(Math.round(ev.color[0] * 255));
+        w.u8(Math.round(ev.color[1] * 255));
+        w.u8(Math.round(ev.color[2] * 255));
+        const wxi = WEAPON_ORDER.indexOf(ev.weapon);
+        w.u8(wxi < 0 ? 0 : wxi);
+        w.u8(ev.melee ? 1 : 0);
+        break;
+      }
+      case "audio": {
+        // [u8 5] [u8 cueIdx] [u8 argKind: 0=none 1=number 2=string] ([f32] | [u8 len][utf8 bytes])
+        w.u8(5);
+        const ci = AUDIO_CUES.indexOf(ev.cue);
+        w.u8(ci < 0 ? 0 : ci);
+        if (ev.arg === undefined || ev.arg === null) {
+          w.u8(0);
+        } else if (typeof ev.arg === "number") {
+          w.u8(1);
+          w.f32(ev.arg);
+        } else {
+          // string arg: length-prefixed utf8 (capped at 255 bytes)
+          const encoded = new TextEncoder().encode(ev.arg);
+          const len = Math.min(255, encoded.length);
+          w.u8(2);
+          w.u8(len);
+          for (let i = 0; i < len; i++) w.u8(encoded[i] ?? 0);
+        }
+        break;
+      }
+      case "announce": {
+        // [u8 6] [u8 labelIdx] [u16 day]
+        w.u8(6);
+        const li = ANNOUNCE_LABELS.indexOf(ev.label);
+        w.u8(li < 0 ? 0 : li);
+        w.u16(Math.max(0, Math.min(65535, ev.day)));
+        break;
+      }
+      case "dust": {
+        // [u8 7] [i16 x] [i16 y] [u8 n]
+        w.u8(7);
+        w.i16(qpos(ev.x));
+        w.i16(qpos(ev.y));
+        w.u8(Math.max(0, Math.min(255, ev.n)));
+        break;
+      }
+      case "mote": {
+        // [u8 8] [i16 x] [i16 y] [u8 r] [u8 g] [u8 b]
+        w.u8(8);
+        w.i16(qpos(ev.x));
+        w.i16(qpos(ev.y));
+        w.u8(Math.round(ev.color[0] * 255));
+        w.u8(Math.round(ev.color[1] * 255));
+        w.u8(Math.round(ev.color[2] * 255));
+        break;
+      }
+      case "burst": {
+        // [u8 9] [i16 x] [i16 y] [u8 r] [u8 g] [u8 b] [u8 flags: bit0=ring]
+        w.u8(9);
+        w.i16(qpos(ev.x));
+        w.i16(qpos(ev.y));
+        w.u8(Math.round(ev.color[0] * 255));
+        w.u8(Math.round(ev.color[1] * 255));
+        w.u8(Math.round(ev.color[2] * 255));
+        w.u8(ev.ring ? 1 : 0);
+        break;
+      }
+      case "pickup": {
+        // [u8 10] [i16 x] [i16 y] [u8 r] [u8 g] [u8 b]
+        w.u8(10);
+        w.i16(qpos(ev.x));
+        w.i16(qpos(ev.y));
+        w.u8(Math.round(ev.glow[0] * 255));
+        w.u8(Math.round(ev.glow[1] * 255));
+        w.u8(Math.round(ev.glow[2] * 255));
+        break;
+      }
+      case "deployDestroy": {
+        // [u8 11] [i16 x] [i16 y] [u8 r] [u8 g] [u8 b] [u8 flags: bit0=rtb]
+        w.u8(11);
+        w.i16(qpos(ev.x));
+        w.i16(qpos(ev.y));
+        w.u8(Math.round(ev.color[0] * 255));
+        w.u8(Math.round(ev.color[1] * 255));
+        w.u8(Math.round(ev.color[2] * 255));
+        w.u8(ev.rtb ? 1 : 0);
+        break;
+      }
+    }
+  }
+
   return w.done();
 }
 
@@ -938,6 +1111,137 @@ export function decode(buf: ArrayBuffer): Snapshot {
     stalker = { present: false, x: 0, y: 0, face: 0, state: 0, vis: 0, contactCd: 0 };
   }
 
+  // fxEvents — decode parallel to encode (same tag/field layout)
+  const fxEvents: FxEvent[] = [];
+  const evCount = r.u16();
+  for (let i = 0; i < evCount; i++) {
+    const tag = r.u8();
+    switch (tag) {
+      case 0: {
+        // kill: [i16 x] [i16 y] [u8 typeIdx] [u8 flags] [u8 dir] [u8 radius] [u8 hitDir]
+        const x = dqpos(r.i16());
+        const y = dqpos(r.i16());
+        const type = ENEMY_ORDER[r.u8()] ?? (ENEMY_ORDER[0] as string);
+        const kflags = r.u8();
+        const dir = dq01(r.u8(), TAU);
+        const radius = r.u8();
+        const hitDir = dq01(r.u8(), TAU);
+        fxEvents.push({ t: "kill", x, y, type, big: (kflags & 1) !== 0, dir, radius, hitDir });
+        break;
+      }
+      case 1: {
+        // impact: [i16 x] [i16 y] [u8 ang] [u8 r] [u8 g] [u8 b] [u8 intensity]
+        const x = dqpos(r.i16());
+        const y = dqpos(r.i16());
+        const ang = dq01(r.u8(), TAU);
+        const color: [number, number, number] = [r.u8() / 255, r.u8() / 255, r.u8() / 255];
+        const intensity = r.u8() / 255;
+        fxEvents.push({ t: "impact", x, y, ang, color, intensity });
+        break;
+      }
+      case 2: {
+        // hit: [i16 x] [i16 y]
+        const x = dqpos(r.i16());
+        const y = dqpos(r.i16());
+        fxEvents.push({ t: "hit", x, y });
+        break;
+      }
+      case 3: {
+        // hurt: [i16 x] [i16 y] [u8 flags]
+        const x = dqpos(r.i16());
+        const y = dqpos(r.i16());
+        const hflags = r.u8();
+        fxEvents.push({ t: "hurt", x, y, local: (hflags & 1) !== 0 });
+        break;
+      }
+      case 4: {
+        // muzzle: [i16 x] [i16 y] [u8 ang] [u8 r] [u8 g] [u8 b] [u8 weaponIdx] [u8 flags]
+        const x = dqpos(r.i16());
+        const y = dqpos(r.i16());
+        const ang = dq01(r.u8(), TAU);
+        const color: [number, number, number] = [r.u8() / 255, r.u8() / 255, r.u8() / 255];
+        const weapon = WEAPON_ORDER[r.u8()] ?? (WEAPON_ORDER[0] as string);
+        const mflags = r.u8();
+        fxEvents.push({ t: "muzzle", x, y, ang, color, weapon, melee: (mflags & 1) !== 0 });
+        break;
+      }
+      case 5: {
+        // audio: [u8 cueIdx] [u8 argKind] ([f32] | [u8 len][bytes])
+        const cue = AUDIO_CUES[r.u8()] ?? (AUDIO_CUES[0] as string);
+        const argKind = r.u8();
+        let arg: number | string | undefined;
+        if (argKind === 1) {
+          arg = r.f32();
+        } else if (argKind === 2) {
+          const len = r.u8();
+          const bytes = new Uint8Array(len);
+          for (let j = 0; j < len; j++) bytes[j] = r.u8();
+          arg = new TextDecoder().decode(bytes);
+        }
+        // argKind === 0: no arg (leave undefined)
+        fxEvents.push(arg !== undefined ? { t: "audio", cue, arg } : { t: "audio", cue });
+        break;
+      }
+      case 6: {
+        // announce: [u8 labelIdx] [u16 day]
+        const label = ANNOUNCE_LABELS[r.u8()] ?? (ANNOUNCE_LABELS[0] as string);
+        const day = r.u16();
+        fxEvents.push({ t: "announce", label, day });
+        break;
+      }
+      case 7: {
+        // dust: [i16 x] [i16 y] [u8 n]
+        const x = dqpos(r.i16());
+        const y = dqpos(r.i16());
+        const n = r.u8();
+        fxEvents.push({ t: "dust", x, y, n });
+        break;
+      }
+      case 8: {
+        // mote: [i16 x] [i16 y] [u8 r] [u8 g] [u8 b]
+        const x = dqpos(r.i16());
+        const y = dqpos(r.i16());
+        const color: [number, number, number] = [r.u8() / 255, r.u8() / 255, r.u8() / 255];
+        fxEvents.push({ t: "mote", x, y, color });
+        break;
+      }
+      case 9: {
+        // burst: [i16 x] [i16 y] [u8 r] [u8 g] [u8 b] [u8 flags]
+        const x = dqpos(r.i16());
+        const y = dqpos(r.i16());
+        const color: [number, number, number] = [r.u8() / 255, r.u8() / 255, r.u8() / 255];
+        const bflags = r.u8();
+        fxEvents.push({ t: "burst", x, y, color, ring: (bflags & 1) !== 0 });
+        break;
+      }
+      case 10: {
+        // pickup: [i16 x] [i16 y] [u8 r] [u8 g] [u8 b]
+        const x = dqpos(r.i16());
+        const y = dqpos(r.i16());
+        const glow: [number, number, number] = [r.u8() / 255, r.u8() / 255, r.u8() / 255];
+        fxEvents.push({ t: "pickup", x, y, glow });
+        break;
+      }
+      case 11: {
+        // deployDestroy: [i16 x] [i16 y] [u8 r] [u8 g] [u8 b] [u8 flags]
+        const x = dqpos(r.i16());
+        const y = dqpos(r.i16());
+        const color: [number, number, number] = [r.u8() / 255, r.u8() / 255, r.u8() / 255];
+        const dflags = r.u8();
+        fxEvents.push({ t: "deployDestroy", x, y, color, rtb: (dflags & 1) !== 0 });
+        break;
+      }
+      default:
+        // Unknown tag — format version skew. Cannot skip safely without knowing field sizes.
+        // Log a warning and stop decoding further events (remaining events are lost, not corrupt).
+        console.warn(
+          `[snapshot] unknown fxEvent tag ${tag} at offset ${r.off - 1}; truncating event list`,
+        );
+        i = evCount; // exit loop
+        break;
+    }
+  }
+
   return {
     tick,
     time,
@@ -957,6 +1261,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
     caches,
     deployables,
     stalker,
+    fxEvents,
   };
 }
 
@@ -1043,5 +1348,7 @@ export function lerpSnapshots(a: Snapshot, b: Snapshot, t: number): Snapshot {
     stalker = b.stalker; // snap: appear or disappear — no partial lerp across a spawn/despawn edge
   }
 
-  return { ...b, players, zombies, bullets, pickups, deployables, stalker };
+  // fxEvents: take from b (latest) — they are non-idempotent one-shots, not spatial values.
+  // The interpolated snapshot carries b's events so the client drain fires them once.
+  return { ...b, players, zombies, bullets, pickups, deployables, stalker, fxEvents: b.fxEvents };
 }
