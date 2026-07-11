@@ -463,6 +463,41 @@ export interface Stalker {
   vis: number;
 }
 
+// carried data mirrors what today's call sites pass; visuals the client can
+// reconstruct from tables (enemy type → color/glow/sprite) are referenced by
+// index/id, not duplicated — keeps the event wire-friendly for Phase 2.
+export type FxEvent =
+  | {
+      t: "kill";
+      x: number;
+      y: number;
+      type: string;
+      big: boolean;
+      dir: number;
+      radius: number;
+      hitDir: number;
+    }
+  | {
+      t: "impact";
+      x: number;
+      y: number;
+      ang: number;
+      color: [number, number, number];
+      intensity: number;
+    }
+  | { t: "hit"; x: number; y: number }
+  | { t: "hurt"; x: number; y: number; local: boolean }
+  | {
+      t: "muzzle";
+      x: number;
+      y: number;
+      ang: number;
+      color: [number, number, number];
+      weapon: string;
+      melee: boolean;
+    }
+  | { t: "audio"; cue: string; arg?: number | string };
+
 /** Day = lit scavenge/repair window; night = the dark horde siege. */
 export type SiegePhase = "day" | "night";
 
@@ -546,6 +581,8 @@ export interface State {
   /** monotonic sim-tick counter used to schedule flow-field rebuilds (one per sysAI call).
    *  There is no general state.tick — this is the only tick counter in state. */
   navTick: number;
+  /** discrete per-tick cue buffer: systems push, the client drains to audio/fx (see sim/events.ts) */
+  fxEvents: FxEvent[];
 }
 
 /** Structural type so state.ts need not import the engine class directly. */

@@ -68,6 +68,7 @@ export function newState(): State {
     pickups: [],
     particles: [],
     decals: [],
+    fxEvents: [],
     walls,
     barricades,
     caches,
