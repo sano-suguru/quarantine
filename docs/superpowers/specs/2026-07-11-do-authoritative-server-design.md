@@ -33,7 +33,11 @@ The sim is **not import-clean today** (verified): 8 systems (`ai`, `bullets`, `p
 
 **The audio/fx seam.** Today audio has **two paths**: (1) host/single — systems call `Audio.*` directly; (2) client — `net/client.ts` `effects()` re-derives audio/fx from snapshot diffs. In the DO model every player is a client and the DO has no speakers (audio is per-listener perception). So:
 
-> Systems mutate `state` only — including the effect-trace fields that already exist (`flash`, `hitFlash`, `muzzle`, `healT`, id disappearance). **All** audio/fx is derived per-client from snapshot diffs (`effects()`) + local prediction. The host-only direct-`Audio`-in-systems path is **deleted, not ported**; every player unifies on the diff-derivation path that already exists for clients.
+> Systems mutate `state` only — including the effect-trace fields that already exist (`flash`, `hitFlash`, `muzzle`, `healT`, id disappearance). **All** audio/fx is derived per-client from snapshot diffs (`effects()`) + local prediction. The host-only direct-`Audio`-in-systems path is **removed, and its cues are moved to client re-derivation** — every player unifies on the derivation path that today only clients run.
+
+**This "move" is new code, not a deletion — the existing client path is incomplete** (verified). Today `client.ts` `effects()` re-derives kill/hit/hurt/heal, but clients do **not** currently receive:
+- **Siege-transition one-shots** — `Audio.waveStart()`/`Audio.dawn()` and the `announce("NIGHT"/"DAY")` banner fire in `game.ts` `update()`, so only the ex-host hears/sees them. `snapshot.ts` already ships `phase`/`day`, so 2a must **add phase-edge + day-edge detection to `effects()`** so "night falls" / "dawn" land for everyone. Losing these guts the siege feel.
+- **Impact juice** — kill-frame **camera shake** and hit **flash** are client-local and driven off `state.cam.shake`/`state.flashT`, which are **not in the snapshot**. (Sim-side `hitstopT` is different: it slows the authoritative sim itself, so its timing is felt by all clients through snapshot cadence — no re-derivation needed.) 2a must **re-derive shake/flash on the client from the kill/hurt diff** (extend `effects()`), rather than snapshot the host's camera.
 
 Benefits beyond enabling the DO: the **dual audio path collapses to one**, removing host/client audio divergence (existing debt). `feel.ts` splits — the state mutation (recoil/muzzle/shake numbers) stays pure in the sim; the audio cue attaches on the client (prediction) side.
 
@@ -42,6 +46,11 @@ Benefits beyond enabling the DO: the **dual audio path collapses to one**, remov
 - Contents: `state`, `systems/*`, `data/*`, `config`, `types`, the pure engine helpers (`math`, `geometry`, `spatialHash`, `players`, `steering`, `navfield`, `lights`, `fragment`), `snapshot`, and the extracted `update()` core. `SHAPE` (a plain enum) relocates into `sim/`; `renderer` imports it from there. `audio`/`renderer`/`input`/UI stay in `game/`.
 - **`sim/` has its own `tsconfig.json` with `lib: ["ES2022"]` — no DOM, no `@cloudflare/workers-types`.** Both the root game build and the `worker/` build reference it (TS project references / relative import). The boundary is **compiler-enforced at the sim's own compile**, not bolted onto a consumer: any stray DOM/WebAudio/renderer import fails `sim/`'s typecheck in the pre-push hook and CI.
 - **Three-peer architecture:** `sim/` (pure shared truth) · `game/` (client: render / audio / input / HUD + prediction) · `worker/` (DO: authority loop + transport). The DO and the client both depend on `sim/`; neither depends on the other. One sim = server authority and client prediction can never drift.
+
+**Extraction work (non-trivial — do not under-scope):**
+- **`update()` takes `state` explicitly** — `update(state, dt)`. Today `game.ts` `update()` reads a module-level `getState()` singleton. The DO holds its own `State` instance; passing it in also fixes the local dev harness (multiple arenas in one process) where a module singleton would collide. (On the edge, per-DO V8 isolates separate the singleton anyway, but the explicit signature is the clean form.)
+- **Lift `audioAmbience` out of the sim core.** `update()` calls `audioAmbience(dt)` inline (an `Audio` side-effect inside the sim loop) — the sim core is audio-polluted at the source. Move that call to the client's `clientAmbience` path; the DO's `update()` must be free of it.
+- **Relocate `SHAPE`** (a plain enum) into `sim/`; `renderer` imports it from there (today `data/enemies.ts` imports `SHAPE` from `renderer`).
 
 **Definition of done for the extraction:** `sim/` and `worker/` typecheck under the no-DOM `lib`. This surfaces every hidden DOM edge (including in "pure-looking" files) without relying on review vigilance.
 
@@ -52,15 +61,16 @@ Benefits beyond enabling the DO: the **dual audio path collapses to one**, remov
 - **One binary WebSocket per client**, multiplexing input (client→server), snapshots (server→client), and reliable events (join / buy / deploy / …) behind a **1-byte type tag**. Today's `rel` (reliable/ordered) + `snap` (unreliable/unordered) **dual channel collapses to one ordered reliable stream** — a simplification, since TCP is uniformly reliable + ordered and the WebRTC channel-role bookkeeping disappears.
 - **Reuse `snapshot.ts`** binary quantized encoding (int16 coords, byte angles, type indices). Its compactness + idempotent latest-wins semantics are exactly what make a TCP stream tolerable.
 - **Client latest-wins collapse on read.** TCP never delivers a stale snapshot (ordered), but after a loss-induced stall it delivers a burst; the client jumps to the **newest** and discards the intermediates (interpolation already targets `now − interpDelay`, so this is natural).
+- **Client input is rate-limited + latest-wins on the send side.** Today `main.ts` ships input every rAF frame (~60/s). The host only does `p.input = msg.input` (overwrite), so intermediate frames are droppable — input is latest-wins too. Cap client send to ~20–30 Hz, batching to the newest input. Without this, **inbound** input dominates the DO message budget (see §4), and each WebSocket read costs a kernel↔runtime context switch.
 - **HOL-blocking mitigation is app-layer:** small snapshots + moderate broadcast rate (short retransmit windows), interpolation buffer sized for TCP jitter (§4).
 
 **Recorded risk (the binding platform constraint):** CF DO has **no unreliable-datagram escape**. If the feel gate fails on TCP head-of-line blocking and buffering can't tune it out, the response is the contingency ladder (§Contingency), up to and including a transport/provider change. The method-C baseline (pre-condition §1) is the measuring stick for how much TCP ordering actually costs.
 
 ### 4. DO tick / broadcast / reconcile
 
-- **Stepping model = fixed-dt, one-tick-one-step.** `setInterval(~1000/simHz)`; each callback runs `update()` **exactly once** with a fixed `dt = 1/simHz`. No wall-clock accumulator server-side — this avoids Workers' coarsened/possibly-frozen clock entirely (no wall-clock `dt` read), and if `setInterval` fires late or coalesces the sim runs slightly slow in wall-time but stays internally consistent, which is invisible in an authoritative + interpolated co-op (no rollback). The **client keeps its browser accumulator** for its own local-prediction cadence (unchanged).
+- **Stepping model = fixed-dt, one-tick-one-step.** `setInterval(~1000/simHz)`; each callback runs `update()` **exactly once** with a fixed `dt = 1/simHz`. No wall-clock accumulator server-side — this avoids Workers' coarsened/possibly-frozen clock entirely (no wall-clock `dt` read) and sidesteps the accumulator's spiral-of-death under load. The trade-off is **not** "invisible": if the DO can't sustain the rate (CPU-bound), the sim runs slower than wall-time, which **increases everyone's input→reflect latency — worst exactly at night/horde, when feel matters most.** The client's `?netlog` freeze% (render outrunning the newest snapshot) captures it; 2a also adds a **server-side effective-tick-rate counter** as the trigger for the 30 Hz fallback. The **client keeps its browser accumulator** for its own local-prediction cadence (unchanged).
 - **Sim rate = 60 Hz target.** Movement / fire-rate / hitstop are all tuned as 60 Hz fixed-step; changing `dt` changes feel. Validate DO CPU for 8–12 players + horde at the server spike. **30 Hz is a costed CPU fallback only** (accepting a feel re-tune).
-- **Broadcast rate = decoupled from sim** (already `sendHz 30` vs `simHz 60`). MVP start **~20 Hz**, guided by Cloudflare's batching advice (50–100 ms) and the ~500–1,000 msg/s per-DO fan-out budget; interpolation covers the gap. Squeezing broadcast toward 32 players is sub-project 3's job.
+- **Broadcast rate = decoupled from sim** (already `sendHz 30` vs `simHz 60`). MVP start **~20 Hz**, guided by Cloudflare's batching advice (50–100 ms). Budget both directions against the ~500–1,000 msg/s per-DO ceiling: outbound ≈ clients × broadcastHz (12 × 20 = 240/s) **plus inbound ≈ clients × inputHz**, which dominates unless input is rate-limited (§3) — at the raw 60 Hz send it is 12 × 60 = 720/s, alone near the ceiling. Interpolation covers the broadcast gap. Squeezing both toward 32 players is sub-project 3's job.
 - **Reconcile = architecture unchanged, constants retuned.** Keep `predX/predY`, `smoothCorrect`, `snapTeleportThresh`, `interpDelayMs`, and ghost tracers. Retune the constants for the DO's ~1.5–2× hop + TCP jitter: `interpDelayMs` 100 → ~150 start; `smoothCorrect`/`snapTeleportThresh` widened so larger, jitterier corrections stay smooth. Exact numbers are **feel-tuned at the gate**, not fixed here (per sub-project 1). Auto-controls (PR #50) reduce sensitivity here — the latency-critical twitch-aim is already gone.
 
 ### 5. Scope = thin slice to the feel gate (2a), persistence deferred (2b)
@@ -71,12 +81,23 @@ Benefits beyond enabling the DO: the **dual audio path collapses to one**, remov
 - Client prediction + interpolation against the DO; `?netlog` `netStats` retained as the feel-gate instrument.
 - **Minimal connection lifecycle:** join, input, snapshot, disconnect + grace-hold/reclaim. The DO inherits `host.ts`'s `pickSlot` / nonce-rejoin / `graceMs` logic — **minus the pid-0 host player** (all slots are clients).
 - **Single-arena routing:** reuse the room-code → DO `getByName` path (`idFromName`). One arena, enough to prove authority + feel.
+- **Feel-gate scenario = a held siege phase.** A full sim would run `sysSiege` to dawn, which calls `openShop()` → `state.paused = true` → the whole `update()` early-returns (`game.ts` `if (!running || paused) return`). That synchronized all-stop shop is incoherent for a shared DO arena and its per-player replacement is 2b. So for the gate, **hold a single phase** (a sustained night — the horde is the feel to prove — with the dawn→shop transition disabled), rather than cycling through dawn. The gate proves movement/combat feel at 8–12 under the DO hop; the day/night cycle + shop return with 2b.
+- **Invariant (promoted from 2b): the DO sim never globally pauses.** `state.paused`/`inShop` stopping the entire arena is fundamentally incompatible with a shared drop-in DO (you cannot freeze one arena for one player). Removing the global-pause shop is therefore a **DO-model property, established in 2a** (as the held-phase gate above relies on it); the full per-player, non-pausing shop is 2b.
 
 **Deferred to 2b (own spec):** the persistent-arena lifecycle — occupied-clock freeze/thaw, the `breached → resetting → day1` soft-reset state machine, empty-arena hibernate — plus always-open per-player shop and drop-in at arbitrary sim time.
 
 **Deferred further:** matchmaking **pool** (multi-arena selection — a scaling/SDK-boundary concern; the `net/registry.ts` fill-first selection evolves into it), density curve + interest management (sub-project 3), leaderboard submission + SDK + ads (sub-project 4).
 
 Rationale: the feel gate is the #1 risk and a single point of failure. Reaching it with minimal scaffolding keeps a failed gate cheap, and keeps this spec focused.
+
+### Sequencing within 2a
+
+Big-bang means method C is not kept as a *parallel authority* — it does **not** mean the sim extraction and the authority relocation land in one step. Do them in order, because the intermediate state is a safe bisection point:
+
+1. **Extract `sim/` while single-player keeps working.** Single-player calls `sim/`'s `update(state, dt)` locally; method C is still present and functional. Land it with CI green and the `single` path **byte-for-byte unchanged** (the CLAUDE.md invariant). No transport or DO involved yet.
+2. **Big-bang the authority.** Delete method-C networking + the local `update()` authority, wire the DO + WebSocket, move all players to clients.
+
+If the feel gate then comes back "off," this split separates the two candidate causes — **extraction regression** (caught earlier, at step 1, with SP still runnable) vs **the DO hop itself** (step 2). Collapsing both into one step would make them co-manifest and hard to bisect.
 
 ## Feel-gate contingency ladder
 
