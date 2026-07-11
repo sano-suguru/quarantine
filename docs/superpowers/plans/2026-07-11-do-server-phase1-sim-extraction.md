@@ -30,7 +30,7 @@ Phase 1 works in two stages — **behavioral seam first (files stay in place), p
 - `game/game.ts` — replace `Audio.waveStart()`/`Audio.dawn()` transition calls + the `audioAmbience` battery `Audio.lightDie()` path with events; change `update()` to `update(state, dt)`; remove the inline `audioAmbience(dt)` call from the sim core.
 - `game/main.ts` — call `drainFxEvents(state)` in the `single` frame path after the `update()` accumulator loop.
 - `game/engine/shapes.ts` **(new)** — the `SHAPE` enum, moved out of `renderer.ts`; both `renderer.ts` and `data/enemies.ts` import it here.
-- **`sim/`** (new top-level dir, created in Task 11) — the relocated pure closure + `sim/tsconfig.json`.
+- **`sim/`** (new top-level dir, created in Task 11) — the relocated pure closure + `sim/tsconfig.json`. Includes the sim systems (`player`/`assist`/`ai`/`stalker`/`deployables`/`bullets`/`pickups`/`siege`/`wave`) plus the pure-but-cosmetic `fx`/`camera` (still called from `update()`; DO-exclusion is Phase 2). **Excludes** `stalkerFx.ts`/`stalkerPhantom.ts` (client-only, `draw()`-driven, import `Audio`) — these stay in `game/systems/`.
 
 ---
 
@@ -179,9 +179,11 @@ export function drainFxEvents(state: State): void {
 }
 ```
 
-- [ ] **Step 2: Wire it into the single-player frame**
+- [ ] **Step 2: Wire it into BOTH local-sim frames — single AND host**
 
-In `game/main.ts`, the `single` branch of `frame()` currently runs the accumulator loop. Add the drain **after** the loop (so all sub-step events for the frame are consumed once), guarded to run only while the sim advanced:
+`main.ts` runs `update()` in two places: the `single` branch of `frame()` (rAF), and the **host** worker ticker (`main.ts:419–421`, where the host — itself a player — sims). Both must drain, or the party they belong to loses all cues and (for the host) `fxEvents` leaks unbounded (nothing clears it). Method C is not removed until Phase 2, so the host must keep working.
+
+Single branch — drain after the accumulator loop:
 
 ```ts
     if (Net.mode === "single") {
@@ -189,7 +191,7 @@ In `game/main.ts`, the `single` branch of `frame()` currently runs the accumulat
         rAcc += Math.min(dt, 0.1);
         if (live) localPlayer(st).input = sampleLocalInput(st);
         while (rAcc >= step) {
-          update(step);
+          update(st, step);
           rAcc -= step;
         }
         drainFxEvents(st); // consume the tick's cues → audio/particles
@@ -197,7 +199,19 @@ In `game/main.ts`, the `single` branch of `frame()` currently runs the accumulat
     }
 ```
 
+Host worker ticker — drain right after its `while (hAcc >= step)` loop (`main.ts:~421`), before `broadcast`:
+
+```ts
+    while (hAcc >= step) {
+      update(getState(), step);
+      hAcc -= step;
+    }
+    drainFxEvents(getState()); // host is a player too: play its own cues + clear the buffer
+```
+
 Add the import at the top of `main.ts`: `import { drainFxEvents } from "./fx-drain";`
+
+(The `update(st, step)`/`update(getState(), step)` two-arg form lands in Task 10; if executing before Task 10, keep the current `update(step)` and add the two-arg state in Task 10. The `drainFxEvents` placement is what matters here.)
 
 - [ ] **Step 3: Typecheck**
 
@@ -269,24 +283,35 @@ git commit -m "refactor(engine): move SHAPE enum to shapes.ts (sever data→rend
 
 - [ ] **Step 1: Write the failing test — a kill emits a `kill` event**
 
+`game/systems/bullets.test.ts` does **not** exist yet — create it. There is no `spawnTestZombie`/`spawnTestBullet` helper; use the real `spawnZombie(state, type, hpScale, spdScale, opts)` (`wave.ts:31` — it spawns on a ring around a player and returns `void`, so grab the last zombie and reposition it), and construct a bullet inline matching the `Bullet` interface in `sim/types.ts` (the exact fields `net/client.ts` uses for ghost tracers: `id,x,y,px,py,vx,vy,r,dmg,life,pierce,knockback,color`).
+
 ```ts
-// game/systems/bullets.test.ts — add
-import { pushFx } from "../sim/events"; // (only if needed for setup)
-it("killing a zombie pushes a kill event, not a direct Audio/fx call", () => {
-  const s = newState();
-  // craft a zombie at low hp and a bullet overlapping it (reuse existing test helpers
-  // in this file for spawning a zombie + bullet; set zombie.hp = 1, bullet.dmg = 999)
-  const z = spawnTestZombie(s, 100, 100); // existing helper pattern in this test file
-  z.hp = 1;
-  spawnTestBullet(s, 100, 100, 999);
-  sysBullets(s, 1 / 60);
-  const kills = s.fxEvents.filter((e) => e.t === "kill");
-  expect(kills).toHaveLength(1);
-  expect(kills[0]).toMatchObject({ x: expect.any(Number), y: expect.any(Number), big: false });
+// game/systems/bullets.test.ts (new file)
+import { describe, expect, it } from "vitest";
+import { newState } from "../state";
+import { sysBullets } from "./bullets";
+import { spawnZombie } from "./wave";
+
+describe("bullets fx events", () => {
+  it("killing a zombie pushes a kill event (no direct Audio/fx)", () => {
+    const s = newState();
+    spawnZombie(s, "walker", 1, 1);
+    const z = s.zombies[s.zombies.length - 1];
+    if (!z) throw new Error("spawnZombie did not add a zombie");
+    z.x = 100; z.y = 100; z.hp = 1;
+    s.bullets.push({
+      id: 1, x: 100, y: 100, px: 100, py: 100, vx: 0, vy: 0,
+      r: 4, dmg: 999, life: 1, pierce: 0, knockback: 0, color: [1, 1, 1],
+    });
+    sysBullets(s, 1 / 60);
+    const kills = s.fxEvents.filter((e) => e.t === "kill");
+    expect(kills).toHaveLength(1);
+    expect(kills[0]).toMatchObject({ big: false });
+  });
 });
 ```
 
-(If this test file has no spawn helpers, construct the zombie/bullet inline using `spawnZombie`/the `Bullet` shape already used elsewhere in the file.)
+(If `tsc` flags a missing `Bullet` field, add it from `sim/types.ts` — do not guess.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -333,17 +358,30 @@ git commit -m "refactor(sim): bullets emit fx events instead of calling Audio/fx
 
 - [ ] **Step 1: Write the failing test — a zombie hitting the local player emits a `hurt` event**
 
+`game/systems/ai.test.ts` does **not** exist — create it. Use the real `spawnZombie(state, type, hpScale, spdScale, opts)`, then place the zombie on top of the local player so its melee connects, and step `sysAI` a bounded number of times (melee has a windup/cooldown, so one step may not land). Set whatever attack-ready field the `Zombie` interface in `sim/types.ts` exposes to remove the windup if present (check the type — do not guess a field name).
+
 ```ts
-// game/systems/ai.test.ts — add
-it("a zombie melee on the local player pushes a hurt event", () => {
-  const s = newState();
-  const p = localPlayer(s);
-  const z = spawnZombie(s, p.x, p.y, "walker"); // adjacent → melee connects
-  z.attackCd = 0;
-  sysAI(s, 1 / 60);
-  const hurts = s.fxEvents.filter((e) => e.t === "hurt");
-  expect(hurts.length).toBeGreaterThanOrEqual(1);
-  expect(hurts[0]).toMatchObject({ local: true });
+// game/systems/ai.test.ts (new file)
+import { describe, expect, it } from "vitest";
+import { localPlayer } from "../engine/players";
+import { newState } from "../state";
+import { sysAI } from "./ai";
+import { spawnZombie } from "./wave";
+
+describe("ai fx events", () => {
+  it("a zombie melee on the local player pushes a hurt event", () => {
+    const s = newState();
+    const p = localPlayer(s);
+    spawnZombie(s, "walker", 1, 1);
+    const z = s.zombies[s.zombies.length - 1];
+    if (!z) throw new Error("spawnZombie did not add a zombie");
+    z.x = p.x; z.y = p.y; // overlap → melee in range
+    // step until the melee lands (bounded); asserts the cue is emitted, not the exact tick
+    for (let i = 0; i < 120 && !s.fxEvents.some((e) => e.t === "hurt"); i++) sysAI(s, 1 / 60);
+    const hurts = s.fxEvents.filter((e) => e.t === "hurt");
+    expect(hurts.length).toBeGreaterThanOrEqual(1);
+    expect(hurts.some((e) => e.t === "hurt" && e.local)).toBe(true);
+  });
 });
 ```
 
@@ -436,13 +474,27 @@ Import `fxDust`, `fxMote`, `fxActionBurst` from `./systems/fx`. Add:
       case "dust": fxDust(state, e.x, e.y, e.n); break;
       case "mote": fxMote(state, e.x, e.y, e.color); break;
       case "burst": fxActionBurst(state, e.x, e.y, e.color, e.ring); break;
-      case "audio":
-        // map the cue string to the Audio one-shot
-        (Audio as unknown as Record<string, (a?: unknown) => void>)[e.cue]?.(e.arg);
-        break;
+      case "audio": drainAudioCue(e.cue); break;
 ```
 
-(If the dynamic `Audio[cue]` indexing trips `noImplicitAny`/lint, use an explicit `switch (e.cue)` over the known cues — `heal`/`reload`/`reloadDone`/`switchWeapon`/`dryFire`/`pickup`/`repair` — calling each `Audio.*` directly. Prefer the explicit switch; it is lint-clean and greppable.)
+Map the cue with an **explicit switch** (lint-clean and greppable — no dynamic `Audio[cue]` indexing, which trips `noUncheckedIndexedAccess`/biome). The cue set is finite:
+
+```ts
+function drainAudioCue(cue: string): void {
+  switch (cue) {
+    case "heal": Audio.heal(); break;
+    case "reload": Audio.reload(); break;
+    case "reloadDone": Audio.reloadDone(); break;
+    case "switchWeapon": Audio.switchWeapon(); break;
+    case "dryFire": Audio.dryFire(); break;
+    case "pickup": Audio.pickup(); break;
+    case "repair": Audio.repair(); break;
+    case "waveStart": Audio.waveStart(); break; // added in Task 9
+    case "dawn": Audio.dawn(); break;            // added in Task 9
+    case "lightDie": Audio.lightDie(); break;    // added in Task 9
+  }
+}
+```
 
 - [ ] **Step 5: Run test + smoke**
 
@@ -465,7 +517,8 @@ git commit -m "refactor(sim): player emits fx events (audio/dust/mote/burst/impa
 
 **Interfaces:**
 - Call sites (verified): `pickups.ts:59` `fxPickup` + `:60` `Audio.pickup()`; `assist.ts:39` `fxActionBurst`; `deployables.ts:62` `fxKill` + `:63` `fxImpact`; `stalker.ts:99` `fxHurt` + `:103` `Audio.hurt()`.
-- Extend `FxEvent` with `{ t: "pickup"; x; y; glow: [number,number,number] }` for the pickup glow (or reuse `burst`). Deployable destruction uses `kill`; RTB uses `impact`. Stalker uses the existing `hurt`.
+- Extend `FxEvent` with `{ t: "pickup"; x; y; glow: [number,number,number] }` for the pickup glow, and `{ t: "deployDestroy"; x; y; color: [number,number,number]; rtb: boolean }` for turret/station loss. Stalker uses the existing `hurt`.
+- **Do NOT route deployable destruction through the `kill` event.** `deployables.ts:62` calls `fxKill(state, d.x, d.y, def.color, def.color, true, false)` — the burst color is `def.color` (turret orange, etc.) and `flesh=false` (a machine, no flesh fragments). Reconstructing a `kill` event from an enemy `type` index would fall back to grey + `flesh=true` — a visible feel regression. The dedicated `deployDestroy` event carries `color` and implies `flesh=false`.
 
 - [ ] **Step 1: Write the failing test — collecting a pickup pushes a pickup event**
 
@@ -486,23 +539,27 @@ it("auto-collecting a pickup pushes a pickup event", () => {
 
 - `pickups.ts`: `fxPickup(state, pk.x, pk.y, def.glow)` + `Audio.pickup()` → `pushFx(state, { t: "pickup", x: pk.x, y: pk.y, glow: def.glow })` (the drain plays both the glow fx and `Audio.pickup()`).
 - `assist.ts:39` `fxActionBurst(...)` → `{ t: "burst", ... }` (same args).
-- `deployables.ts:62` `fxKill(...)` → `{ t: "kill", ... }` with `type: ""`/`big: true` matching the current args (machine, no flesh sprite — carry `type: ""` and let the drain skip the sprite when empty); `:63` `fxImpact(...)` → `{ t: "impact", ... }`.
+- `deployables.ts:62` `fxKill(state, d.x, d.y, def.color, def.color, true, false)` (destroyed) → `pushFx(state, { t: "deployDestroy", x: d.x, y: d.y, color: def.color, rtb: false })`; `:63` `fxImpact(...)` (RTB power-down) → `pushFx(state, { t: "deployDestroy", x: d.x, y: d.y, color: def.color, rtb: true })`.
 - `stalker.ts:99`–`:103` `fxHurt(...)` + `Audio.hurt()` → `pushFx(state, { t: "hurt", x: target.x, y: target.y, local: target.id === state.localId })`.
 
 Remove unused imports; add `pushFx` to each file.
 
-- [ ] **Step 4: Add the `pickup` mapping to `drainFxEvents`**
+- [ ] **Step 4: Add the `pickup` + `deployDestroy` mappings to `drainFxEvents`**
 
-Import `fxPickup` from `./systems/fx`:
+Import `fxPickup` from `./systems/fx` (`fxKill`/`fxImpact` are already imported):
 
 ```ts
       case "pickup":
         fxPickup(state, e.x, e.y, e.glow);
         Audio.pickup();
         break;
+      case "deployDestroy":
+        if (e.rtb) fxImpact(state, e.x, e.y, 0, e.color); // soft power-down on RTB
+        else fxKill(state, e.x, e.y, e.color, e.color, true, false); // machine destruction: flesh=false, def.color
+        break;
 ```
 
-Confirm the `kill` mapping handles `type: ""` (the `ENEMY_TYPES[""]` lookup returns undefined → `GREY`/no sprite, which matches the machine-destruction look).
+This reproduces `deployables.ts:62`/`:63` exactly (same `def.color`, `flesh=false`), so the turret-loss burst is unchanged.
 
 - [ ] **Step 5: Run test + smoke** — `bun run test -- pickups.test.ts` → PASS. Grep each converted system for `Audio.`/`fx[A-Z]` → empty. `bun run dev`: pickups, revive burst, turret destruction, stalker grab all still fire.
 
@@ -568,9 +625,16 @@ Import `fxMuzzle` from `./systems/fx`:
 
 (Match the current behavior: `fxMuzzle` fires for guns; melee has no muzzle spark. If melee currently draws a muzzle spark too, keep it — mirror the pre-change branch exactly.)
 
-- [ ] **Step 5: Verify client prediction still hears its own shot**
+- [ ] **Step 5: Keep the method-C client's own-shot feedback (drain the predicted muzzle)**
 
-`client.ts` calls `applyFireFeel` then reads `lp.muzzle`/recoil for prediction. It no longer plays audio via `applyFireFeel`. Add a drain of the local player's fire cue in the client path — but that is Phase 2 (client rewire). **For Phase 1, the client path is unchanged and still networked via method C; method-C clients already re-derive shot audio in `client.ts` `effects()`/prediction.** Confirm no Phase-1 regression: single-player fire (which now routes muzzle→drain) sounds correct.
+`net/client.ts:~570` calls `applyFireFeel(st, lp, wd)` in the fire-prediction path. That call is the **only** place a method-C client hears its own shot/melee — `effects()` re-derives kill/hit/hurt/heal but has **no** `Audio.shot`/`Audio.melee`/muzzle. After Task 8, `applyFireFeel` pushes a `muzzle` event instead of playing audio, so the client must drain it or its own gun goes silent + flashless. Since the client never runs `update()`/systems, `state.fxEvents` holds only what `applyFireFeel` just pushed, so draining right after is clean:
+
+```ts
+    // net/client.ts, immediately after applyFireFeel(st, lp, wd):
+    drainFxEvents(st); // play THIS client's predicted muzzle (shot/melee audio + muzzle sparks)
+```
+
+Add `import { drainFxEvents } from "../fx-drain";` to `client.ts`. This is the one piece of "client rewire" pulled into Phase 1 (the rest is Phase 2) — without it, method C (not removed until Phase 2) ships broken. Verify: in a method-C co-op session (`bun run dev:coop` or manual SDP), a client's own firing sounds + flashes; remote players' shots still come via `effects()` unchanged.
 
 - [ ] **Step 6: Run test + smoke** — `bun run test -- feel.test.ts` → PASS. `grep -n "Audio\.\|fxMuzzle" game/systems/feel.ts` → empty. `bun run dev`: firing/melee sounds + muzzle flash intact.
 
@@ -595,22 +659,25 @@ git commit -m "refactor(sim): feel.ts splits — pure recoil/muzzle math + muzzl
 
 - [ ] **Step 1: Write the failing test — the night transition pushes a nightfall cue**
 
+There is no `forceSiegeToNightEdge` helper. Drive the transition with real state: `sysSiege` (`siege.ts:74`) decrements `state.phaseT` while `phase === "day"` and returns `"night"` (calling `startNight`) when `phaseT <= 0`. So set `phase = "day"`, `phaseT` to a tiny value, mark the run running, and step `update` once. Add this to the existing `game/game.test.ts` (which currently imports `applyBuy`; add `update`).
+
 ```ts
-// game/game.test.ts — focused
-it("the dawn→night transition pushes waveStart + NIGHT announce events", () => {
+// game/game.test.ts — add
+import { update } from "./game";
+it("the day→night transition pushes waveStart + NIGHT announce events", () => {
   const s = newState();
-  // drive sysSiege to the night edge (reuse the siege test setup: set phaseT to the
-  // day length so sysSiege returns "night" this step)
-  forceSiegeToNightEdge(s); // helper mirroring waves/siege tests
+  s.running = true;      // update() early-returns unless running
+  s.phase = "day";
+  s.phaseT = 0.001;      // one step tips phaseT <= 0 → sysSiege returns "night"
   update(s, 1 / 60);
   expect(s.fxEvents.some((e) => e.t === "audio" && e.cue === "waveStart")).toBe(true);
   expect(s.fxEvents.some((e) => e.t === "announce" && e.label === "NIGHT")).toBe(true);
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails** — FAIL (no events; also `update` signature changes in Task 10, so this test uses `update(s, dt)` — if Task 10 not yet done, temporarily call `update(dt)` and adjust in Task 10).
+- [ ] **Step 2: Run to verify it fails** — `bun run test -- game.test.ts` → FAIL (no events yet).
 
-> Note: Tasks 9 and 10 touch the same function. If executing strictly in order, write this test against the current `update(dt)` signature and update the call in Task 10. Alternatively, do Task 10 first. The reviewer may merge 9+10 into one task if preferred.
+> Note: this test uses the `update(state, dt)` signature from Task 10. Do **Task 10 before Task 9**, or write this call as `update(1 / 60)` against the current signature and flip it in Task 10. (Recommended: reorder — do Task 10 first; the reviewer may also merge 9+10.)
 
 - [ ] **Step 3: Replace the cue calls with events**
 
@@ -621,11 +688,18 @@ it("the dawn→night transition pushes waveStart + NIGHT announce events", () =>
 
 - [ ] **Step 4: Lift `audioAmbience` out of the sim core**
 
-Remove the `audioAmbience(dt)` call from `update()` (`game.ts:191`). `audioAmbience` is a client-perception routine (dread/heartbeat/groan from `localPlayer`) — it belongs with `clientAmbience`. Confirm the single-player path drives ambience: `main.ts` single branch must call the client ambience routine each frame (today single-player gets ambience via `update`→`audioAmbience`; after the lift, call `clientAmbience(dt)` — or the shared ambience function — in the single branch, same as the client branch does). Wire it right after `drainFxEvents(st)` in the single branch.
+Remove the `audioAmbience(dt)` call from `update()` (`game.ts:191`). It is client-perception (dread/heartbeat/groan). Then wire it into the local-sim frame paths right after `drainFxEvents`:
+- **Single + host** call **`audioAmbience(dt)`** (export it from `game.ts`) — NOT `clientAmbience`. Reason: `audioAmbience` reads `state.surrounded`/`state.lurking`, which `sysAI` sets authoritatively in these paths; `clientAmbience` (`game.ts:421`) *recomputes* surrounded/lurking (for a client that never runs `sysAI`), and its heuristic is not guaranteed identical → calling it in single-player would shift the dread value (feel change). So: single/host → `audioAmbience`; the method-C **client** branch keeps `clientAmbience` (unchanged).
 
-- [ ] **Step 5: Add the `announce`/`waveStart`/`dawn`/`lightDie` mappings to `drainFxEvents`**
+- [ ] **Step 5: Move `announce` to `ui.ts`; add the `announce` case to the drain**
 
-Extend the `audio` switch with `waveStart`/`dawn`/`lightDie` → `Audio.waveStart()`/`Audio.dawn()`/`Audio.lightDie()`, and add the `announce` case → `announce(e.label, e.day)` (import `announce` from `game.ts` or its UI module).
+`announce` is a private DOM function in `game.ts:1303`. Move it to `game/ui.ts` (which already holds the thin DOM helpers `el`/`show`/`hide`) and `export` it; re-point `game.ts`'s internal callers to the `ui.ts` import. Then `drainFxEvents` can `import { announce } from "./ui"` (lightweight) instead of dragging all of `game.ts`. Add the `announce` case to `drainFxEvents`:
+
+```ts
+      case "announce": announce(e.label, e.day); break;
+```
+
+The `waveStart`/`dawn`/`lightDie` audio cues are already handled by `drainAudioCue` (Task 6). Emit `lightDie` from `sysPlayer` at the battery-zero edge (move the `prevBattery>0 && batf<=0` edge-detection out of `audioAmbience` into `sysPlayer`, pushing `{ t: "audio", cue: "lightDie" }`).
 
 - [ ] **Step 6: Run test + smoke**
 
@@ -699,13 +773,20 @@ git commit -m "refactor(sim): update(state, dt) — explicit state, no singleton
 }
 ```
 
-- [ ] **Step 2: Move the files**
+- [ ] **Step 2: Move the files — SELECTIVELY (do not move client-only systems)**
 
-`git mv` the pure closure into `sim/` preserving subdir structure (e.g. `git mv game/systems sim/systems`, `game/data sim/data`, `game/state.ts sim/state.ts`, `game/types.ts sim/types.ts`, `game/config.ts sim/config.ts`, `game/net/snapshot.ts sim/snapshot.ts`, `game/sim/events.ts sim/events.ts`, and the pure `game/engine/{math,geometry,spatialHash,players,steering,navfield,lights,fragment}.ts` → `sim/engine/`). Leave `game/engine/{audio,renderer,shapes,spriteAssets,...}` and `game/{fx-drain,game,main,input,ui}.ts` in `game/`.
+`git mv` the pure closure into `sim/`, but move `systems/` **file-by-file**, not the whole dir — two systems are client-only and import `Audio`, so moving them would break the no-DOM gate in Step 4:
+
+- **Move to `sim/systems/`:** `player`, `assist`, `ai`, `stalker`, `deployables`, `bullets`, `pickups`, `siege`, `wave`, `fx`, `camera` (+ their `*.test.ts`). `fx`/`camera` are cosmetic/per-client but are still called from `update()` and are pure, so they move (their DO-exclusion is Phase 2 — see the spec §2 correction).
+- **Keep in `game/systems/`:** `stalkerFx.ts` and `stalkerPhantom.ts` — driven from `draw()` (not `update()`) and they `import { Audio }`. They are client-only; leaving them in `game/` is correct.
+- **Also move:** `game/state.ts`, `game/types.ts`, `game/config.ts` → `sim/`; `game/net/snapshot.ts` → `sim/snapshot.ts`; `game/sim/events.ts` → `sim/events.ts`; and the pure engine helpers `game/engine/{math,geometry,spatialHash,players,steering,navfield,lights,fragment}.ts` → `sim/engine/`.
+- **Keep in `game/`:** `engine/{audio,renderer,shapes,spriteAssets,spritePack,audioAssets}`, `systems/{stalkerFx,stalkerPhantom}`, and `{fx-drain,game,main,input,ui}.ts`.
+
+Verify after moving: `grep -rn "engine/audio\|engine/renderer" sim/` returns nothing (if `stalkerFx`/`stalkerPhantom` slipped in, this catches it).
 
 - [ ] **Step 3: Rewire imports**
 
-Update import specifiers across `game/` and `sim/` to the new paths. Use the compiler as the guide: run `bun run typecheck` and fix each unresolved path. `game/` imports the sim via relative paths (`../sim/...`) or a `@sim/*` alias if you add one to both `tsconfig.json` and `vite.config.ts` (relative is fewer moving parts — prefer it unless the depth is unwieldy).
+Update import specifiers across `game/` and `sim/` to the new paths. Use the compiler as the guide: run `bun run typecheck` and fix each unresolved path. **Explicitly include `game/net/`** — `net/host.ts:14` and `net/client.ts:17` import `encodeSnapshot`/`decode` from `./snapshot`, and `net/snapshot.test.ts` too; after the move these become `../../sim/snapshot` (net/ stays in `game/net/`, it does not move to `sim/`). `game/` imports the sim via relative paths (`../sim/...`) or a `@sim/*` alias if you add one to both `tsconfig.json` and `vite.config.ts` (relative is fewer moving parts — prefer it unless the depth is unwieldy).
 
 - [ ] **Step 4: Add `sim` to the root project + typecheck the boundary**
 
@@ -794,7 +875,9 @@ git commit -m "feat(sim): snapshot carries fxEvents (event-capable wire format +
 
 **2. Placeholder scan:** No "TBD"/"handle appropriately". Test bodies are concrete; where a test needs an existing spawn helper, the step names the fallback (construct inline). Task 9 flags its ordering overlap with Task 10 explicitly rather than hand-waving.
 
-**3. Type consistency:** `FxEvent` union grows monotonically (Tasks 1, 6, 7, 9) — variants added, never renamed. `pushFx`/`clearFx`/`drainFxEvents` names are stable across all tasks. `update(state, dt)` signature (Task 10) is reflected in Task 12's test calls. `SHAPE` keeps identical values (Task 3).
+**3. Type consistency:** `FxEvent` union grows monotonically (Tasks 1, 6, 7, 9) — variants added (`kill`/`impact`/`hit`/`hurt`/`muzzle`/`audio`/`dust`/`mote`/`burst`/`pickup`/`deployDestroy`/`announce`), never renamed. `pushFx`/`clearFx`/`drainFxEvents`/`drainAudioCue` names are stable across all tasks. `update(state, dt)` signature (Task 10) is reflected in Tasks 2, 9, 12. `SHAPE` keeps identical values (Task 3).
+
+**4. Rubber-duck fixes incorporated (2nd review, code-grounded):** drain wired into **both** the single and host `update()` loops (Task 2) so method-C host keeps its cues and `fxEvents` never leaks; the method-C **client** drains its own predicted `muzzle` after `applyFireFeel` (Task 8) so own-fire feedback survives; all test setups use **real** APIs (`spawnZombie(state,type,hpScale,spdScale,opts)` + manual reposition; `phase`/`phaseT` for the siege edge; no invented helpers) and name new test files (Tasks 4, 5, 9); the `sim/` move is **selective** — `stalkerFx`/`stalkerPhantom` stay in `game/` (Task 11); deployable loss uses a dedicated `deployDestroy` event to preserve `def.color`/`flesh=false` (Task 7); `announce` moves to `ui.ts` and single/host use `audioAmbience` (authoritative surrounded/lurking), not `clientAmbience` (Task 9); `net/` snapshot imports are explicitly rewired (Task 11). The spec §2 wording on `sysFx`/`sysCamera` was corrected in tandem.
 
 ## Execution Handoff
 
