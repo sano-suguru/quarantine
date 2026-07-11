@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { CONFIG } from "../../sim/config";
 import { makePlayer } from "../../sim/engine/players";
+import { emptyInput } from "../../sim/playerInput";
 import type { State } from "../../sim/types";
 import { getState } from "../game";
 import { Host, pickSlot } from "./host";
 import type { NetMsg } from "./net";
-import { emptyInput } from "./playerInput";
 import type { PeerLink } from "./transport";
 
 /**

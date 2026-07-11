@@ -1,5 +1,5 @@
-import type { PlayerInput } from "../game/net/playerInput";
 import type { FlowField } from "./engine/navfield";
+import type { PlayerInput } from "./playerInput";
 
 export interface GunPart {
   /** forward offset along aim, world units (+ = toward muzzle) */

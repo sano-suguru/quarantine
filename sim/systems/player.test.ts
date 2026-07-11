@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { emptyInput } from "../../game/net/playerInput";
 import { CONFIG } from "../config";
 import { WEAPONS } from "../data/weapons";
 import { addPlayer } from "../engine/players";
+import { emptyInput } from "../playerInput";
 import { newState } from "../state";
 import type { State } from "../types";
 import { effectiveSearchTime, integrateMovement, sysPlayer } from "./player";

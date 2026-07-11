@@ -5,6 +5,7 @@ import { ENEMY_TYPES } from "../../sim/data/enemies";
 import { segMid } from "../../sim/engine/geometry";
 import { approach, rand } from "../../sim/engine/math";
 import { localPlayer } from "../../sim/engine/players";
+import type { PlayerInput } from "../../sim/playerInput";
 import { applySnapshot, decode, lerpSnapshots, type Snapshot } from "../../sim/snapshot";
 import { applyFireFeel } from "../../sim/systems/feel";
 import {
@@ -22,7 +23,6 @@ import { drainFxEvents } from "../fx-drain";
 import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
 import { advanceGhosts } from "./ghost";
 import { type NetMsg, PROTOCOL_VERSION } from "./net";
-import type { PlayerInput } from "./playerInput";
 import type { PeerLink } from "./transport";
 
 type RGB = [number, number, number];

@@ -1,7 +1,7 @@
+import type { PlayerInput } from "../../sim/playerInput";
 import type { Client } from "./client";
 import type { CoopEvent, HostEvent } from "./events";
 import type { Host } from "./host";
-import type { PlayerInput } from "./playerInput";
 
 /** Which role this client is playing this session. */
 export type NetMode = "single" | "host" | "client";

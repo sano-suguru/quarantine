@@ -1,4 +1,3 @@
-import type { PlayerInput } from "../../game/net/playerInput";
 import { CONFIG } from "../config";
 import { effWeapon, meleeArc, meleeReach } from "../data/arsenal";
 import { resolveDeployableCollisions } from "../data/deployables";
@@ -6,6 +5,7 @@ import { WEAPON_ORDER, WEAPONS } from "../data/weapons";
 import { circlePushFromSegment, segMid } from "../engine/geometry";
 import { approach, clamp, len, rand } from "../engine/math";
 import { pushFx } from "../events";
+import type { PlayerInput } from "../playerInput";
 import { allocId } from "../state";
 import type { Cache, Player, Segment, State, WeaponDef } from "../types";
 
