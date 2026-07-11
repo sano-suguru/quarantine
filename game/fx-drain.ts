@@ -12,6 +12,7 @@ import {
   fxPickup,
 } from "./systems/fx";
 import type { State } from "./types";
+import { announce } from "./ui";
 
 const GREY: [number, number, number] = [0.5, 0.5, 0.5];
 
@@ -99,6 +100,9 @@ export function drainFxEvents(state: State): void {
         if (e.rtb)
           fxImpact(state, e.x, e.y, 0, e.color); // soft power-down on RTB
         else fxKill(state, e.x, e.y, e.color, e.color, true, false); // machine destruction: flesh=false, def.color
+        break;
+      case "announce":
+        announce(e.label, e.day);
         break;
       case "audio":
         drainAudioCue(e.cue);

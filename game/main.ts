@@ -6,6 +6,7 @@ import { localPlayer } from "./engine/players";
 import { Renderer } from "./engine/renderer";
 import { drainFxEvents } from "./fx-drain";
 import {
+  audioAmbience,
   audioLoops,
   clientAmbience,
   closeArsenal,
@@ -422,6 +423,7 @@ async function main(): Promise<void> {
       hAcc -= step;
     }
     drainFxEvents(getState()); // host is a player too: play its own cues + clear the buffer
+    if (st.running) audioAmbience(dt); // dread / heartbeat / groan from authoritative state
     hNet += dt;
     if (hNet >= sendStep) {
       hNet = 0;
@@ -453,6 +455,7 @@ async function main(): Promise<void> {
           rAcc -= step;
         }
         drainFxEvents(st); // consume the tick's cues → audio/particles
+        if (st.running) audioAmbience(dt); // dread / heartbeat / groan from authoritative state
       }
     } else if (Net.mode === "client") {
       // no authoritative sim — predict our player, interpolate the world, ship input.

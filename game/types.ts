@@ -497,6 +497,7 @@ export type FxEvent =
       melee: boolean;
     }
   | { t: "audio"; cue: string; arg?: number | string }
+  | { t: "announce"; label: string; day: number }
   | { t: "dust"; x: number; y: number; n: number }
   | { t: "mote"; x: number; y: number; color: [number, number, number] }
   | { t: "burst"; x: number; y: number; color: [number, number, number]; ring: boolean }

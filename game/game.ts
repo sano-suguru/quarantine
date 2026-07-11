@@ -27,6 +27,7 @@ import { Input } from "./input";
 import { addSalvage, buyUnlock, loadMeta } from "./meta";
 import { Net } from "./net/net";
 import { DEFAULT_LOADOUT, getSettings, MAX_LOADOUT, setLoadout } from "./settings";
+import { pushFx } from "./sim/events";
 import { newState } from "./state";
 import { actionMotion, deriveActionChannel } from "./systems/actionFeel";
 import { sysAI } from "./systems/ai";
@@ -136,8 +137,6 @@ let beatStrength = 0;
 // blood churn/breathe by passing a constant clock (read once; guarded for non-DOM test env).
 const reducedMotion =
   typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-// local flashlight die edge (battery → 0): play a one-shot "going dark" cue
-let prevBattery = 1;
 // HP→world grade (desaturation + dim): eased current values. sat=1 dim=1 = full color.
 // Gated on state.running so dead-player 0 HP doesn't drain debrief/title screens.
 // Snapped to 1 by endRun/toTitle; held (not advanced) while not running.
@@ -151,7 +150,6 @@ function resetAtmosphere(): void {
   darts = [];
   lastBeatT = -10;
   beatStrength = 0;
-  prevBattery = 1;
   gradeSatCur = 1;
   gradeDimCur = 1;
   // Reset the render-side draw clock so the first draw() of a fresh run (where state.time resets
@@ -188,20 +186,19 @@ export function update(state: State, dt: number): void {
   sysFx(state, sdt);
   const ev = sysSiege(state, sdt);
   sysCamera(state, sdt);
-  audioAmbience(dt);
   if (ev === "night") {
     spawnStalker(state);
-    announce("NIGHT", state.day);
-    Audio.waveStart();
+    pushFx(state, { t: "announce", label: "NIGHT", day: state.day });
+    pushFx(state, { t: "audio", cue: "waveStart" });
   } else if (ev === "dawn") {
     // Set to retreat so it leaves gracefully; despawns when off-arena via sysStalker
     if (state.stalker) state.stalker.state = "retreat";
-    Audio.dawn();
+    pushFx(state, { t: "audio", cue: "dawn" });
     openShop();
   }
 }
 
-function audioAmbience(dt: number): void {
+export function audioAmbience(dt: number): void {
   const p = localPlayer(state);
   const hpf = p.hp / p.maxHp;
   const wd = effWeapon(p, p.weapon);
@@ -235,12 +232,6 @@ function audioAmbience(dt: number): void {
   } else {
     hbT = 0.3;
   }
-
-  // local flashlight dying (battery → 0 while lit): a one-shot "going dark" cue. Edge-detected
-  // from the local player's synced battery so it fires once on host/client/single alike.
-  const batf = p.battery / CONFIG.flashlight.batteryMax;
-  if (prevBattery > 0 && batf <= 0) Audio.lightDie();
-  prevBattery = batf;
 
   // per-zombie groans / cone-entry screeches, re-derived locally from the world
   zombieVoices();
@@ -1300,14 +1291,6 @@ export function updateHUD(): void {
 }
 
 /* --------------------------- FLOW / UI -------------------------- */
-function announce(label: string, n: number): void {
-  const b = el("banner");
-  el("banner-label").textContent = label;
-  el("banner-n").textContent = String(n);
-  b.classList.remove("show");
-  void b.offsetWidth; // reflow to restart animation
-  b.classList.add("show");
-}
 
 /**
  * Update per-slot ammo/reserve text for all hotbar slots.
@@ -1390,7 +1373,7 @@ export function startGame(): void {
   show("hud");
   buildWeaponSlots();
   startDay(state);
-  announce("DAY", state.day);
+  pushFx(state, { t: "announce", label: "DAY", day: state.day });
 }
 
 /**
@@ -1627,7 +1610,7 @@ export function shopDeploy(): void {
   state.paused = false;
   state.day++;
   startDay(state);
-  announce("DAY", state.day);
+  pushFx(state, { t: "announce", label: "DAY", day: state.day });
 }
 
 /**
