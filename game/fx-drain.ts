@@ -1,7 +1,7 @@
 import { ENEMY_TYPES } from "./data/enemies";
 import { Audio } from "./engine/audio";
 import { clearFx } from "./sim/events";
-import { fxImpact, fxKill } from "./systems/fx";
+import { fxHurt, fxImpact, fxKill } from "./systems/fx";
 import type { State } from "./types";
 
 const GREY: [number, number, number] = [0.5, 0.5, 0.5];
@@ -34,7 +34,11 @@ export function drainFxEvents(state: State): void {
       case "hit":
         Audio.hit();
         break;
-      // hurt / muzzle / audio variants are added by their system-conversion tasks
+      case "hurt":
+        fxHurt(state, e.x, e.y);
+        if (e.local) Audio.hurt();
+        break;
+      // muzzle / audio variants are added by their system-conversion tasks
     }
   }
   clearFx(state);

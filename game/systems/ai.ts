@@ -1,14 +1,13 @@
 import { CONFIG } from "../config";
 import { resolveDeployableCollisions } from "../data/deployables";
 import { phaseMods } from "../data/phaseMods";
-import { Audio } from "../engine/audio";
 import { circlePush, circlePushFromSegment } from "../engine/geometry";
 import { len, rand } from "../engine/math";
 import { buildFlowField, sampleFlow } from "../engine/navfield";
 import { localPlayer, nearestPlayer } from "../engine/players";
 import { avoidHeading } from "../engine/steering";
+import { pushFx } from "../sim/events";
 import type { NavMode, Player, State, Zombie } from "../types";
-import { fxHurt, fxImpact } from "./fx";
 import { hasLineOfSight, heard } from "./perception";
 
 /** Desired heading for a zombie this frame — extracted from pass-1 verbatim (nav: "none").
@@ -339,7 +338,14 @@ export function sysAI(state: State, dt: number): void {
         bar.hp -= z.dmg;
         bar.flash = 0.12;
         z.attackCd = 1 / z.attackRate;
-        fxImpact(state, z.x, z.y, Math.atan2(-push.dy, -push.dx), WOOD);
+        pushFx(state, {
+          t: "impact",
+          x: z.x,
+          y: z.y,
+          ang: Math.atan2(-push.dy, -push.dx),
+          color: WOOD,
+          intensity: 0,
+        });
         if (bar.hp <= 0) state.cam.shake = Math.min(state.cam.shake + 6, 20);
       }
     }
@@ -350,13 +356,12 @@ export function sysAI(state: State, dt: number): void {
       if (target.iframe <= 0) {
         target.hitFlash = 0.28;
         target.iframe = CONFIG.feel.hurtIframe;
-        fxHurt(state, target.x, target.y);
-        // screen flash, camera shake and the pain grunt are the LOCAL player's own feedback
+        pushFx(state, { t: "hurt", x: target.x, y: target.y, local: target.id === state.localId });
+        // screen flash and camera shake are the LOCAL player's own feedback
         if (target.id === state.localId) {
           state.flashT = Math.min(1, state.flashT + 0.7);
           state.flashColor = [1, 0.18, 0.18];
           state.cam.shake = Math.min(state.cam.shake + 8, 20);
-          Audio.hurt();
         }
       }
       if (target.hp <= 0) target.hp = 0;
