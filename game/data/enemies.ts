@@ -1,4 +1,4 @@
-import { SHAPE } from "../engine/renderer";
+import { SHAPE } from "../engine/shapes";
 import type { EnemyType } from "../types";
 
 export const ENEMY_TYPES: Record<string, EnemyType> = {

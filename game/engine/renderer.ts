@@ -6,13 +6,13 @@ import gridFrag from "./shaders/grid.frag?raw";
 import gridVert from "./shaders/grid.vert?raw";
 import instanceFrag from "./shaders/instance.frag?raw";
 import instanceVert from "./shaders/instance.vert?raw";
+import { SHAPE } from "./shapes";
 import { SPRITE_ASSETS, spriteIndex, unreadyRequiredSprites } from "./spriteAssets";
 import { packSprites, uvRect } from "./spritePack";
 
 const FLOATS = 11;
 
-/** shape flags — must match instance.frag */
-export const SHAPE = { rect: 0, circle: 1, glow: 2, ring: 3, tri: 4, hex: 5, slash: 6, sprite: 16 };
+export { SHAPE } from "./shapes";
 
 let gl: WebGL2RenderingContext;
 let canvas: HTMLCanvasElement;
