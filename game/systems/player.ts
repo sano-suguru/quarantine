@@ -56,10 +56,6 @@ export function effectiveSearchTime(phase: State["phase"]): number {
     : CONFIG.cache.searchTime;
 }
 
-// Per-player battery level from the previous tick (keyed by player id) — used to detect the
-// battery→0 edge so sysPlayer can push a one-shot "going dark" audio cue.
-const prevBatteryById = new Map<number, number>();
-
 export function sysPlayer(state: State, dt: number): void {
   // caches a player is actively searching this tick (co-op: more than one player can
   // search, and a cache only loses progress when NOBODY is on it — see reset below)
@@ -81,13 +77,9 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   if (p.noise < 0.5) p.noise = 0;
 
   // drain the flashlight (always on)
-  const prevBattery = prevBatteryById.get(p.id) ?? 1;
   if (p.battery > 0) {
     p.battery = Math.max(0, p.battery - CONFIG.flashlight.drainPerSec * dt);
   }
-  const batf = p.battery / CONFIG.flashlight.batteryMax;
-  if (prevBattery > 0 && batf <= 0) pushFx(state, { t: "audio", cue: "lightDie" });
-  prevBatteryById.set(p.id, batf);
 
   // H = use a carried medkit: a deliberate, rooted heal-over-time. Edge, consumed below.
   if (inp.heal && p.medkits > 0 && p.healT <= 0 && p.hp < p.maxHp) {

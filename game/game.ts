@@ -142,6 +142,10 @@ const reducedMotion =
 // Snapped to 1 by endRun/toTitle; held (not advanced) while not running.
 let gradeSatCur = 1;
 let gradeDimCur = 1;
+// flashlight-death edge: tracks LOCAL player's battery fraction tick-to-tick so audioAmbience can
+// fire lightDie exactly once when it crosses zero. Reset to 1 each run so a dead battery from a
+// prior run can't suppress the cue at the start of the next.
+let prevBattery = 1;
 
 /** Reset the per-run atmosphere bookkeeping so stale zombie ids / darts don't carry across runs. */
 function resetAtmosphere(): void {
@@ -152,6 +156,7 @@ function resetAtmosphere(): void {
   beatStrength = 0;
   gradeSatCur = 1;
   gradeDimCur = 1;
+  prevBattery = 1;
   // Reset the render-side draw clock so the first draw() of a fresh run (where state.time resets
   // to 0) doesn't produce a negative/large ddt that flings darts or garbles ease steps.
   lastDrawT = 0;
@@ -219,6 +224,14 @@ export function audioAmbience(dt: number): void {
   Audio.setDread(dread);
   // tension = the rising dissonance of UNSEEN threats crowding the dark behind/around you
   Audio.setTension(Math.min(1, state.lurking / CONFIG.horror.surroundCount));
+
+  // flashlight-death: one-shot cue when the LOCAL player's battery crosses zero. Runs on every
+  // machine via audioAmbience (single/host/client all call this), so co-op clients hear their
+  // own cue correctly from their synced battery — NOT from a sysPlayer event (which clients
+  // never run). prevBattery is reset to 1 each run so a dead prior-run battery can't suppress it.
+  const batf = p.battery / CONFIG.flashlight.batteryMax;
+  if (prevBattery > 0 && batf <= 0) Audio.lightDie();
+  prevBattery = batf;
 
   if (hpf < CONFIG.horror.lowHp) {
     hbT -= dt;

@@ -45,9 +45,6 @@ function drainAudioCue(cue: string): void {
     case "dawn":
       Audio.dawn();
       break; // added in Task 9
-    case "lightDie":
-      Audio.lightDie();
-      break; // added in Task 9
   }
 }
 
