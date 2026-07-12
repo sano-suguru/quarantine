@@ -99,6 +99,12 @@ export class Arena {
       }
     }
 
+    // Stop the loop when the last held body expires (empty-arena stop).
+    if (this.peers.size === 0) {
+      this.stop();
+      return;
+    }
+
     if (this.tick % BROADCAST_EVERY === 0) this.broadcast();
     // effective tick-rate log every ~5 s (spec: the 30 Hz-fallback trigger + gate instrument)
     if (now - this.windowStartMs >= 5000) {
