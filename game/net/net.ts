@@ -1,7 +1,7 @@
+import type { PlayerInput } from "../../sim/playerInput";
 import type { Client } from "./client";
 import type { CoopEvent, HostEvent } from "./events";
 import type { Host } from "./host";
-import type { PlayerInput } from "./playerInput";
 
 /** Which role this client is playing this session. */
 export type NetMode = "single" | "host" | "client";
@@ -16,7 +16,7 @@ export type NetMode = "single" | "host" | "client";
  * unions, or the Hello fields. The golden byte test in `snapshot.test.ts` fails on any encode change
  * to force a conscious bump (don't just silence it — bump here too).
  */
-export const PROTOCOL_VERSION = 17;
+export const PROTOCOL_VERSION = 18;
 
 /** Messages on the reliable channel (JSON). Snapshots go on the binary channel. */
 export type NetMsg =

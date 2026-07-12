@@ -1,11 +1,10 @@
 import { CONFIG } from "../config";
-import { ENEMY_TYPES } from "../data/enemies";
-import { Audio } from "../engine/audio";
 import { segmentHitsSegment } from "../engine/geometry";
 import { len } from "../engine/math";
+import { pushFx } from "../events";
 import type { State } from "../types";
 import { awardBounty } from "./economy";
-import { fxImpact, fxKill, goreIntensity } from "./fx";
+import { goreIntensity } from "./fx";
 import { dropFromKill } from "./pickups";
 
 const STONE: [number, number, number] = [0.5, 0.52, 0.5];
@@ -25,7 +24,14 @@ export function sysBullets(state: State, dt: number): void {
     if (!dead) {
       for (const w of state.walls) {
         if (segmentHitsSegment(b.px, b.py, b.x, b.y, w.x1, w.y1, w.x2, w.y2)) {
-          fxImpact(state, b.x, b.y, Math.atan2(b.vy, b.vx), STONE);
+          pushFx(state, {
+            t: "impact",
+            x: b.x,
+            y: b.y,
+            ang: Math.atan2(b.vy, b.vx),
+            color: STONE,
+            intensity: 0,
+          });
           dead = true;
           break;
         }
@@ -44,15 +50,15 @@ export function sysBullets(state: State, dt: number): void {
           z.vx += b.vx * inv * b.knockback;
           z.vy += b.vy * inv * b.knockback;
           const g = CONFIG.fx.gore;
-          fxImpact(
-            state,
-            b.x,
-            b.y,
-            dir,
-            b.color,
-            goreIntensity(b.dmg, z.hp, z.maxHp, g.dmgRef, g.lowHpBand, g.finisherBonus),
-          );
-          Audio.hit();
+          pushFx(state, {
+            t: "impact",
+            x: b.x,
+            y: b.y,
+            ang: dir,
+            color: b.color,
+            intensity: goreIntensity(b.dmg, z.hp, z.maxHp, g.dmgRef, g.lowHpBand, g.finisherBonus),
+          });
+          pushFx(state, { t: "hit", x: z.x, y: z.y });
           if (b.pierce > 0) {
             b.pierce--;
           } else {
@@ -73,9 +79,16 @@ export function killZombie(state: State, idx: number, hitDir: number | null = nu
   const z = state.zombies[idx];
   if (!z) return;
   const big = z.type === "brute";
-  const sprite = ENEMY_TYPES[z.type]?.sprite ?? "";
-  fxKill(state, z.x, z.y, z.color, z.glow, big, true, sprite, Math.atan2(z.vy, z.vx), z.r, hitDir);
-  Audio.kill(big);
+  pushFx(state, {
+    t: "kill",
+    x: z.x,
+    y: z.y,
+    type: z.type,
+    big,
+    dir: Math.atan2(z.vy, z.vx),
+    radius: z.r,
+    hitDir: hitDir ?? 0, // Phase-1 simplification: null→0 directional fallback; proper number|null widening deferred to Phase-2 wire review
+  });
   // hit-stop slows the WHOLE sim and cam-shake is a local-view kick — in co-op these
   // would slow/shake the shared host view on every player's kill, so apply solo only
   if (state.players.length === 1) {

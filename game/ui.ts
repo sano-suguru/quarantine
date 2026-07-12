@@ -69,6 +69,19 @@ export function renderList<T>(
   }
 }
 
+/**
+ * Show the day/night transition banner. Reflows to restart the CSS animation each call so
+ * rapid transitions (e.g. a same-frame re-announce) replay cleanly.
+ */
+export function announce(label: string, n: number): void {
+  const b = el("banner");
+  el("banner-label").textContent = label;
+  el("banner-n").textContent = String(n);
+  b.classList.remove("show");
+  void b.offsetWidth; // reflow to restart animation
+  b.classList.add("show");
+}
+
 /** Exhaustiveness guard — `default: assertNever(x)` turns a missed union case into a compile error. */
 export function assertNever(x: never): never {
   throw new Error(`unreachable: ${JSON.stringify(x)}`);

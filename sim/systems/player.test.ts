@@ -2,10 +2,20 @@ import { describe, expect, it } from "vitest";
 import { CONFIG } from "../config";
 import { WEAPONS } from "../data/weapons";
 import { addPlayer } from "../engine/players";
-import { emptyInput } from "../net/playerInput";
+import { emptyInput } from "../playerInput";
 import { newState } from "../state";
 import type { State } from "../types";
 import { effectiveSearchTime, integrateMovement, sysPlayer } from "./player";
+
+it("starting a reload pushes an audio:reload event", () => {
+  const s = newState();
+  const p = s.players[0] as State["players"][number];
+  p.ammo = 0;
+  p.reserve[p.weapon] = 30;
+  p.input = { ...emptyInput(), reload: true };
+  sysPlayer(s, 1 / 60);
+  expect(s.fxEvents.some((e) => e.t === "audio" && e.cue === "reload")).toBe(true);
+});
 
 /**
  * Regression: in co-op, a non-searching teammate's interact() used to reset every other

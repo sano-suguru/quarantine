@@ -1,5 +1,4 @@
-import { resolveHotbarSlot } from "./autoAim";
-import { CONFIG } from "./config";
+import { CONFIG } from "../sim/config";
 import {
   cardItem,
   draftPool,
@@ -12,39 +11,56 @@ import {
   salvageEarned,
   salvageShare,
   storeItems,
-} from "./data/arsenal";
-import { DEPLOYABLE_TYPES, deployableCount, placeDeployable, placeSpot } from "./data/deployables";
-import { ENEMY_TYPES } from "./data/enemies";
-import { PICKUP_TYPES } from "./data/pickups";
-import { PLAYER_COLORS } from "./data/players";
-import { UNLOCKABLE_CARDS, UPGRADES } from "./data/upgrades";
-import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "./data/weapons";
+} from "../sim/data/arsenal";
+import {
+  DEPLOYABLE_TYPES,
+  deployableCount,
+  placeDeployable,
+  placeSpot,
+} from "../sim/data/deployables";
+import { ENEMY_TYPES } from "../sim/data/enemies";
+import { PICKUP_TYPES } from "../sim/data/pickups";
+import { PLAYER_COLORS } from "../sim/data/players";
+import { UNLOCKABLE_CARDS, UPGRADES } from "../sim/data/upgrades";
+import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "../sim/data/weapons";
+import { type LightCandidate, selectLights } from "../sim/engine/lights";
+import {
+  anyAlive,
+  cameraTarget,
+  localPlayer,
+  nearestPlayer,
+  revivePlayer,
+} from "../sim/engine/players";
+import { pushFx } from "../sim/events";
+import { newState, setUnlockProvider } from "../sim/state";
+import { actionMotion, deriveActionChannel } from "../sim/systems/actionFeel";
+import { sysAI } from "../sim/systems/ai";
+import { sysAssist } from "../sim/systems/assist";
+import { sysBullets } from "../sim/systems/bullets";
+import { sysCamera } from "../sim/systems/camera";
+import { sysDeployables } from "../sim/systems/deployables";
+import { flashlightIntensity } from "../sim/systems/flashlight";
+import { sysFx } from "../sim/systems/fx";
+import { integrityGrade } from "../sim/systems/integrity";
+import { sysPickups } from "../sim/systems/pickups";
+import { effectiveSearchTime, sysPlayer } from "../sim/systems/player";
+import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "../sim/systems/siege";
+import { spawnStalker, sysStalker } from "../sim/systems/stalker";
+import type { Player, State, WeaponDef } from "../sim/types";
+import { resolveHotbarSlot } from "./autoAim";
 import { Audio } from "./engine/audio";
-import { type LightCandidate, selectLights } from "./engine/lights";
-import { anyAlive, cameraTarget, localPlayer, nearestPlayer, revivePlayer } from "./engine/players";
 import { Renderer, SHAPE } from "./engine/renderer";
 import { Input } from "./input";
 import { addSalvage, buyUnlock, loadMeta } from "./meta";
 import { Net } from "./net/net";
 import { DEFAULT_LOADOUT, getSettings, MAX_LOADOUT, setLoadout } from "./settings";
-import { newState } from "./state";
-import { actionMotion, deriveActionChannel } from "./systems/actionFeel";
-import { sysAI } from "./systems/ai";
-import { sysAssist } from "./systems/assist";
-import { sysBullets } from "./systems/bullets";
-import { sysCamera } from "./systems/camera";
-import { sysDeployables } from "./systems/deployables";
-import { flashlightIntensity } from "./systems/flashlight";
-import { sysFx } from "./systems/fx";
-import { integrityGrade } from "./systems/integrity";
-import { sysPickups } from "./systems/pickups";
-import { effectiveSearchTime, sysPlayer } from "./systems/player";
-import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "./systems/siege";
-import { spawnStalker, sysStalker } from "./systems/stalker";
 import { resetStalkerFx, stalkerFx } from "./systems/stalkerFx";
 import { resetStalkerPhantom, sysStalkerPhantom } from "./systems/stalkerPhantom";
-import type { Player, State, WeaponDef } from "./types";
 import { el, hide, renderList, show } from "./ui";
+
+// Feed persisted meta-unlocks into the (browser-free) sim closure. Registered before the first
+// `newState()` below so single-player boot state is identical to the old direct-`loadMeta` path.
+setUnlockProvider(() => loadMeta().unlocked);
 
 let state: State = newState();
 
@@ -136,13 +152,15 @@ let beatStrength = 0;
 // blood churn/breathe by passing a constant clock (read once; guarded for non-DOM test env).
 const reducedMotion =
   typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-// local flashlight die edge (battery → 0): play a one-shot "going dark" cue
-let prevBattery = 1;
 // HP→world grade (desaturation + dim): eased current values. sat=1 dim=1 = full color.
 // Gated on state.running so dead-player 0 HP doesn't drain debrief/title screens.
 // Snapped to 1 by endRun/toTitle; held (not advanced) while not running.
 let gradeSatCur = 1;
 let gradeDimCur = 1;
+// flashlight-death edge: tracks LOCAL player's battery fraction tick-to-tick so audioAmbience can
+// fire lightDie exactly once when it crosses zero. Reset to 1 each run so a dead battery from a
+// prior run can't suppress the cue at the start of the next.
+let prevBattery = 1;
 
 /** Reset the per-run atmosphere bookkeeping so stale zombie ids / darts don't carry across runs. */
 function resetAtmosphere(): void {
@@ -151,9 +169,9 @@ function resetAtmosphere(): void {
   darts = [];
   lastBeatT = -10;
   beatStrength = 0;
-  prevBattery = 1;
   gradeSatCur = 1;
   gradeDimCur = 1;
+  prevBattery = 1;
   // Reset the render-side draw clock so the first draw() of a fresh run (where state.time resets
   // to 0) doesn't produce a negative/large ddt that flings darts or garbles ease steps.
   lastDrawT = 0;
@@ -162,7 +180,7 @@ function resetAtmosphere(): void {
   resetStalkerPhantom();
 }
 
-export function update(dt: number): void {
+export function update(state: State, dt: number): void {
   if (!state.running || state.paused) return;
 
   // hitstop: briefly slow the sim on impactful kills
@@ -188,20 +206,19 @@ export function update(dt: number): void {
   sysFx(state, sdt);
   const ev = sysSiege(state, sdt);
   sysCamera(state, sdt);
-  audioAmbience(dt);
   if (ev === "night") {
     spawnStalker(state);
-    announce("NIGHT", state.day);
-    Audio.waveStart();
+    pushFx(state, { t: "announce", label: "NIGHT", day: state.day });
+    pushFx(state, { t: "audio", cue: "waveStart" });
   } else if (ev === "dawn") {
     // Set to retreat so it leaves gracefully; despawns when off-arena via sysStalker
     if (state.stalker) state.stalker.state = "retreat";
-    Audio.dawn();
+    pushFx(state, { t: "audio", cue: "dawn" });
     openShop();
   }
 }
 
-function audioAmbience(dt: number): void {
+export function audioAmbience(dt: number): void {
   const p = localPlayer(state);
   const hpf = p.hp / p.maxHp;
   const wd = effWeapon(p, p.weapon);
@@ -223,6 +240,14 @@ function audioAmbience(dt: number): void {
   // tension = the rising dissonance of UNSEEN threats crowding the dark behind/around you
   Audio.setTension(Math.min(1, state.lurking / CONFIG.horror.surroundCount));
 
+  // flashlight-death: one-shot cue when the LOCAL player's battery crosses zero. Runs on every
+  // machine via audioAmbience (single/host/client all call this), so co-op clients hear their
+  // own cue correctly from their synced battery — NOT from a sysPlayer event (which clients
+  // never run). prevBattery is reset to 1 each run so a dead prior-run battery can't suppress it.
+  const batf = p.battery / CONFIG.flashlight.batteryMax;
+  if (prevBattery > 0 && batf <= 0) Audio.lightDie();
+  prevBattery = batf;
+
   if (hpf < CONFIG.horror.lowHp) {
     hbT -= dt;
     if (hbT <= 0) {
@@ -235,12 +260,6 @@ function audioAmbience(dt: number): void {
   } else {
     hbT = 0.3;
   }
-
-  // local flashlight dying (battery → 0 while lit): a one-shot "going dark" cue. Edge-detected
-  // from the local player's synced battery so it fires once on host/client/single alike.
-  const batf = p.battery / CONFIG.flashlight.batteryMax;
-  if (prevBattery > 0 && batf <= 0) Audio.lightDie();
-  prevBattery = batf;
 
   // per-zombie groans / cone-entry screeches, re-derived locally from the world
   zombieVoices();
@@ -1300,14 +1319,6 @@ export function updateHUD(): void {
 }
 
 /* --------------------------- FLOW / UI -------------------------- */
-function announce(label: string, n: number): void {
-  const b = el("banner");
-  el("banner-label").textContent = label;
-  el("banner-n").textContent = String(n);
-  b.classList.remove("show");
-  void b.offsetWidth; // reflow to restart animation
-  b.classList.add("show");
-}
 
 /**
  * Update per-slot ammo/reserve text for all hotbar slots.
@@ -1390,7 +1401,7 @@ export function startGame(): void {
   show("hud");
   buildWeaponSlots();
   startDay(state);
-  announce("DAY", state.day);
+  pushFx(state, { t: "announce", label: "DAY", day: state.day });
 }
 
 /**
@@ -1627,7 +1638,7 @@ export function shopDeploy(): void {
   state.paused = false;
   state.day++;
   startDay(state);
-  announce("DAY", state.day);
+  pushFx(state, { t: "announce", label: "DAY", day: state.day });
 }
 
 /**

@@ -1,10 +1,9 @@
 import { CONFIG } from "../config";
-import { Audio } from "../engine/audio";
 import { len } from "../engine/math";
 import { sampleFlow } from "../engine/navfield";
 import { nearestPlayer } from "../engine/players";
+import { pushFx } from "../events";
 import type { Player, State } from "../types";
-import { fxHurt } from "./fx";
 
 const CFG = CONFIG.stalker;
 
@@ -96,11 +95,15 @@ export function sysStalker(state: State, dt: number): void {
           target.hp -= CFG.contactDamage;
           target.hitFlash = 0.28;
           target.iframe = CONFIG.feel.hurtIframe;
-          fxHurt(state, target.x, target.y);
+          pushFx(state, {
+            t: "hurt",
+            x: target.x,
+            y: target.y,
+            local: target.id === state.localId,
+          });
           // Pain grunt for the local victim (host). The visual scare (flash/shake/lurch/stinger)
           // lives in game.ts:draw() keyed off the synced contactCd edge, so it fires identically
           // on the host and on a client victim (whose grunt comes from the hitFlash re-derivation).
-          if (target.id === state.localId) Audio.hurt();
           if (target.hp <= 0) target.hp = 0;
         }
         // Set BOTH suppressors: contactCd (stalker re-grab) and iframe (victim multi-hit)

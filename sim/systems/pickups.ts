@@ -1,10 +1,9 @@
 import { CONFIG } from "../config";
 import { PICKUP_TYPES } from "../data/pickups";
-import { Audio } from "../engine/audio";
 import { clamp, len, rand } from "../engine/math";
+import { pushFx } from "../events";
 import { allocId } from "../state";
 import type { Player, State } from "../types";
-import { fxPickup } from "./fx";
 
 /** Drop a pickup of the given type on the ground (with a little scatter). */
 export function spawnPickup(state: State, x: number, y: number, defId: string): void {
@@ -56,8 +55,7 @@ export function sysPickups(state: State, dt: number): void {
       const def = PICKUP_TYPES[pk.defId];
       if (def) {
         def.apply(state, collector);
-        fxPickup(state, pk.x, pk.y, def.glow);
-        Audio.pickup();
+        pushFx(state, { t: "pickup", x: pk.x, y: pk.y, glow: def.glow });
       }
       P[i] = P[P.length - 1] as (typeof P)[number];
       P.pop();

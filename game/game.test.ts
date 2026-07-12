@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { addPlayer, localPlayer } from "./engine/players";
-import { applyBuy } from "./game";
-import { newState } from "./state";
+import { addPlayer, localPlayer } from "../sim/engine/players";
+import { newState } from "../sim/state";
+import { applyBuy, update } from "./game";
 
 describe("applyBuy (Fortify purchase, host-authoritative)", () => {
   const fortId = "deploy:ammostation"; // Supply Station, cost 70 (DEPLOYABLE_TYPES.ammostation)
@@ -53,5 +53,17 @@ describe("applyBuy (Fortify purchase, host-authoritative)", () => {
     expect(buyer.money).toBe(30); // buyer's own wallet charged (100 - 70)
     expect(mate.deployQueue).not.toContain("ammostation");
     expect(mate.money).toBe(mateMoney); // teammate wallet untouched
+  });
+});
+
+describe("update() transition events (Task 9)", () => {
+  it("the day→night transition pushes waveStart + NIGHT announce events", () => {
+    const s = newState();
+    s.running = true; // update() early-returns unless running
+    s.phase = "day";
+    s.phaseT = 0.001; // one step tips phaseT <= 0 → sysSiege returns "night"
+    update(s, 1 / 60);
+    expect(s.fxEvents.some((e) => e.t === "audio" && e.cue === "waveStart")).toBe(true);
+    expect(s.fxEvents.some((e) => e.t === "announce" && e.label === "NIGHT")).toBe(true);
   });
 });

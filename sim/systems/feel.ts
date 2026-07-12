@@ -1,7 +1,6 @@
 import { CONFIG } from "../config";
-import { Audio } from "../engine/audio";
+import { pushFx } from "../events";
 import type { Player, State, WeaponDef } from "../types";
-import { fxMuzzle } from "./fx";
 
 /**
  * The juice of pulling the trigger — recoil offset, muzzle timer, camera shake, audio (and the
@@ -22,16 +21,22 @@ export function applyFireFeel(state: State, p: Player, wd: WeaponDef): void {
   if (p.id === state.localId) {
     state.cam.shake = Math.min(state.cam.shake + wd.recoil, CONFIG.feel.shakeMax);
   }
+  const tipX = p.x + Math.cos(p.aim) * p.r;
+  const tipY = p.y + Math.sin(p.aim) * p.r;
   if (wd.melee) {
     p.muzzle = CONFIG.feel.muzzleMelee; // longer than a gun so the slash arc reads at swing cadence
-    Audio.melee();
   } else {
-    const tipX = p.x + Math.cos(p.aim) * p.r;
-    const tipY = p.y + Math.sin(p.aim) * p.r;
-    fxMuzzle(state, tipX, tipY, p.aim, wd.color);
     p.muzzle = CONFIG.feel.muzzleGun;
-    Audio.shot(p.weapon);
   }
+  pushFx(state, {
+    t: "muzzle",
+    x: tipX,
+    y: tipY,
+    ang: p.aim,
+    color: wd.color,
+    weapon: p.weapon,
+    melee: wd.melee ?? false,
+  });
 }
 
 /** Decay the per-player feel timers/offsets each step (recoil spring + flash/iframe/muzzle/dry). */

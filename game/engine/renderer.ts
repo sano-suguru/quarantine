@@ -1,5 +1,6 @@
-import { CONFIG } from "../config";
-import { packFragCell } from "./fragment";
+import { CONFIG } from "../../sim/config";
+import { packFragCell } from "../../sim/engine/fragment";
+import { SHAPE } from "../../sim/engine/shapes";
 import bloodFrag from "./shaders/blood.frag?raw";
 import bloodVert from "./shaders/blood.vert?raw";
 import gridFrag from "./shaders/grid.frag?raw";
@@ -11,8 +12,7 @@ import { packSprites, uvRect } from "./spritePack";
 
 const FLOATS = 11;
 
-/** shape flags — must match instance.frag */
-export const SHAPE = { rect: 0, circle: 1, glow: 2, ring: 3, tri: 4, hex: 5, slash: 6, sprite: 16 };
+export { SHAPE } from "../../sim/engine/shapes";
 
 let gl: WebGL2RenderingContext;
 let canvas: HTMLCanvasElement;

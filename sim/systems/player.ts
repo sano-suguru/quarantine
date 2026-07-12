@@ -2,10 +2,10 @@ import { CONFIG } from "../config";
 import { effWeapon, meleeArc, meleeReach } from "../data/arsenal";
 import { resolveDeployableCollisions } from "../data/deployables";
 import { WEAPON_ORDER, WEAPONS } from "../data/weapons";
-import { Audio } from "../engine/audio";
 import { circlePushFromSegment, segMid } from "../engine/geometry";
 import { approach, clamp, len, rand } from "../engine/math";
-import type { PlayerInput } from "../net/playerInput";
+import { pushFx } from "../events";
+import type { PlayerInput } from "../playerInput";
 import { allocId } from "../state";
 import type { Cache, Player, Segment, State, WeaponDef } from "../types";
 
@@ -46,7 +46,7 @@ import { ammoTransfer } from "./ammo";
 import { killZombie } from "./bullets";
 import { lootCache } from "./caches";
 import { applyFireFeel, decayFeelTimers } from "./feel";
-import { fxActionBurst, fxDust, fxImpact, fxMote, goreIntensity } from "./fx";
+import { goreIntensity } from "./fx";
 
 /** Seconds of standing-still searching needed to loot a cache. Night searches take longer
  *  (CONFIG.cache.nightSearchMul) — the extra exposure is the risk of looting during the horde. */
@@ -85,7 +85,7 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
   if (inp.heal && p.medkits > 0 && p.healT <= 0 && p.hp < p.maxHp) {
     p.medkits--;
     p.healT = CONFIG.heal.duration;
-    Audio.heal();
+    pushFx(state, { t: "audio", cue: "heal" });
   }
 
   // healing roots the player: HP ticks up, but no moving or shooting (vulnerable)
@@ -99,12 +99,12 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
       Math.floor(before / CONFIG.actionFeel.heal.moteEveryS) !==
       Math.floor(p.healT / CONFIG.actionFeel.heal.moteEveryS)
     ) {
-      fxMote(state, p.x, p.y, [0.3, 1, 0.45]);
+      pushFx(state, { t: "mote", x: p.x, y: p.y, color: [0.3, 1, 0.45] });
     }
     // completion: green burst + up-chime (this edge; healT crosses 0)
     if (before > 0 && p.healT <= 0) {
-      fxActionBurst(state, p.x, p.y, [0.3, 1, 0.45], false);
-      Audio.heal();
+      pushFx(state, { t: "burst", x: p.x, y: p.y, color: [0.3, 1, 0.45], ring: false });
+      pushFx(state, { t: "audio", cue: "heal" });
     }
   }
 
@@ -148,7 +148,7 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
       const drawTime = WEAPONS[id]?.drawTime ?? 0.5;
       p.switchT = drawTime;
       p.fireCd = Math.max(p.fireCd, drawTime);
-      Audio.switchWeapon(); // holster-away + ready (mirrors reload(): same host-side path)
+      pushFx(state, { t: "audio", cue: "switchWeapon" }); // holster-away + ready (mirrors reload(): same host-side path)
     }
   }
   const wd = effWeapon(p, p.weapon);
@@ -158,8 +158,13 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
     const reserve = p.reserve[p.weapon] ?? 0;
     if ((inp.reload || p.ammo <= 0) && p.reloadT <= 0 && p.ammo < wd.mag && reserve > 0) {
       p.reloadT = wd.reload;
-      Audio.reload();
-      fxDust(state, p.x - Math.cos(p.aim) * p.r, p.y - Math.sin(p.aim) * p.r, 2);
+      pushFx(state, { t: "audio", cue: "reload" });
+      pushFx(state, {
+        t: "dust",
+        x: p.x - Math.cos(p.aim) * p.r,
+        y: p.y - Math.sin(p.aim) * p.r,
+        n: 2,
+      });
     }
     if (p.reloadT > 0) {
       p.reloadT -= dt;
@@ -167,7 +172,7 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
         const t = ammoTransfer(wd.mag, p.ammo, p.reserve[p.weapon] ?? 0);
         p.ammo = t.ammo;
         p.reserve[p.weapon] = t.reserve;
-        Audio.reloadDone();
+        pushFx(state, { t: "audio", cue: "reloadDone" });
       }
     }
   }
@@ -189,7 +194,7 @@ function sysPlayerOne(state: State, p: Player, dt: number, searched: Set<Cache>)
       p.firedThisHold = true;
     } else {
       // empty magazine: the desperate dry-fire click
-      Audio.dryFire();
+      pushFx(state, { t: "audio", cue: "dryFire" });
       p.dryT = 0.12;
       p.fireCd = 0.18;
       p.firedThisHold = true;
@@ -259,14 +264,21 @@ function meleeSwing(state: State, p: Player, wd: WeaponDef): void {
     z.vx += (dx / d) * wd.knockback;
     z.vy += (dy / d) * wd.knockback;
     const g = CONFIG.fx.gore;
-    fxImpact(
-      state,
-      z.x,
-      z.y,
-      p.aim,
-      wd.color,
-      goreIntensity(wd.dmg * p.dmgMul, z.hp, z.maxHp, g.dmgRef, g.lowHpBand, g.finisherBonus),
-    );
+    pushFx(state, {
+      t: "impact",
+      x: z.x,
+      y: z.y,
+      ang: p.aim,
+      color: wd.color,
+      intensity: goreIntensity(
+        wd.dmg * p.dmgMul,
+        z.hp,
+        z.maxHp,
+        g.dmgRef,
+        g.lowHpBand,
+        g.finisherBonus,
+      ),
+    });
     if (z.hp <= 0) dead.push(zi);
   });
   // swap-and-pop removal is index-based, so kill from the highest index down
@@ -359,14 +371,14 @@ function interact(
       Math.floor((cache.searchT - dt) / CONFIG.actionFeel.search.dustEveryS) !==
       Math.floor(cache.searchT / CONFIG.actionFeel.search.dustEveryS)
     ) {
-      fxDust(state, cache.x, cache.y, 2);
+      pushFx(state, { t: "dust", x: cache.x, y: cache.y, n: 2 });
     }
     if (cache.searchT >= effectiveSearchTime(state.phase)) {
       lootCache(state, cache.x, cache.y, cache.tier);
       cache.looted = true;
       cache.searchT = 0;
-      fxActionBurst(state, cache.x, cache.y, [0.9, 0.8, 0.4], false);
-      Audio.pickup();
+      pushFx(state, { t: "burst", x: cache.x, y: cache.y, color: [0.9, 0.8, 0.4], ring: false });
+      pushFx(state, { t: "audio", cue: "pickup" });
     }
   }
 
@@ -379,8 +391,8 @@ function interact(
       p.repairCd = CONFIG.siege.repairCd;
       p.swingT = CONFIG.actionFeel.swingDecay;
       p.swingKind = "mateHeal";
-      fxMote(state, mate.x, mate.y, [0.3, 1, 0.45]);
-      Audio.heal();
+      pushFx(state, { t: "mote", x: mate.x, y: mate.y, color: [0.3, 1, 0.45] });
+      pushFx(state, { t: "audio", cue: "heal" });
     } else if (bar && p.money >= CONFIG.siege.repairCost) {
       // self-funded repair — the wall shelters the repairer too (private benefit, no
       // free-rider). Labor reward refunds < cost (solvent support, never a money fountain).
@@ -393,13 +405,20 @@ function interact(
       p.swingT = CONFIG.actionFeel.swingDecay;
       p.swingKind = "repair";
       const mid = segMid(bar.x1, bar.y1, bar.x2, bar.y2);
-      fxImpact(state, mid.x, mid.y, p.aim, [0.85, 0.7, 0.35]); // sparks (intensity 0 = wall-spark look)
-      fxDust(state, mid.x, mid.y, CONFIG.actionFeel.repair.dust);
+      pushFx(state, {
+        t: "impact",
+        x: mid.x,
+        y: mid.y,
+        ang: p.aim,
+        color: [0.85, 0.7, 0.35],
+        intensity: 0,
+      }); // sparks (intensity 0 = wall-spark look)
+      pushFx(state, { t: "dust", x: mid.x, y: mid.y, n: CONFIG.actionFeel.repair.dust });
       // completion: barricade just reached full → burst on the segment midpoint
       if (before < bar.maxHp && bar.hp >= bar.maxHp) {
-        fxActionBurst(state, mid.x, mid.y, [0.8, 0.7, 0.3], false);
+        pushFx(state, { t: "burst", x: mid.x, y: mid.y, color: [0.8, 0.7, 0.3], ring: false });
       }
-      Audio.repair();
+      pushFx(state, { t: "audio", cue: "repair" });
     }
   }
 }

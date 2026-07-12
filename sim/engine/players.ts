@@ -1,7 +1,7 @@
 import { CONFIG } from "../config";
 import { HOME_SPAWN } from "../data/map";
 import { WEAPON_ORDER, WEAPONS } from "../data/weapons";
-import { emptyInput } from "../net/playerInput";
+import { emptyInput } from "../playerInput";
 import type { Player, State, WeaponDef } from "../types";
 
 /**

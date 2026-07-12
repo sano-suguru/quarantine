@@ -1,10 +1,15 @@
 import "./style.css";
-import { CONFIG } from "./config";
-import { PLAYER_COLORS } from "./data/players";
+import { CONFIG } from "../sim/config";
+import { PLAYER_COLORS } from "../sim/data/players";
+import { localPlayer } from "../sim/engine/players";
+import { emptyInput } from "../sim/playerInput";
+import { sysCamera } from "../sim/systems/camera";
+import { sysFx } from "../sim/systems/fx";
 import { Audio } from "./engine/audio";
-import { localPlayer } from "./engine/players";
 import { Renderer } from "./engine/renderer";
+import { drainFxEvents } from "./fx-drain";
 import {
+  audioAmbience,
   audioLoops,
   clientAmbience,
   closeArsenal,
@@ -36,15 +41,12 @@ import { Client } from "./net/client";
 import { Host } from "./net/host";
 import { sampleLocalInput } from "./net/localInput";
 import { Net } from "./net/net";
-import { emptyInput } from "./net/playerInput";
 import { listRooms, type RoomInfo, selectQuickMatch, versionMatches } from "./net/registry";
 import { bumpCoopEpoch, coopEpoch, isCoopEpochCurrent } from "./net/session";
 import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
 import { getTurnStatus, NETLOG, type PeerLink } from "./net/transport";
 import { getSettings } from "./settings";
-import { sysCamera } from "./systems/camera";
-import { sysFx } from "./systems/fx";
 import { assertNever, el, hide, isEditableTarget, renderList, show } from "./ui";
 
 // host lobby gate: host builds the world on "Host co-op" but the sim stays frozen
@@ -417,9 +419,11 @@ async function main(): Promise<void> {
       localPlayer(st).input = settingsOpen ? emptyInput() : sampleLocalInput(st);
     hAcc += dt;
     while (hAcc >= step) {
-      update(step);
+      update(st, step);
       hAcc -= step;
     }
+    drainFxEvents(getState()); // host is a player too: play its own cues + clear the buffer
+    if (st.running) audioAmbience(dt); // dread / heartbeat / groan from authoritative state
     hNet += dt;
     if (hNet >= sendStep) {
       hNet = 0;
@@ -447,9 +451,11 @@ async function main(): Promise<void> {
         rAcc += Math.min(dt, 0.1);
         if (live) localPlayer(st).input = sampleLocalInput(st);
         while (rAcc >= step) {
-          update(step);
+          update(st, step);
           rAcc -= step;
         }
+        drainFxEvents(st); // consume the tick's cues → audio/particles
+        if (st.running) audioAmbience(dt); // dread / heartbeat / groan from authoritative state
       }
     } else if (Net.mode === "client") {
       // no authoritative sim — predict our player, interpolate the world, ship input.

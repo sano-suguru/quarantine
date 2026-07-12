@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CONFIG } from "../config";
+import { CONFIG } from "../../sim/config";
 import { PROTOCOL_VERSION } from "./net";
 import { isJoinable, listRooms, type RoomInfo, selectQuickMatch, versionMatches } from "./registry";
 

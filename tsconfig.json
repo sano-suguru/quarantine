@@ -16,5 +16,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["game", "shaders.d.ts", "vite.config.ts"]
+  "include": ["game", "sim", "shaders.d.ts", "vite.config.ts"]
 }

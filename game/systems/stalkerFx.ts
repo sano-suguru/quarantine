@@ -16,11 +16,11 @@
  * agnostic of the source.
  */
 
-import { CONFIG } from "../config";
+import { CONFIG } from "../../sim/config";
+import { len } from "../../sim/engine/math";
+import { flashlightIntensity } from "../../sim/systems/flashlight";
+import type { Player, State } from "../../sim/types";
 import { Audio } from "../engine/audio";
-import { len } from "../engine/math";
-import type { Player, State } from "../types";
-import { flashlightIntensity } from "./flashlight";
 
 const SCFG = CONFIG.stalker;
 const FLC = CONFIG.flashlight;

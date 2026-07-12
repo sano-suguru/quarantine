@@ -3,7 +3,7 @@
  * meta. `loadout` = the ≤3 weapon ids shown on the (all-platform) hotbar. `inputModeOverride`
  * lets a mis-detected device switch HUD mode. Cached in memory; safe to read per-frame.
  */
-import { STARTER_WEAPONS } from "./data/weapons";
+import { STARTER_WEAPONS } from "../sim/data/weapons";
 import type { InputMode } from "./inputMode";
 
 const KEY = "q_settings";

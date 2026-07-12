@@ -1,4 +1,4 @@
-import { CONFIG } from "../config";
+import { CONFIG } from "../../sim/config";
 import { PROTOCOL_VERSION } from "./net";
 
 /**

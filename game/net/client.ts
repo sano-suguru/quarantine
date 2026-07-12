@@ -1,20 +1,28 @@
-import { CONFIG } from "../config";
-import { effWeapon } from "../data/arsenal";
-import { DEPLOYABLE_TYPES } from "../data/deployables";
-import { ENEMY_TYPES } from "../data/enemies";
+import { CONFIG } from "../../sim/config";
+import { effWeapon } from "../../sim/data/arsenal";
+import { DEPLOYABLE_TYPES } from "../../sim/data/deployables";
+import { ENEMY_TYPES } from "../../sim/data/enemies";
+import { segMid } from "../../sim/engine/geometry";
+import { approach, rand } from "../../sim/engine/math";
+import { localPlayer } from "../../sim/engine/players";
+import type { PlayerInput } from "../../sim/playerInput";
+import { applySnapshot, decode, lerpSnapshots, type Snapshot } from "../../sim/snapshot";
+import { applyFireFeel } from "../../sim/systems/feel";
+import {
+  fxActionBurst,
+  fxHurt,
+  fxImpact,
+  fxKill,
+  fxMote,
+  goreIntensity,
+} from "../../sim/systems/fx";
+import { integrateMovement } from "../../sim/systems/player";
+import type { Bullet } from "../../sim/types";
 import { Audio } from "../engine/audio";
-import { segMid } from "../engine/geometry";
-import { approach, rand } from "../engine/math";
-import { localPlayer } from "../engine/players";
+import { drainFxEvents } from "../fx-drain";
 import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
-import { applyFireFeel } from "../systems/feel";
-import { fxActionBurst, fxHurt, fxImpact, fxKill, fxMote, goreIntensity } from "../systems/fx";
-import { integrateMovement } from "../systems/player";
-import type { Bullet } from "../types";
 import { advanceGhosts } from "./ghost";
 import { type NetMsg, PROTOCOL_VERSION } from "./net";
-import type { PlayerInput } from "./playerInput";
-import { applySnapshot, decode, lerpSnapshots, type Snapshot } from "./snapshot";
 import type { PeerLink } from "./transport";
 
 type RGB = [number, number, number];
@@ -568,6 +576,7 @@ export class Client {
         // the host runs, so our predicted melee lunge / gun kick can never drift from authority.
         // The slash visual itself is the crescent drawn in drawPlayer off the predicted muzzle.
         applyFireFeel(st, lp, wd);
+        drainFxEvents(st); // play THIS client's predicted muzzle (shot/melee audio + muzzle sparks)
         // take ownership of the resulting feel so the per-frame re-impose keeps it smooth
         this.predRecoilX = lp.recoilX;
         this.predRecoilY = lp.recoilY;

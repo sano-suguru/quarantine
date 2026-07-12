@@ -15,7 +15,7 @@
  * environment) has zero side effects. All IO happens in loadSamples(), called from Audio.resume()
  * after the first user gesture.
  */
-import { CONFIG } from "../config";
+import { CONFIG } from "../../sim/config";
 
 // Build-time registry: file URLs only (strings via `?url` — never inlined into JS).
 const urls = import.meta.glob<string>("../audio/sfx/*.mp3", {

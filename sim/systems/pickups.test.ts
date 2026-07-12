@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { CONFIG } from "../config";
+import { localPlayer } from "../engine/players";
 import { newState } from "../state";
 import type { Pickup, Player, State } from "../types";
-import { sysPickups } from "./pickups";
+import { spawnPickup, sysPickups } from "./pickups";
 
 /** Drop a pickup at an exact spot (bypassing spawnPickup's RNG scatter, so collection is deterministic). */
 function placePickup(s: State, x: number, y: number, defId: string): Pickup {
@@ -55,5 +56,13 @@ describe("sysPickups", () => {
     placePickup(s, p.x, p.y, "ammo");
     sysPickups(s, 0.1);
     expect(s.pickups.length).toBe(1); // still on the ground
+  });
+
+  it("auto-collecting a pickup pushes a pickup event", () => {
+    const s = newState();
+    const p = localPlayer(s);
+    spawnPickup(s, p.x, p.y, "ammo"); // within grab radius
+    sysPickups(s, 1 / 60);
+    expect(s.fxEvents.some((e) => e.t === "pickup")).toBe(true);
   });
 });

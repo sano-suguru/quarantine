@@ -1,5 +1,5 @@
 import type { FlowField } from "./engine/navfield";
-import type { PlayerInput } from "./net/playerInput";
+import type { PlayerInput } from "./playerInput";
 
 export interface GunPart {
   /** forward offset along aim, world units (+ = toward muzzle) */
@@ -463,6 +463,47 @@ export interface Stalker {
   vis: number;
 }
 
+// carried data mirrors what today's call sites pass; visuals the client can
+// reconstruct from tables (enemy type → color/glow/sprite) are referenced by
+// index/id, not duplicated — keeps the event wire-friendly for Phase 2.
+export type FxEvent =
+  | {
+      t: "kill";
+      x: number;
+      y: number;
+      type: string;
+      big: boolean;
+      dir: number;
+      radius: number;
+      hitDir: number;
+    }
+  | {
+      t: "impact";
+      x: number;
+      y: number;
+      ang: number;
+      color: [number, number, number];
+      intensity: number;
+    }
+  | { t: "hit"; x: number; y: number }
+  | { t: "hurt"; x: number; y: number; local: boolean }
+  | {
+      t: "muzzle";
+      x: number;
+      y: number;
+      ang: number;
+      color: [number, number, number];
+      weapon: string;
+      melee: boolean;
+    }
+  | { t: "audio"; cue: string; arg?: number | string }
+  | { t: "announce"; label: string; day: number }
+  | { t: "dust"; x: number; y: number; n: number }
+  | { t: "mote"; x: number; y: number; color: [number, number, number] }
+  | { t: "burst"; x: number; y: number; color: [number, number, number]; ring: boolean }
+  | { t: "pickup"; x: number; y: number; glow: [number, number, number] }
+  | { t: "deployDestroy"; x: number; y: number; color: [number, number, number]; rtb: boolean };
+
 /** Day = lit scavenge/repair window; night = the dark horde siege. */
 export type SiegePhase = "day" | "night";
 
@@ -546,6 +587,20 @@ export interface State {
   /** monotonic sim-tick counter used to schedule flow-field rebuilds (one per sysAI call).
    *  There is no general state.tick — this is the only tick counter in state. */
   navTick: number;
+  /** discrete per-tick cue buffer: systems push, the client drains to audio/fx (see sim/events.ts) */
+  fxEvents: FxEvent[];
+}
+
+/**
+ * WebRTC ICE-server config shape. Declared structurally (not via the DOM lib's `RTCIceServer`)
+ * so `sim/config.ts` stays inside the no-DOM sim boundary. It is a subset of lib.dom's
+ * `RTCIceServer`; `game/net/transport.ts` asserts assignability with `satisfies RTCIceServer[]`
+ * so drift is caught if that DOM type ever narrows.
+ */
+export interface IceServerConfig {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
 }
 
 /** Structural type so state.ts need not import the engine class directly. */

@@ -1,6 +1,7 @@
-import { CONFIG } from "../config";
-import { HOME_SPAWN } from "../data/map";
-import { addPlayer, removePlayer } from "../engine/players";
+import { CONFIG } from "../../sim/config";
+import { HOME_SPAWN } from "../../sim/data/map";
+import { addPlayer, removePlayer } from "../../sim/engine/players";
+import { encodeSnapshot } from "../../sim/snapshot";
 import {
   applyBuy,
   applyDraftReroll,
@@ -11,7 +12,6 @@ import {
   shopDeploy,
 } from "../game";
 import { type NetMsg, PROTOCOL_VERSION } from "./net";
-import { encodeSnapshot } from "./snapshot";
 import type { PeerLink } from "./transport";
 
 interface HostPeer {
