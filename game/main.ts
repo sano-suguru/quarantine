@@ -377,6 +377,7 @@ async function main(): Promise<void> {
 
   const step = 1 / CONFIG.simHz;
   const sendStep = 1 / CONFIG.net.sendHz;
+  const inputStep = 1 / CONFIG.net.inputHz;
 
   // --- host authoritative loop: driven by a background-immune Web Worker tick, so the
   // host keeps simulating + broadcasting even when its tab is hidden (rAF would pause,
@@ -438,6 +439,7 @@ async function main(): Promise<void> {
   // host tab only pauses its rendering, never the shared simulation. ---
   let rLast = performance.now();
   let rAcc = 0;
+  let sendAcc = 0;
   function frame(now: number): void {
     const dt = (now - rLast) / 1000;
     rLast = now;
@@ -462,7 +464,12 @@ async function main(): Promise<void> {
       // no authoritative sim — predict our player, interpolate the world, ship input.
       // While options is open, send zeroed input so the host holds us idle (not acting blind).
       const inp = live ? (settingsOpen ? emptyInput() : sampleLocalInput(st)) : null;
-      if (inp) Net.client?.send(inp);
+      // throttle input send to ~25 Hz (latest-wins); predict & render still run every frame
+      sendAcc += dt;
+      if (inp && sendAcc >= inputStep) {
+        sendAcc = 0;
+        Net.client?.send(inp);
+      }
       Net.client?.render(performance.now(), inp, dt);
       if (st.running) {
         sysFx(st, dt); // advance client-spawned particles/blood/damage text

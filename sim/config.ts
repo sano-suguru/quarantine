@@ -9,11 +9,12 @@ export const CONFIG = {
   zoomMobileMul: 0.62,
   maxInstances: 40000,
   // co-op networking (host-authoritative). client interpolation / prediction params.
+  // DO-hop: interpDelayMs, smoothCorrect, snapTeleportThresh are starting points, feel-tuned at gate
   net: {
     sendHz: 30, // host snapshot broadcast rate
-    interpDelayMs: 100, // render remote entities this far in the past
-    smoothCorrect: 0.2, // reconciliation lerp factor
-    snapTeleportThresh: 80, // px error above which we hard-snap instead of lerp
+    interpDelayMs: 150, // render remote entities this far in the past (DO-hop starting point)
+    smoothCorrect: 0.15, // reconciliation lerp factor (DO-hop starting point, gentler for jitterier hop)
+    snapTeleportThresh: 120, // px error above which we hard-snap instead of lerp (DO-hop starting point)
     maxExtrapolateMs: 120, // cap on dead-reckoning when snapshots stall (used if extrapolation is enabled)
     // client-predicted "ghost" tracer lifetime (visual only). ~interpDelayMs/1000 so the
     // ghost fades just as the host-authoritative bullet (drawn ~interpDelay in the past)
