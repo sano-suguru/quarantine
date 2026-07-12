@@ -19,10 +19,10 @@ describe("stepSim", () => {
     expect(s.paused).toBe(false);
     expect(s.inShop).toBe(false);
   });
-  it("returns 'wipe' when no player is alive", () => {
+  it("keeps running (returns null, not a wipe) when every player is down", () => {
     const s = newState();
     s.running = true;
     for (const p of s.players) p.hp = 0;
-    expect(stepSim(s, 1 / 60)).toBe("wipe");
+    expect(stepSim(s, 1 / 60)).toBe(null); // no game-over: the night clock keeps advancing
   });
 });
