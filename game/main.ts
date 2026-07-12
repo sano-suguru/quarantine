@@ -7,9 +7,7 @@ import { sysCamera } from "../sim/systems/camera";
 import { sysFx } from "../sim/systems/fx";
 import { Audio } from "./engine/audio";
 import { Renderer } from "./engine/renderer";
-import { drainFxEvents } from "./fx-drain";
 import {
-  audioAmbience,
   audioLoops,
   clientAmbience,
   closeArsenal,
@@ -25,7 +23,6 @@ import {
   syncShopUI,
   togglePause,
   toTitle,
-  update,
   updateHUD,
 } from "./game";
 import { Input } from "./input";
@@ -44,7 +41,6 @@ import { Net } from "./net/net";
 import { listRooms, type RoomInfo, selectQuickMatch, versionMatches } from "./net/registry";
 import { bumpCoopEpoch, coopEpoch, isCoopEpochCurrent } from "./net/session";
 import { arenaUrl, type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
-import { startTicker } from "./net/ticker";
 import { getTurnStatus, NETLOG, type PeerLink } from "./net/transport";
 import { createArenaLink } from "./net/wsLink";
 import { getSettings } from "./settings";
@@ -179,8 +175,8 @@ function showLoadError(msg: string): void {
 }
 
 /**
- * Solo Start (first user gesture): open the AudioContext, wait for the required samples to decode
- * behind a brief #loading gate, then build the single-player world. Re-entry-guarded so a
+ * Arena Start (first user gesture): open the AudioContext, wait for the required samples to decode
+ * behind a brief #loading gate, then connect to the Arena DO as a DO client. Re-entry-guarded so a
  * double-click can't launch concurrent awaits or start the run twice.
  */
 async function startSingleRun(): Promise<void> {
@@ -201,10 +197,11 @@ async function startSingleRun(): Promise<void> {
     startBtn.disabled = false;
     startingSingleRun = false;
   }
-  // Audio is ready — build the world. A throw here is a game-init bug, not a load failure, so it
-  // must not be misattributed to the audio gate above (surfaces as an unhandled rejection instead).
-  hide("loading");
-  startGame();
+  // Audio is ready — connect to the Arena DO. The world appears on the first snapshot;
+  // onStart hides #loading. Use ?arena=CODE param if present, else default "MAIN".
+  const code = new URLSearchParams(location.search).get("arena") ?? "MAIN";
+  Net.mode = "doclient";
+  Net.client = new Client(createArenaLink(arenaUrl(code)), () => hide("loading"));
 }
 
 /** Host Deploy: build the world and start the authoritative sim/broadcast for connected peers. */
@@ -375,70 +372,11 @@ async function main(): Promise<void> {
     }
   });
 
-  const step = 1 / CONFIG.simHz;
-  const sendStep = 1 / CONFIG.net.sendHz;
   const inputStep = 1 / CONFIG.net.inputHz;
 
-  // --- host authoritative loop: driven by a background-immune Web Worker tick, so the
-  // host keeps simulating + broadcasting even when its tab is hidden (rAF would pause,
-  // freezing every client). onTick runs on the main thread → full DOM/Input access. ---
-  let hLast = performance.now();
-  let hAcc = 0;
-  let hNet = 0;
-  let hMeta = 0;
-  let tick = 0;
-  startTicker(1000 / CONFIG.simHz, () => {
-    const now = performance.now();
-    const dt = Math.min((now - hLast) / 1000, 0.1);
-    hLast = now;
-    // public-room registry heartbeat: refresh our listing on the Worker clock (NOT a main-thread
-    // timer) so a backgrounded public host isn't throttled into a TTL prune. Runs in the lobby too
-    // (phase "lobby") so the room is browsable before deploy. See signaling/room.ts meta handling.
-    if (Net.mode === "host" && coopHostHandle) {
-      hMeta += dt;
-      if (hMeta >= CONFIG.net.registryMetaMs / 1000) {
-        hMeta = 0; // periodic heartbeat (the initial publish is flushed on the signaling WS open)
-        const gs = getState();
-        coopHostHandle.setMeta({
-          public: coopPublic,
-          phase: hostStarted ? gs.phase : "lobby",
-          day: gs.day,
-          players: Net.host?.playerCount() ?? 1, // authoritative: occupied slots + host (= the cap)
-        });
-      }
-    } else {
-      hMeta = 0;
-    }
-    if (Net.mode !== "host" || !hostStarted) {
-      hAcc = 0;
-      hNet = 0;
-      return; // only the running host sims here; single/client/lobby do not
-    }
-    const st = getState();
-    // host sim can't pause for one player; while our options panel is open we still send
-    // zeroed input so our character stands idle (not acting blind behind the overlay)
-    if (st.running && !st.paused)
-      localPlayer(st).input = settingsOpen ? emptyInput() : sampleLocalInput(st);
-    hAcc += dt;
-    while (hAcc >= step) {
-      update(st, step);
-      hAcc -= step;
-    }
-    drainFxEvents(getState()); // host is a player too: play its own cues + clear the buffer
-    if (st.running) audioAmbience(dt); // dread / heartbeat / groan from authoritative state
-    hNet += dt;
-    if (hNet >= sendStep) {
-      hNet = 0;
-      Net.host?.broadcast(tick++);
-    }
-    Net.host?.tickGrace(now); // retire held bodies of clients who never reconnected (P4)
-  });
-
-  // --- render loop (rAF): draws always; runs single-player sim + client input/camera.
-  // Host sim/broadcast is NOT here (it's on the worker tick above) so backgrounding the
-  // host tab only pauses its rendering, never the shared simulation. ---
+  // --- render loop (rAF): draws always; runs client input/camera.
+  // The sim runs entirely on the DO; the browser is a pure DO client. ---
   let rLast = performance.now();
-  let rAcc = 0;
   let sendAcc = 0;
   function frame(now: number): void {
     const dt = (now - rLast) / 1000;
@@ -446,21 +384,7 @@ async function main(): Promise<void> {
     const st = getState();
     const live = st.running && !st.paused;
 
-    if (Net.mode === "single") {
-      // options panel open → freeze the SP sim entirely (don't accumulate dt, so there's no
-      // fast-forward catch-up on resume). state.paused is left untouched (avoids clashing
-      // with shop/gameover and the Esc-pause handler).
-      if (!settingsOpen) {
-        rAcc += Math.min(dt, 0.1);
-        if (live) localPlayer(st).input = sampleLocalInput(st);
-        while (rAcc >= step) {
-          update(st, step);
-          rAcc -= step;
-        }
-        drainFxEvents(st); // consume the tick's cues → audio/particles
-        if (st.running) audioAmbience(dt); // dread / heartbeat / groan from authoritative state
-      }
-    } else if (Net.mode === "client" || Net.mode === "doclient") {
+    if (Net.mode === "client" || Net.mode === "doclient") {
       // no authoritative sim — predict our player, interpolate the world, ship input.
       // While options is open, send zeroed input so the host holds us idle (not acting blind).
       const inp = live ? (settingsOpen ? emptyInput() : sampleLocalInput(st)) : null;
@@ -491,7 +415,6 @@ async function main(): Promise<void> {
         void reconnectClient(coopRoomCode);
       }
     }
-    // host: rendering only here; sim + broadcast run on the worker tick
 
     // reconcile the shop overlay with state.inShop (all modes; clients open it from the
     // snapshot). After the sim/render step so single-player opens it the same frame.
@@ -542,19 +465,6 @@ async function main(): Promise<void> {
   spritesLoaded = true;
   hide("loading");
   show("start");
-
-  // --- dev-only Arena DO entry: ?arena=CODE bypasses method C and connects to the Arena DO.
-  // The entire client render/predict/interp path is reused; only the transport differs
-  // (createArenaLink over WebSocket instead of WebRTC PeerLink). This is additive —
-  // single/host/client are untouched and remain the default for all non-arena URLs.
-  const arenaParam = new URLSearchParams(location.search).get("arena");
-  if (arenaParam) {
-    hide("start");
-    show("loading"); // cover the black pre-snapshot gap; onStart hides it on the first snapshot
-    const link = createArenaLink(arenaUrl(arenaParam));
-    Net.mode = "doclient";
-    Net.client = new Client(link, () => hide("loading")); // onStart fires from startClientGame
-  }
 }
 
 /* ------------------------- co-op lobby ------------------------- */

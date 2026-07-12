@@ -8,8 +8,6 @@ import {
   rerollCost,
   rollOffer,
   type StoreItem,
-  salvageEarned,
-  salvageShare,
   storeItems,
 } from "../sim/data/arsenal";
 import {
@@ -24,14 +22,11 @@ import { PLAYER_COLORS } from "../sim/data/players";
 import { UNLOCKABLE_CARDS, UPGRADES } from "../sim/data/upgrades";
 import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "../sim/data/weapons";
 import { type LightCandidate, selectLights } from "../sim/engine/lights";
-import { cameraTarget, localPlayer, nearestPlayer, revivePlayer } from "../sim/engine/players";
+import { cameraTarget, localPlayer, nearestPlayer } from "../sim/engine/players";
 import { pushFx } from "../sim/events";
 import { newState, setUnlockProvider } from "../sim/state";
-import { stepSim } from "../sim/step";
 import { actionMotion, deriveActionChannel } from "../sim/systems/actionFeel";
-import { sysCamera } from "../sim/systems/camera";
 import { flashlightIntensity } from "../sim/systems/flashlight";
-import { sysFx } from "../sim/systems/fx";
 import { integrityGrade } from "../sim/systems/integrity";
 import { effectiveSearchTime } from "../sim/systems/player";
 import { ambientForClock, clockFrac, clockLabel, startDay } from "../sim/systems/siege";
@@ -167,20 +162,6 @@ function resetAtmosphere(): void {
   prevStalkerCd = 0;
   resetStalkerFx();
   resetStalkerPhantom();
-}
-
-export function update(state: State, dt: number): void {
-  const r = stepSim(state, dt);
-  if (r === "wipe") {
-    gameOver();
-    return;
-  }
-  if (r === "dawn") openShop();
-  // cosmetic tail — client-side only (the DO never runs these). Guarded like the old update().
-  if (state.running && !state.paused) {
-    sysFx(state, dt);
-    sysCamera(state, dt);
-  }
 }
 
 export function audioAmbience(dt: number): void {
@@ -1375,19 +1356,6 @@ export function startGame(): void {
  */
 const shopRowSig = (it: StoreItem, i: number): string => `${i}:${it.id}:${it.price}:${it.desc}`;
 
-/** Authoritative: open the arsenal between nights (host/single sim). The overlay itself
- *  is shown by syncShopUI from `state.inShop`, so clients open it from the snapshot. */
-function openShop(): void {
-  state.inShop = true;
-  state.paused = true;
-  Audio.setDread(0.1);
-  // dawn revival: anyone who fell during the night comes back for the shop + next day
-  // (a survivor cleared the wave to reach here). Gear is kept; see revivePlayer.
-  for (const p of state.players) if (p.hp <= 0) revivePlayer(state, p);
-  resupply();
-  for (const p of state.players) rollDraft(state, p); // host/single: roll each player's offer
-}
-
 /**
  * Apply a purchase host-authoritatively. `buyer` is the player who paid (perks with
  * personal stats apply to them). Returns false (and changes nothing) if the shop is
@@ -1642,26 +1610,6 @@ function endRun(salvage: number, day: number, kills: number, money: number): voi
   gradeDimCur = 1;
 }
 
-function gameOver(): void {
-  // the run's SALVAGE is a party pot, split evenly (floor so co-op never over-banks);
-  // each player banks their own share to their own localStorage via the gameover event.
-  // INVARIANT: the players that actually bank == the non-absent set == {host (pid 0, never
-  // absent)} ∪ {open client links}. Host.onClose marks a dropped client `absent` AND splices
-  // its link out of the broadcast set in one synchronous handler, so the two stay in lockstep —
-  // a teammate held `absent` mid-reconnect has no link, receives no gameover event, and must
-  // therefore be excluded from the divisor or it dilutes the present players and leaks its share.
-  // (Not unit-tested at this level — gameOver is DOM/Audio/Net-bound and net code is out of the
-  // pure-test scope per CLAUDE.md; salvageShare carries the split's pure logic + its test.)
-  const total = salvageEarned(state.day, state.kills);
-  const recipients = state.players.reduce((n, p) => (p.absent ? n : n + 1), 0);
-  const share = salvageShare(total, recipients);
-  // money is per-player now; the debrief shows the squad's combined leftover credits
-  // (in single-player that's just the one wallet → identical to before).
-  const money = state.players.reduce((sum, p) => sum + p.money, 0);
-  Net.host?.broadcastGameOver(share, state.day, state.kills, money);
-  endRun(share, state.day, state.kills, money);
-}
-
 /** Apply the host's gameover event: bank our share + show the debrief on this client. */
 export function clientGameOver(salvage: number, day: number, kills: number, money: number): void {
   endRun(salvage, day, kills, money);
@@ -1855,21 +1803,6 @@ function interactPrompt(): string | null {
     if (Math.hypot(c.x - p.x, c.y - p.y) < reach) return "stand still to search";
   }
   return null;
-}
-
-/** Safe-room resupply: top up spare ammo, the battery, and medkits between waves. */
-function resupply(): void {
-  const refill = CONFIG.ammo.shopRefillMags;
-  for (const p of state.players) {
-    for (const id of WEAPON_ORDER) {
-      const w = WEAPONS[id];
-      if (!w || w.melee) continue;
-      const cap = Math.round(w.reserveMax * p.reserveMul);
-      p.reserve[id] = Math.min(cap, (p.reserve[id] ?? 0) + Math.round(w.mag * refill));
-    }
-    p.battery = Math.min(CONFIG.flashlight.batteryMax, p.battery + CONFIG.flashlight.shopBattery);
-    p.medkits = Math.min(CONFIG.heal.maxMedkits, p.medkits + CONFIG.heal.shopMedkits);
-  }
 }
 
 // Flashlight toggle (F) and medkit use (H) are player actions driven through
