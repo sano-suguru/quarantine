@@ -113,7 +113,7 @@ async function startSingleRun(): Promise<void> {
       showLoadError("Couldn't reach the arena. Is it running? (check your connection and retry)");
       link.close();
     }
-  }, CONFIG.net.p2pOpenTimeoutMs);
+  }, CONFIG.net.arenaOpenTimeoutMs);
   link.onOpen(() => clearTimeout(connectTimer));
   link.onClose(() => {
     if (!arenaStarted) {

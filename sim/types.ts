@@ -594,18 +594,6 @@ export interface State {
   fxEvents: FxEvent[];
 }
 
-/**
- * WebRTC ICE-server config shape. Declared structurally (not via the DOM lib's `RTCIceServer`)
- * so `sim/config.ts` stays inside the no-DOM sim boundary. It is a subset of lib.dom's
- * `RTCIceServer`; `game/net/transport.ts` asserts assignability with `satisfies RTCIceServer[]`
- * so drift is caught if that DOM type ever narrows.
- */
-export interface IceServerConfig {
-  urls: string | string[];
-  username?: string;
-  credential?: string;
-}
-
 /** Structural type so state.ts need not import the engine class directly. */
 interface SpatialHashLike {
   clear(): void;

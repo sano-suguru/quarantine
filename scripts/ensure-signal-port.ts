@@ -1,12 +1,12 @@
 /**
- * Preflight guard for the signaling relay (`bun run signal` / `dev:coop`).
+ * Preflight guard for the arena worker dev port (`bun run signal` / `dev:coop`).
  *
- * The game always dials the relay at CONFIG.net.signalUrl (127.0.0.1:8787). Wrangler, however,
- * SILENTLY falls back to a random free port when 8787 is already taken — so a stale/zombie relay
- * squatting 8787 leaves the fresh relay on some other port while the game keeps talking to the
- * dead one ("connecting via relay…" forever). This guard makes that situation fail loudly instead:
- * if 8787 is occupied it prints the offending PID + how to clear it, and exits non-zero so the
- * relay never starts on the wrong port.
+ * The game always dials the arena at CONFIG.net.devArenaHost (127.0.0.1:8787). Wrangler, however,
+ * SILENTLY falls back to a random free port when 8787 is already taken — so a stale/zombie worker
+ * squatting 8787 leaves the fresh worker on some other port while the game keeps talking to the
+ * dead one ("connecting to the arena…" forever). This guard makes that situation fail loudly
+ * instead: if 8787 is occupied it prints the offending PID + how to clear it, and exits non-zero
+ * so the worker never starts on the wrong port.
  */
 import { execFileSync } from "node:child_process";
 
@@ -43,10 +43,10 @@ try {
 }
 
 console.error(
-  `\n✖ Signaling port ${PORT} is already in use — refusing to start on a fallback port.\n` +
-    `  The game only talks to 127.0.0.1:${PORT}; a relay on any other port is invisible to it.\n\n` +
+  `\n✖ Arena dev port ${PORT} is already in use — refusing to start on a fallback port.\n` +
+    `  The game only talks to 127.0.0.1:${PORT}; a worker on any other port is invisible to it.\n\n` +
     `  Offending process(es):\n${detail}\n\n` +
-    `  If this is a stale/zombie relay (e.g. from a previous run or a renamed dir), clear it:\n` +
+    `  If this is a stale/zombie worker (e.g. from a previous run or a renamed dir), clear it:\n` +
     `    kill ${pids.join(" ")}      # then re-run; use kill -9 if it survives\n`,
 );
 process.exit(1);

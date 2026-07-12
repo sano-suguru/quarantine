@@ -1,5 +1,3 @@
-import type { IceServerConfig } from "./types";
-
 export const CONFIG = {
   simHz: 60,
   arena: 1600,
@@ -20,21 +18,11 @@ export const CONFIG = {
     // ghost fades just as the host-authoritative bullet (drawn ~interpDelay in the past)
     // becomes visible — minimizing the double-tracer window. Tune by feel.
     ghostLife: 0.12,
-    // signaling host:port for room-code auto-connect (the ws/wss scheme is chosen from
-    // location.protocol at connect time). Default = local `wrangler dev`. Swap to the
-    // deployed Worker host for internet play.
-    signalUrl: "127.0.0.1:8787",
-    // ICE servers for WebRTC. STUN only by default (covers most home↔home NATs). Add a
-    // TURN entry here (no code change) if a peer behind symmetric NAT/CGNAT can't connect.
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }] as IceServerConfig[],
-    // Non-trickle ICE bakes every candidate into ONE pasteable/relayed SDP, so we must not ship
-    // before the useful candidates exist. Old code used a flat 3s that truncated slow srflx/relay
-    // candidates on restrictive networks → guaranteed cross-NAT failure. See transport.ts.
-    iceGatherMaxMs: 8000, // hard cap before shipping whatever candidates we have (backstop)
-    iceGatherGraceMs: 1200, // STUN-only: after the first reflexive candidate, wait this then go
-    roomAnswerTimeoutMs: 3000, // join-by-code: fake/empty rooms should fail quickly in lobby UI
-    registryFetchTimeoutMs: 3000, // quick-match/browser: don't leave the hub stuck scanning
-    p2pOpenTimeoutMs: 15000, // client lobby: if the P2P link never opens, surface a failure
+    // local dev arena host:port (ws/wss scheme chosen from location.protocol at connect).
+    // Prod uses the deployed Worker origin (location.host), so this only applies to local dev.
+    devArenaHost: "127.0.0.1:8787",
+    // if the arena WebSocket never opens, surface a connect failure (main.ts).
+    arenaOpenTimeoutMs: 15000,
     // Client auto-reconnect (P4). The client triggers a reconnect when BOTH data channels go
     // quiet (no snapshot AND no rel pong) for snapStarvationMs — a true loss, not a snap-only
     // blip (host keeps broadcasting through pause/shop, so a quiet snap path = the link died).
@@ -46,10 +34,6 @@ export const CONFIG = {
       graceMs: 20000, // host holds a dropped player's body this long (> backoff total) for re-attach
       rejoinClaimTimeoutMs: 1000, // host waits this for the client's first rel (join/rejoin) before assuming fresh
     },
-    // public-room browser / quick-match (D)
-    registryPollMs: 3000, // OPEN RAIDS list refresh cadence while the hub is open
-    registryMetaMs: 10000, // public host → relay meta cadence (registry liveness; Worker-clock driven)
-    quickMatchTimeoutMs: 6000, // per-candidate connect wait before falling back to hosting
     maxPlayers: 12, // max squad size (DO 2a)
     inputHz: 25, // player input rate (used in Task 11; add now to co-locate)
   },
