@@ -43,9 +43,10 @@ import { sampleLocalInput } from "./net/localInput";
 import { Net } from "./net/net";
 import { listRooms, type RoomInfo, selectQuickMatch, versionMatches } from "./net/registry";
 import { bumpCoopEpoch, coopEpoch, isCoopEpochCurrent } from "./net/session";
-import { type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
+import { arenaUrl, type HostRoom, hostRoom, joinRoom, rejoinRoom } from "./net/signaling";
 import { startTicker } from "./net/ticker";
 import { getTurnStatus, NETLOG, type PeerLink } from "./net/transport";
+import { createArenaLink } from "./net/wsLink";
 import { getSettings } from "./settings";
 import { assertNever, el, hide, isEditableTarget, renderList, show } from "./ui";
 
@@ -457,7 +458,7 @@ async function main(): Promise<void> {
         drainFxEvents(st); // consume the tick's cues → audio/particles
         if (st.running) audioAmbience(dt); // dread / heartbeat / groan from authoritative state
       }
-    } else if (Net.mode === "client") {
+    } else if (Net.mode === "client" || Net.mode === "doclient") {
       // no authoritative sim — predict our player, interpolate the world, ship input.
       // While options is open, send zeroed input so the host holds us idle (not acting blind).
       const inp = live ? (settingsOpen ? emptyInput() : sampleLocalInput(st)) : null;
@@ -471,7 +472,9 @@ async function main(): Promise<void> {
       // reconnect watchdog: both channels silent past snapStarvationMs = a dead link → reconnect.
       // Armed only while a run is live (a client always has a room code to rejoin with);
       // the host keeps broadcasting through pause/shop so quiet snaps mean a real drop.
+      // doclient: arena reconnect is Task 11+/2b — skip the watchdog entirely for this mode.
       if (
+        Net.mode === "client" &&
         coopRoomCode &&
         !reconnecting &&
         st.running &&
@@ -499,9 +502,9 @@ async function main(): Promise<void> {
       closeSettings();
     if (settingsOpen) hide("pause");
 
-    // ?netlog: live co-op net-stat readout (client only) to drive feel-tuning
+    // ?netlog: live co-op net-stat readout (client/doclient) to drive feel-tuning
     if (NETLOG) {
-      const showNet = Net.mode === "client" && st.running;
+      const showNet = (Net.mode === "client" || Net.mode === "doclient") && st.running;
       netstat.style.display = showNet ? "block" : "none";
       if (showNet) {
         netAcc += dt;
@@ -532,6 +535,19 @@ async function main(): Promise<void> {
   spritesLoaded = true;
   hide("loading");
   show("start");
+
+  // --- dev-only Arena DO entry: ?arena=CODE bypasses method C and connects to the Arena DO.
+  // The entire client render/predict/interp path is reused; only the transport differs
+  // (createArenaLink over WebSocket instead of WebRTC PeerLink). This is additive —
+  // single/host/client are untouched and remain the default for all non-arena URLs.
+  const arenaParam = new URLSearchParams(location.search).get("arena");
+  if (arenaParam) {
+    hide("start");
+    show("loading"); // cover the black pre-snapshot gap; onStart hides it on the first snapshot
+    const link = createArenaLink(arenaUrl(arenaParam));
+    Net.mode = "doclient";
+    Net.client = new Client(link, () => hide("loading")); // onStart fires from startClientGame
+  }
 }
 
 /* ------------------------- co-op lobby ------------------------- */

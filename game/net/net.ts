@@ -4,7 +4,7 @@ import type { CoopEvent, HostEvent } from "./events";
 import type { Host } from "./host";
 
 /** Which role this client is playing this session. */
-export type NetMode = "single" | "host" | "client";
+export type NetMode = "single" | "host" | "client" | "doclient";
 
 /**
  * Co-op wire-protocol version. Host and client MUST match or they desync silently (the snapshot
