@@ -23,8 +23,8 @@ import { Audio } from "../engine/audio";
 import { drainFxEvents } from "../fx-drain";
 import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
 import { advanceGhosts } from "./ghost";
+import type { PeerLink } from "./link";
 import { type NetMsg, PROTOCOL_VERSION } from "./net";
-import type { PeerLink } from "./transport";
 
 type RGB = [number, number, number];
 const GREY: RGB = [0.5, 0.5, 0.5];

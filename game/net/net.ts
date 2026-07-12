@@ -1,10 +1,9 @@
 import type { PlayerInput } from "../../sim/playerInput";
 import type { Client } from "./client";
 import type { CoopEvent, HostEvent } from "./events";
-import type { Host } from "./host";
 
 /** Which role this client is playing this session. */
-export type NetMode = "single" | "host" | "client" | "doclient";
+export type NetMode = "client";
 
 /**
  * Co-op wire-protocol version. Host and client MUST match or they desync silently (the snapshot
@@ -39,13 +38,11 @@ export type NetMsg =
   | CoopEvent
   | HostEvent;
 
-/** Session-wide networking state, read by the main loop to pick host/client/single paths. */
+/** Session-wide networking state, read by the main loop. */
 export const Net: {
   mode: NetMode;
-  host: Host | null;
   client: Client | null;
 } = {
-  mode: "single",
-  host: null,
+  mode: "client",
   client: null,
 };

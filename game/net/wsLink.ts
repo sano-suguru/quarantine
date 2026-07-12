@@ -3,7 +3,7 @@
 // reliable messages (JSON) are multiplexed behind a 1-byte tag (sim/net/wire), so client.ts's
 // existing PeerLink call sites (sendSnap/sendRel/onSnap/onRel/onOpen/onClose/close) are unchanged.
 import { frameRel, unframe } from "../../sim/net/wire";
-import type { PeerLink } from "./transport";
+import type { PeerLink } from "./link";
 
 export function createArenaLink(url: string): PeerLink {
   const ws = new WebSocket(url);

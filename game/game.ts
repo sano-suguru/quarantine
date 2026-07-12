@@ -1328,28 +1328,6 @@ function buildWeaponSlots(): void {
   lastWeapon = ""; // force a re-highlight on the next HUD tick
 }
 
-export function startGame(): void {
-  state = newState();
-  // Drop any unowned ids from the loadout before the run begins (ownership may have changed
-  // since last session or since the Arsenal was last opened).
-  reconcileLoadout(state.owned);
-  Renderer.setWalls(state.walls);
-  deployableSeen.clear();
-  state.running = true;
-  lastWeapon = "";
-  resetAtmosphere();
-  Audio.resume();
-  hide("start");
-  hide("over");
-  hide("shop");
-  hide("lobby");
-  hide("coop");
-  show("hud");
-  buildWeaponSlots();
-  startDay(state);
-  pushFx(state, { t: "announce", label: "DAY", day: state.day });
-}
-
 /**
  * Full per-row signature: index + id + price + desc — every mutable thing `create` renders into a
  * row. Used as the renderList key for Fortify rows.
