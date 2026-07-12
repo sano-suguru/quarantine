@@ -15,8 +15,10 @@ export type NetMode = "single" | "host" | "client";
  * BUMP THIS whenever the wire format changes — `snapshot.ts` encode/decode, the `NetMsg`/`CoopEvent`
  * unions, or the Hello fields. The golden byte test in `snapshot.test.ts` fails on any encode change
  * to force a conscious bump (don't just silence it — bump here too).
+ *
+ * The constant itself lives in sim/net/protocol.ts (DO-importable) and is re-exported here.
  */
-export const PROTOCOL_VERSION = 18;
+export { PROTOCOL_VERSION } from "../../sim/net/protocol";
 
 /** Messages on the reliable channel (JSON). Snapshots go on the binary channel. */
 export type NetMsg =
