@@ -93,6 +93,7 @@ export function newState(): State {
     cam: { x: 0, y: 0, shake: 0 },
     wave: { n: 0, def: null, spawnT: 0 },
     kills: 0,
+    salvageBanked: 0,
     owned,
     unlockedCards,
     hash: new SpatialHash(64),

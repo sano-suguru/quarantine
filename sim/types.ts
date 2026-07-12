@@ -569,6 +569,9 @@ export interface State {
   wave: Wave;
   /** total kills this run (shared run stat; drives wave count and SALVAGE) */
   kills: number;
+  /** cumulative SALVAGE already banked to clients this arena life; baseline for the per-dawn
+   *  delta (dawn banks salvageEarned(day,kills) - salvageBanked, split among present players). */
+  salvageBanked: number;
   /** which weapons are available this run (starters + meta-unlocked). Shared = account-level
    *  unlock axis; per-player power (wlevel/muls/money) lives on Player. */
   owned: Record<string, boolean>;
