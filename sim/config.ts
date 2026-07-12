@@ -49,6 +49,8 @@ export const CONFIG = {
     registryPollMs: 3000, // OPEN RAIDS list refresh cadence while the hub is open
     registryMetaMs: 10000, // public host → relay meta cadence (registry liveness; Worker-clock driven)
     quickMatchTimeoutMs: 6000, // per-candidate connect wait before falling back to hosting
+    maxPlayers: 12, // max squad size (DO 2a)
+    inputHz: 25, // player input rate (used in Task 11; add now to co-locate)
   },
   // speed is the only move speed now (sprint removed); the equipped weapon's moveMul scales it.
   // moveRampRate = how fast curMoveMul approaches the weapon's weight (per sec).
@@ -263,6 +265,7 @@ export const CONFIG = {
     nightCapMax: 90, // hard ceiling (perf / snapshot bound)
     duskFrac: 0.25, // fraction of the day over which light crossfades down to night (sunset)
     dawnFrac: 0.2, // fraction of the night over which light crossfades up to day (predawn)
+    heldNightDay: 4, // representative mid-game day the DO starts the held night at (DO 2a gate)
   },
   cache: {
     searchTime: 1.5, // seconds of holding interact (and standing still) to loot (day)

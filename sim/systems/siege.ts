@@ -83,5 +83,11 @@ export function sysSiege(state: State, dt: number): "night" | "dawn" | null {
   // night: spawns keep coming (capped); dawn arrives on the clock, not on a wipe-out
   sysWave(state, dt, nightMaxZombies(state.day));
   state.phaseT -= dt;
-  return state.phaseT <= 0 ? "dawn" : null;
+  if (state.phaseT > 0) return null;
+  if (state.heldNight) {
+    // held night (DO 2a): re-arm the night clock so it loops (18:00→06:00 repeats) and never dawns
+    state.phaseT = nightDuration(state.day);
+    return null;
+  }
+  return "dawn";
 }

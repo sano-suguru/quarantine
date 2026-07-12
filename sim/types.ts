@@ -562,6 +562,9 @@ export interface State {
   day: number;
   /** seconds left in the current phase (day countdown) */
   phaseT: number;
+  /** DO held-night gate (2a): sysSiege never transitions to dawn while true, so the arena runs
+   *  a sustained night and never globally pauses (per-player shop + day/night cycle = 2b). */
+  heldNight: boolean;
   cam: Cam;
   wave: Wave;
   /** total kills this run (shared run stat; drives wave count and SALVAGE) */
