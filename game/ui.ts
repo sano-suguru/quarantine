@@ -81,8 +81,3 @@ export function announce(label: string, n: number): void {
   void b.offsetWidth; // reflow to restart animation
   b.classList.add("show");
 }
-
-/** Exhaustiveness guard — `default: assertNever(x)` turns a missed union case into a compile error. */
-export function assertNever(x: never): never {
-  throw new Error(`unreachable: ${JSON.stringify(x)}`);
-}

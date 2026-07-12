@@ -1,0 +1,50 @@
+import { CONFIG } from "./config";
+import { anyAlive } from "./engine/players";
+import { pushFx } from "./events";
+import { sysAI } from "./systems/ai";
+import { sysAssist } from "./systems/assist";
+import { sysBullets } from "./systems/bullets";
+import { sysDeployables } from "./systems/deployables";
+import { sysPickups } from "./systems/pickups";
+import { sysPlayer } from "./systems/player";
+import { sysSiege } from "./systems/siege";
+import { spawnStalker, sysStalker } from "./systems/stalker";
+import type { State } from "./types";
+
+/**
+ * The headless authoritative step. The DO's setInterval loop calls this once per fixed tick.
+ * Returns the frame's discrete siege/end outcome INSTEAD of calling the client-side reactions
+ * (openShop on dawn, gameOver on wipe) — the caller decides. Excludes sysFx/sysCamera (cosmetic,
+ * per-client). Pushed transition events are cosmetic fxEvents; the DO clears them each tick.
+ */
+export function stepSim(state: State, dt: number): "night" | "dawn" | "wipe" | null {
+  if (!state.running || state.paused) return null;
+  let sdt = dt;
+  if (state.hitstopT > 0) {
+    state.hitstopT -= dt;
+    sdt = dt * CONFIG.feel.hitstopScale;
+  }
+  state.flashT *= Math.exp(-CONFIG.feel.flashDecay * dt);
+  state.time += sdt;
+  sysPlayer(state, sdt);
+  sysAssist(state, sdt);
+  sysAI(state, sdt);
+  if (!anyAlive(state)) return "wipe";
+  if (state.stalker) sysStalker(state, sdt);
+  sysDeployables(state, sdt);
+  sysBullets(state, sdt);
+  sysPickups(state, sdt);
+  const ev = sysSiege(state, sdt);
+  if (ev === "night") {
+    spawnStalker(state);
+    pushFx(state, { t: "announce", label: "NIGHT", day: state.day });
+    pushFx(state, { t: "audio", cue: "waveStart" });
+    return "night";
+  }
+  if (ev === "dawn") {
+    if (state.stalker) state.stalker.state = "retreat";
+    pushFx(state, { t: "audio", cue: "dawn" });
+    return "dawn";
+  }
+  return null;
+}

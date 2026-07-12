@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Client } from "./client";
-import type { PeerLink } from "./transport";
+import type { PeerLink } from "./link";
 
 /** Minimal PeerLink double: records close() calls; the wire()/handlers are inert no-ops. */
 class FakeLink implements PeerLink {

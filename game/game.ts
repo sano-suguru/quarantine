@@ -8,8 +8,6 @@ import {
   rerollCost,
   rollOffer,
   type StoreItem,
-  salvageEarned,
-  salvageShare,
   storeItems,
 } from "../sim/data/arsenal";
 import {
@@ -24,28 +22,14 @@ import { PLAYER_COLORS } from "../sim/data/players";
 import { UNLOCKABLE_CARDS, UPGRADES } from "../sim/data/upgrades";
 import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "../sim/data/weapons";
 import { type LightCandidate, selectLights } from "../sim/engine/lights";
-import {
-  anyAlive,
-  cameraTarget,
-  localPlayer,
-  nearestPlayer,
-  revivePlayer,
-} from "../sim/engine/players";
+import { cameraTarget, localPlayer, nearestPlayer } from "../sim/engine/players";
 import { pushFx } from "../sim/events";
 import { newState, setUnlockProvider } from "../sim/state";
 import { actionMotion, deriveActionChannel } from "../sim/systems/actionFeel";
-import { sysAI } from "../sim/systems/ai";
-import { sysAssist } from "../sim/systems/assist";
-import { sysBullets } from "../sim/systems/bullets";
-import { sysCamera } from "../sim/systems/camera";
-import { sysDeployables } from "../sim/systems/deployables";
 import { flashlightIntensity } from "../sim/systems/flashlight";
-import { sysFx } from "../sim/systems/fx";
 import { integrityGrade } from "../sim/systems/integrity";
-import { sysPickups } from "../sim/systems/pickups";
-import { effectiveSearchTime, sysPlayer } from "../sim/systems/player";
-import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "../sim/systems/siege";
-import { spawnStalker, sysStalker } from "../sim/systems/stalker";
+import { effectiveSearchTime } from "../sim/systems/player";
+import { ambientForClock, clockFrac, clockLabel, startDay } from "../sim/systems/siege";
 import type { Player, State, WeaponDef } from "../sim/types";
 import { resolveHotbarSlot } from "./autoAim";
 import { Audio } from "./engine/audio";
@@ -178,44 +162,6 @@ function resetAtmosphere(): void {
   prevStalkerCd = 0;
   resetStalkerFx();
   resetStalkerPhantom();
-}
-
-export function update(state: State, dt: number): void {
-  if (!state.running || state.paused) return;
-
-  // hitstop: briefly slow the sim on impactful kills
-  let sdt = dt;
-  if (state.hitstopT > 0) {
-    state.hitstopT -= dt;
-    sdt = dt * CONFIG.feel.hitstopScale;
-  }
-  state.flashT *= Math.exp(-CONFIG.feel.flashDecay * dt);
-
-  state.time += sdt;
-  sysPlayer(state, sdt);
-  sysAssist(state, sdt); // co-op proximity revive of downed teammates (no-op in single-player)
-  sysAI(state, sdt);
-  if (!anyAlive(state)) {
-    gameOver();
-    return;
-  }
-  if (state.stalker) sysStalker(state, sdt);
-  sysDeployables(state, sdt); // turrets fire / stations emit (after AI so the zombie set is current)
-  sysBullets(state, sdt);
-  sysPickups(state, sdt);
-  sysFx(state, sdt);
-  const ev = sysSiege(state, sdt);
-  sysCamera(state, sdt);
-  if (ev === "night") {
-    spawnStalker(state);
-    pushFx(state, { t: "announce", label: "NIGHT", day: state.day });
-    pushFx(state, { t: "audio", cue: "waveStart" });
-  } else if (ev === "dawn") {
-    // Set to retreat so it leaves gracefully; despawns when off-arena via sysStalker
-    if (state.stalker) state.stalker.state = "retreat";
-    pushFx(state, { t: "audio", cue: "dawn" });
-    openShop();
-  }
 }
 
 export function audioAmbience(dt: number): void {
@@ -1382,46 +1328,11 @@ function buildWeaponSlots(): void {
   lastWeapon = ""; // force a re-highlight on the next HUD tick
 }
 
-export function startGame(): void {
-  state = newState();
-  // Drop any unowned ids from the loadout before the run begins (ownership may have changed
-  // since last session or since the Arsenal was last opened).
-  reconcileLoadout(state.owned);
-  Renderer.setWalls(state.walls);
-  deployableSeen.clear();
-  state.running = true;
-  lastWeapon = "";
-  resetAtmosphere();
-  Audio.resume();
-  hide("start");
-  hide("over");
-  hide("shop");
-  hide("lobby");
-  hide("coop");
-  show("hud");
-  buildWeaponSlots();
-  startDay(state);
-  pushFx(state, { t: "announce", label: "DAY", day: state.day });
-}
-
 /**
  * Full per-row signature: index + id + price + desc — every mutable thing `create` renders into a
  * row. Used as the renderList key for Fortify rows.
  */
 const shopRowSig = (it: StoreItem, i: number): string => `${i}:${it.id}:${it.price}:${it.desc}`;
-
-/** Authoritative: open the arsenal between nights (host/single sim). The overlay itself
- *  is shown by syncShopUI from `state.inShop`, so clients open it from the snapshot. */
-function openShop(): void {
-  state.inShop = true;
-  state.paused = true;
-  Audio.setDread(0.1);
-  // dawn revival: anyone who fell during the night comes back for the shop + next day
-  // (a survivor cleared the wave to reach here). Gear is kept; see revivePlayer.
-  for (const p of state.players) if (p.hp <= 0) revivePlayer(state, p);
-  resupply();
-  for (const p of state.players) rollDraft(state, p); // host/single: roll each player's offer
-}
 
 /**
  * Apply a purchase host-authoritatively. `buyer` is the player who paid (perks with
@@ -1677,26 +1588,6 @@ function endRun(salvage: number, day: number, kills: number, money: number): voi
   gradeDimCur = 1;
 }
 
-function gameOver(): void {
-  // the run's SALVAGE is a party pot, split evenly (floor so co-op never over-banks);
-  // each player banks their own share to their own localStorage via the gameover event.
-  // INVARIANT: the players that actually bank == the non-absent set == {host (pid 0, never
-  // absent)} ∪ {open client links}. Host.onClose marks a dropped client `absent` AND splices
-  // its link out of the broadcast set in one synchronous handler, so the two stay in lockstep —
-  // a teammate held `absent` mid-reconnect has no link, receives no gameover event, and must
-  // therefore be excluded from the divisor or it dilutes the present players and leaks its share.
-  // (Not unit-tested at this level — gameOver is DOM/Audio/Net-bound and net code is out of the
-  // pure-test scope per CLAUDE.md; salvageShare carries the split's pure logic + its test.)
-  const total = salvageEarned(state.day, state.kills);
-  const recipients = state.players.reduce((n, p) => (p.absent ? n : n + 1), 0);
-  const share = salvageShare(total, recipients);
-  // money is per-player now; the debrief shows the squad's combined leftover credits
-  // (in single-player that's just the one wallet → identical to before).
-  const money = state.players.reduce((sum, p) => sum + p.money, 0);
-  Net.host?.broadcastGameOver(share, state.day, state.kills, money);
-  endRun(share, state.day, state.kills, money);
-}
-
 /** Apply the host's gameover event: bank our share + show the debrief on this client. */
 export function clientGameOver(salvage: number, day: number, kills: number, money: number): void {
   endRun(salvage, day, kills, money);
@@ -1890,21 +1781,6 @@ function interactPrompt(): string | null {
     if (Math.hypot(c.x - p.x, c.y - p.y) < reach) return "stand still to search";
   }
   return null;
-}
-
-/** Safe-room resupply: top up spare ammo, the battery, and medkits between waves. */
-function resupply(): void {
-  const refill = CONFIG.ammo.shopRefillMags;
-  for (const p of state.players) {
-    for (const id of WEAPON_ORDER) {
-      const w = WEAPONS[id];
-      if (!w || w.melee) continue;
-      const cap = Math.round(w.reserveMax * p.reserveMul);
-      p.reserve[id] = Math.min(cap, (p.reserve[id] ?? 0) + Math.round(w.mag * refill));
-    }
-    p.battery = Math.min(CONFIG.flashlight.batteryMax, p.battery + CONFIG.flashlight.shopBattery);
-    p.medkits = Math.min(CONFIG.heal.maxMedkits, p.medkits + CONFIG.heal.shopMedkits);
-  }
 }
 
 // Flashlight toggle (F) and medkit use (H) are player actions driven through

@@ -9,11 +9,12 @@ export const CONFIG = {
   zoomMobileMul: 0.62,
   maxInstances: 40000,
   // co-op networking (host-authoritative). client interpolation / prediction params.
+  // DO-hop: interpDelayMs, smoothCorrect, snapTeleportThresh are starting points, feel-tuned at gate
   net: {
     sendHz: 30, // host snapshot broadcast rate
-    interpDelayMs: 100, // render remote entities this far in the past
-    smoothCorrect: 0.2, // reconciliation lerp factor
-    snapTeleportThresh: 80, // px error above which we hard-snap instead of lerp
+    interpDelayMs: 150, // render remote entities this far in the past (DO-hop starting point)
+    smoothCorrect: 0.15, // reconciliation lerp factor (DO-hop starting point, gentler for jitterier hop)
+    snapTeleportThresh: 120, // px error above which we hard-snap instead of lerp (DO-hop starting point)
     maxExtrapolateMs: 120, // cap on dead-reckoning when snapshots stall (used if extrapolation is enabled)
     // client-predicted "ghost" tracer lifetime (visual only). ~interpDelayMs/1000 so the
     // ghost fades just as the host-authoritative bullet (drawn ~interpDelay in the past)
@@ -49,6 +50,8 @@ export const CONFIG = {
     registryPollMs: 3000, // OPEN RAIDS list refresh cadence while the hub is open
     registryMetaMs: 10000, // public host → relay meta cadence (registry liveness; Worker-clock driven)
     quickMatchTimeoutMs: 6000, // per-candidate connect wait before falling back to hosting
+    maxPlayers: 12, // max squad size (DO 2a)
+    inputHz: 25, // player input rate (used in Task 11; add now to co-locate)
   },
   // speed is the only move speed now (sprint removed); the equipped weapon's moveMul scales it.
   // moveRampRate = how fast curMoveMul approaches the weapon's weight (per sec).
@@ -263,6 +266,7 @@ export const CONFIG = {
     nightCapMax: 90, // hard ceiling (perf / snapshot bound)
     duskFrac: 0.25, // fraction of the day over which light crossfades down to night (sunset)
     dawnFrac: 0.2, // fraction of the night over which light crossfades up to day (predawn)
+    heldNightDay: 4, // representative mid-game day the DO starts the held night at (DO 2a gate)
   },
   cache: {
     searchTime: 1.5, // seconds of holding interact (and standing still) to loot (day)

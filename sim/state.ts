@@ -90,6 +90,7 @@ export function newState(): State {
     phase: "day",
     day: 1,
     phaseT: CONFIG.siege.dayDuration,
+    heldNight: false,
     cam: { x: 0, y: 0, shake: 0 },
     wave: { n: 0, def: null, spawnT: 0 },
     kills: 0,

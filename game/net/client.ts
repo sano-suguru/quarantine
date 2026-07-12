@@ -17,13 +17,14 @@ import {
   goreIntensity,
 } from "../../sim/systems/fx";
 import { integrateMovement } from "../../sim/systems/player";
-import type { Bullet } from "../../sim/types";
+import { siegeEdgeCue } from "../../sim/systems/siegeEdge";
+import type { Bullet, SiegePhase } from "../../sim/types";
 import { Audio } from "../engine/audio";
 import { drainFxEvents } from "../fx-drain";
 import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
 import { advanceGhosts } from "./ghost";
+import type { PeerLink } from "./link";
 import { type NetMsg, PROTOCOL_VERSION } from "./net";
-import type { PeerLink } from "./transport";
 
 type RGB = [number, number, number];
 const GREY: RGB = [0.5, 0.5, 0.5];
@@ -48,6 +49,7 @@ export class Client {
   } | null = null;
   private buf: { snap: Snapshot; at: number }[] = [];
   private prev: Snapshot | null = null; // last snapshot, for combat-fx diffing
+  private prevPhase: SiegePhase | null = null; // last seen phase, for siege-transition cue derivation
   // local-player predictor
   private predX = 0;
   private predY = 0;
@@ -166,6 +168,13 @@ export class Client {
       if (this.buf.length > 8) this.buf.shift();
       this.reconcile(snap);
       if (this.prev) this.effects(this.prev, snap);
+      const cues = siegeEdgeCue(this.prevPhase, snap.phase, snap.day);
+      this.prevPhase = snap.phase;
+      if (cues.length) {
+        const st = getState();
+        for (const c of cues) st.fxEvents.push(c);
+        drainFxEvents(st); // banner + sting via the existing sink
+      }
       this.prev = snap;
     });
     // every P2P open, claim our identity so the host can re-attach (rejoin) or assign a slot (join)
@@ -222,6 +231,7 @@ export class Client {
   private resetNet(): void {
     this.buf = [];
     this.prev = null;
+    this.prevPhase = null;
     this.ghosts = [];
     this.predInit = false;
     this.lastTick = -1;
