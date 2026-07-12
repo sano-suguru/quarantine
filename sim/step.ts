@@ -13,9 +13,11 @@ import type { State } from "./types";
 
 /**
  * The headless authoritative step. The DO's setInterval loop calls this once per fixed tick.
- * Returns the frame's discrete siege/end outcome INSTEAD of calling the client-side reactions
- * (openShop on dawn, gameOver on wipe) — the caller decides. Excludes sysFx/sysCamera (cosmetic,
- * per-client). Pushed transition events are cosmetic fxEvents; the DO clears them each tick.
+ * Returns the frame's discrete siege outcome ("night"/"dawn"/null) INSTEAD of driving the
+ * world reactions itself — the caller (the DO) advances the day on "dawn". There is no
+ * game-over: an all-down party keeps running (respawn timers + the night clock carry to dawn).
+ * Excludes sysFx/sysCamera (cosmetic, per-client). Pushed transition events are cosmetic
+ * fxEvents; the DO clears them each tick.
  */
 export function stepSim(state: State, dt: number): "night" | "dawn" | null {
   if (!state.running || state.paused) return null;
