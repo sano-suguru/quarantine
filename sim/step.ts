@@ -6,6 +6,7 @@ import { sysBullets } from "./systems/bullets";
 import { sysDeployables } from "./systems/deployables";
 import { sysPickups } from "./systems/pickups";
 import { sysPlayer } from "./systems/player";
+import { sysRespawn } from "./systems/respawn";
 import { sysSiege } from "./systems/siege";
 import { spawnStalker, sysStalker } from "./systems/stalker";
 import type { State } from "./types";
@@ -27,6 +28,7 @@ export function stepSim(state: State, dt: number): "night" | "dawn" | null {
   state.time += sdt;
   sysPlayer(state, sdt);
   sysAssist(state, sdt);
+  sysRespawn(state, sdt);
   sysAI(state, sdt);
   if (state.stalker) sysStalker(state, sdt);
   sysDeployables(state, sdt);

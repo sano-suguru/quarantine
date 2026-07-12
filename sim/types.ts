@@ -176,6 +176,9 @@ export interface Player {
   /** co-op revive progress (seconds) accumulated on THIS player while downed and a teammate
    *  tends them nearby; reaches CONFIG.assist.reviveTime to revive. Always 0 in single-player. */
   assistT: number;
+  /** seconds spent downed (hp<=0). Ticks in sysRespawn; at CONFIG.siege.respawnDelay the player
+   *  auto-respawns at the fortress. Reset to 0 by revivePlayer (peer/timer/dawn). */
+  downT: number;
   /** co-op (P4): true while this player's client is disconnected and the host is holding the
    *  body for a possible reconnect. An absent player is inert — not a zombie target, not
    *  counted by anyAlive, no input sim — and rendered as a faded ghost. Always false in SP. */
