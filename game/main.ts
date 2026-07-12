@@ -104,7 +104,34 @@ async function startSingleRun(): Promise<void> {
   // onStart hides #loading. Use ?arena=CODE param if present, else default "MAIN".
   const code = new URLSearchParams(location.search).get("arena") ?? "MAIN";
   Net.mode = "client";
-  Net.client = new Client(createArenaLink(arenaUrl(code)), () => hide("loading"));
+  let arenaStarted = false;
+  const link = createArenaLink(arenaUrl(code));
+  // Connect-failure surfaces: timeout + early close + room-full.
+  // Mirrors the spirit of the deleted method-C join() failure wiring (timeout/onOpen/onClose).
+  const connectTimer = setTimeout(() => {
+    if (!arenaStarted) {
+      showLoadError("Couldn't reach the arena. Is it running? (check your connection and retry)");
+      link.close();
+    }
+  }, CONFIG.net.p2pOpenTimeoutMs);
+  link.onOpen(() => clearTimeout(connectTimer));
+  link.onClose(() => {
+    if (!arenaStarted) {
+      clearTimeout(connectTimer);
+      showLoadError("Disconnected from the arena.");
+    }
+  });
+  Net.client = new Client(
+    link,
+    () => {
+      arenaStarted = true;
+      clearTimeout(connectTimer);
+      hide("loading");
+    },
+    {
+      onRoomFull: () => showLoadError("This arena is full (12 players). Try again later."),
+    },
+  );
 }
 
 async function main(): Promise<void> {
