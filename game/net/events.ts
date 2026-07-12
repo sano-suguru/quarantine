@@ -33,4 +33,5 @@ export type HostEvent =
     }
   // Room is at capacity (host + 3). The host sends this instead of assigning a slot; the client
   // tears its own link down on receipt (host doesn't close immediately — see host.ts reject()).
-  | { t: "roomfull" };
+  | { t: "roomfull" }
+  | { t: "banked"; salvage: number }; // dawn SALVAGE payout for this player (client → addSalvage)

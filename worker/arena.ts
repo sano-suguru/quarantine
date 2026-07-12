@@ -13,7 +13,8 @@ import { frameRel, frameSnap, unframe } from "../sim/net/wire";
 import { encodeSnapshot } from "../sim/snapshot";
 import { newState } from "../sim/state";
 import { stepSim } from "../sim/step";
-import { startNight } from "../sim/systems/siege";
+import { sysDawn } from "../sim/systems/dawn";
+import { startDay } from "../sim/systems/siege";
 import type { State } from "../sim/types";
 
 // No Env export: the Arena class takes no env binding in 2a (the DO itself is looked up by name
@@ -66,9 +67,7 @@ export class Arena {
     if (!this.state) {
       const s = newState();
       s.running = true;
-      s.heldNight = true;
-      s.day = CONFIG.siege.heldNightDay;
-      startNight(s); // begin already in the held night (no day→night transition, no banner)
+      startDay(s); // fresh Day-1 (newState is already day/phaseT; this seeds caches + roamers)
       this.state = s;
     }
     if (!this.loop) {
@@ -80,11 +79,17 @@ export class Arena {
   private step(): void {
     const s = this.state;
     if (!s) return;
-    // "wipe"/"dawn" are intentionally ignored in 2a: the held-night gate never advances to day,
-    // and per-player death/respawn is 2b. A wipe just freezes the sim cosmetically; the loop
-    // continues ticking (clients see the frozen frame until 2b handles it).
-    stepSim(s, 1 / CONFIG.simHz); // fixed-dt, one tick one step (no wall-clock accumulator)
-    clearFx(s); // 2a: zero fxEvents on the wire — cues are all client-derived
+    const outcome = stepSim(s, 1 / CONFIG.simHz); // fixed-dt, one tick one step
+    if (outcome === "dawn") {
+      // living cycle: advance the day, bank SALVAGE to present players, revive stragglers, re-enter day.
+      const payouts = sysDawn(s);
+      for (const { pid, salvage } of payouts) {
+        if (salvage <= 0) continue;
+        const peer = [...this.peers.values()].find((p) => p.decided && p.pid === pid);
+        if (peer) this.send(peer.ws, { t: "banked", salvage });
+      }
+    }
+    clearFx(s); // zero fxEvents on the wire — cues are all client-derived
     this.tick++;
     this.ticksThisWindow++;
 
@@ -206,7 +211,7 @@ export class Arena {
     const s = this.state;
     if (!s || s.players.some((p) => p.id === pid)) return;
     const x = HOME_SPAWN.x + ((pid % 4) - 1.5) * 36;
-    // 2a held-night gate: spawn ALIVE at HOME (downed-spawn / spectate = 2b)
+    // drop-in: spawn ALIVE at the fortress in the current phase (respawn/spectate handled by sysRespawn)
     addPlayer(s, pid, x, HOME_SPAWN.y, `P${pid + 1}`);
   }
 
