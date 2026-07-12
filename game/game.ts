@@ -1593,6 +1593,12 @@ export function clientGameOver(salvage: number, day: number, kills: number, mone
   endRun(salvage, day, kills, money);
 }
 
+/** Apply a dawn SALVAGE payout: bank this player's share to their cross-run meta. Unlike
+ *  clientGameOver this does NOT end the run — the arena keeps cycling. */
+export function clientBanked(salvage: number): void {
+  addSalvage(salvage);
+}
+
 /** Back to the title screen (so the player can spend SALVAGE before redeploying). */
 export function toTitle(): void {
   hide("over");
