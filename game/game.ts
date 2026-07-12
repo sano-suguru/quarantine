@@ -24,28 +24,17 @@ import { PLAYER_COLORS } from "../sim/data/players";
 import { UNLOCKABLE_CARDS, UPGRADES } from "../sim/data/upgrades";
 import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "../sim/data/weapons";
 import { type LightCandidate, selectLights } from "../sim/engine/lights";
-import {
-  anyAlive,
-  cameraTarget,
-  localPlayer,
-  nearestPlayer,
-  revivePlayer,
-} from "../sim/engine/players";
+import { cameraTarget, localPlayer, nearestPlayer, revivePlayer } from "../sim/engine/players";
 import { pushFx } from "../sim/events";
 import { newState, setUnlockProvider } from "../sim/state";
+import { stepSim } from "../sim/step";
 import { actionMotion, deriveActionChannel } from "../sim/systems/actionFeel";
-import { sysAI } from "../sim/systems/ai";
-import { sysAssist } from "../sim/systems/assist";
-import { sysBullets } from "../sim/systems/bullets";
 import { sysCamera } from "../sim/systems/camera";
-import { sysDeployables } from "../sim/systems/deployables";
 import { flashlightIntensity } from "../sim/systems/flashlight";
 import { sysFx } from "../sim/systems/fx";
 import { integrityGrade } from "../sim/systems/integrity";
-import { sysPickups } from "../sim/systems/pickups";
-import { effectiveSearchTime, sysPlayer } from "../sim/systems/player";
-import { ambientForClock, clockFrac, clockLabel, startDay, sysSiege } from "../sim/systems/siege";
-import { spawnStalker, sysStalker } from "../sim/systems/stalker";
+import { effectiveSearchTime } from "../sim/systems/player";
+import { ambientForClock, clockFrac, clockLabel, startDay } from "../sim/systems/siege";
 import type { Player, State, WeaponDef } from "../sim/types";
 import { resolveHotbarSlot } from "./autoAim";
 import { Audio } from "./engine/audio";
@@ -181,40 +170,16 @@ function resetAtmosphere(): void {
 }
 
 export function update(state: State, dt: number): void {
-  if (!state.running || state.paused) return;
-
-  // hitstop: briefly slow the sim on impactful kills
-  let sdt = dt;
-  if (state.hitstopT > 0) {
-    state.hitstopT -= dt;
-    sdt = dt * CONFIG.feel.hitstopScale;
-  }
-  state.flashT *= Math.exp(-CONFIG.feel.flashDecay * dt);
-
-  state.time += sdt;
-  sysPlayer(state, sdt);
-  sysAssist(state, sdt); // co-op proximity revive of downed teammates (no-op in single-player)
-  sysAI(state, sdt);
-  if (!anyAlive(state)) {
+  const r = stepSim(state, dt);
+  if (r === "wipe") {
     gameOver();
     return;
   }
-  if (state.stalker) sysStalker(state, sdt);
-  sysDeployables(state, sdt); // turrets fire / stations emit (after AI so the zombie set is current)
-  sysBullets(state, sdt);
-  sysPickups(state, sdt);
-  sysFx(state, sdt);
-  const ev = sysSiege(state, sdt);
-  sysCamera(state, sdt);
-  if (ev === "night") {
-    spawnStalker(state);
-    pushFx(state, { t: "announce", label: "NIGHT", day: state.day });
-    pushFx(state, { t: "audio", cue: "waveStart" });
-  } else if (ev === "dawn") {
-    // Set to retreat so it leaves gracefully; despawns when off-arena via sysStalker
-    if (state.stalker) state.stalker.state = "retreat";
-    pushFx(state, { t: "audio", cue: "dawn" });
-    openShop();
+  if (r === "dawn") openShop();
+  // cosmetic tail — client-side only (the DO never runs these). Guarded like the old update().
+  if (state.running && !state.paused) {
+    sysFx(state, dt);
+    sysCamera(state, dt);
   }
 }
 
