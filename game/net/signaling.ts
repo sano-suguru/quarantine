@@ -4,6 +4,6 @@ import { CONFIG } from "../../sim/config";
 export function arenaUrl(code: string): string {
   const https = location.protocol === "https:";
   const scheme = https ? "wss" : "ws";
-  const host = https ? location.host : CONFIG.net.signalUrl;
+  const host = https ? location.host : CONFIG.net.devArenaHost;
   return `${scheme}://${host}/arena/${encodeURIComponent(code.toUpperCase())}`;
 }
