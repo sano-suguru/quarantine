@@ -10,8 +10,8 @@ Use Bun (`packageManager: bun@1.3.14`).
 | --- | --- |
 | Install dependencies | `bun install` |
 | Start game dev server | `bun run dev` |
-| Start game + local signaling relay | `bun run dev:coop` |
-| Start signaling relay only | `bun run signal` |
+| Start game + local arena worker | `bun run dev:coop` |
+| Start arena worker only | `bun run signal` |
 | Type-check root game + scripts | `bun run typecheck` |
 | Run all tests | `bun run test` |
 | Run one test file | `bun run test -- game/data/waves.test.ts` |
@@ -38,7 +38,7 @@ Workspace MCP configuration lives in `.vscode/mcp.json`. It includes a pinned of
 - `game/config.ts` holds cross-cutting constants for physics, feel, camera, flashlight, healing, ammo, siege timing, loot, arsenal costs, and networking.
 - `game/engine/` contains WebGL2 rendering, procedural audio, math/geometry helpers, lights, sprite assets, players, and `SpatialHash`. Renderer instances share the `[x, y, sx, sy, rot, r, g, b, a, shape]` layout.
 - `game/net/` implements 2-4 player co-op. The host is authoritative and runs the sim; clients send intent, predict local player feel, and interpolate snapshots.
-- `worker/` is the Cloudflare Worker/Durable Object signaling backend, TURN credential endpoint, public-room registry, and static game host. It has its own package/lock/tsconfig and is type-checked separately in CI.
+- `worker/` is the Cloudflare Worker/Durable Object authoritative arena server and static game host. `index.ts` routes `/arena/:CODE` WebSocket upgrades to the `Arena` DO, which runs the sole authoritative sim loop. It has its own package/lock/tsconfig and is type-checked separately in CI.
 
 ## Project-specific conventions
 
@@ -51,5 +51,4 @@ Workspace MCP configuration lives in `.vscode/mcp.json`. It includes a pinned of
 - Biome is the formatter/linter: 2-space indent, double quotes, semicolons, trailing commas, 100-column line width, import types required.
 - Local hooks: pre-commit runs Biome on staged files and re-stages safe fixes; pre-push runs typecheck and tests. CI additionally runs coverage, build, and informational `knip`; worker CI runs `bunx tsc --noEmit --project worker/tsconfig.json`.
 - Deploy the Worker/game via `.github/workflows/deploy-worker.yml` only. Do not use local `wrangler deploy` for normal deployment.
-- Keep WebRTC diagnostics privacy-preserving: net logs may include candidate type/protocol, never addresses or IPs.
 - Input/control source of truth is the live UI plus `game/main.ts` and `game/net/localInput.ts`; update those together when changing controls.
