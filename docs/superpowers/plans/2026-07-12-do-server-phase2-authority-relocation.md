@@ -603,7 +603,10 @@ export interface Env {
 }
 
 const STEP_MS = 1000 / CONFIG.simHz;
-const BROADCAST_EVERY = Math.max(1, Math.round(CONFIG.simHz / CONFIG.net.sendHz)); // ticks per broadcast
+// ticks per broadcast. With CONFIG.net.sendHz=30 this is 2 → 30 Hz broadcast (existing rate).
+// The umbrella spec suggested starting ~20 Hz to widen the per-DO message budget margin at 12
+// players; if the gate shows inbound+outbound pressure, lower sendHz (or add a net.broadcastHz).
+const BROADCAST_EVERY = Math.max(1, Math.round(CONFIG.simHz / CONFIG.net.sendHz));
 
 export class Arena {
   private sockets = new Set<WebSocket>();
@@ -622,6 +625,13 @@ export class Arena {
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1] as WebSocket;
+    // CRITICAL (verified vs CF changelog 2026-04-21): with a compat date >= 2026-03-17 (ours is
+    // 2026-06-01) the STANDARD WebSocket API delivers binary frames as Blob by default. Our
+    // onMessage does `new Uint8Array(data)` on an ArrayBuffer — a Blob would silently break every
+    // input/join frame (snapshots still broadcast, so it looks alive but no one spawns). Opt back
+    // into ArrayBuffer per-socket BEFORE accept(). (The DO hibernatable handler is unaffected, but
+    // we use the standard API.)
+    server.binaryType = "arraybuffer";
     server.accept();
     this.attach(server);
     return new Response(null, { status: 101, webSocket: client });
@@ -853,6 +863,8 @@ Message handler (all synchronous — **no `await` before `decided=true`**):
   }
 ```
 
+**Two constraints (rubber-duck):** (1) `onMessage`/`decideFresh`/`tryRejoin` **must keep the `: void` (non-`async`) signature** — the await-free slot commit is the only thing preventing a double-claim race (spec §a). If a later change needs storage, do it *after* `decided=true`, never between `pickSlot` and the commit. (2) `msg.input` is assigned to `p.input` **without validation** — `PlayerInput` (`sim/playerInput.ts`) is all JSON-safe primitives, and 2a is cooperative-not-adversarial (spec), so this is accepted; leave a one-line comment noting a malformed client could NaN-poison `sysPlayer`. Also note: `state.running` is **not** in the snapshot — the client sets it locally in `startClientGame()` on the first snapshot (Task 9), so the DO doesn't broadcast it.
+
 - [ ] **Step 3: Grace-hold on drop + retire in the loop**
 
 `close`/`error` handler: if the peer is decided and its body exists, mark `body.absent = true; peer.goneAt = Date.now();` (hold for reconnect); else untrack. In `step()`, after `stepSim`, retire expired held bodies:
@@ -1010,13 +1022,14 @@ At the end of `main()` (after the sprite load), add a dev-only arena entry that 
   const arenaParam = new URLSearchParams(location.search).get("arena");
   if (arenaParam) {
     hide("start");
+    show("loading"); // cover the black pre-snapshot gap; onStart hides it on the first snapshot
     const link = createArenaLink(arenaUrl(arenaParam));
     Net.mode = "doclient";
-    Net.client = new Client(link);
+    Net.client = new Client(link, () => hide("loading")); // onStart fires from startClientGame
   }
 ```
 
-Add imports: `createArenaLink` from `./net/wsLink`, `arenaUrl` from `./net/signaling` (Client/Net already imported).
+Add imports: `createArenaLink` from `./net/wsLink`, `arenaUrl` from `./net/signaling` (Client/Net/`show`/`hide` already imported). The `onStart` callback (2nd `Client` ctor arg) fires when the first snapshot arrives (`client.ts` `startClientGame`), so the loading overlay lifts exactly when the world appears — no black frame.
 
 - [ ] **Step 3: Frame path — treat `doclient` exactly like `client`**
 
@@ -1028,7 +1041,7 @@ Run: `bun run typecheck && bun run lint` (PASS).
 
 - [ ] **Step 5: Harness playtest (the Milestone-A deliverable)**
 
-Terminal 1: `cd worker && bunx wrangler dev --port 8787`. Terminal 2: `bun run dev`. Open `http://localhost:5173/?arena=TEST&netlog`. Expected: the game appears on the first snapshot, showing a **held-night arena with a live horde**; your player predicts locally and the world interpolates; the `#netstat` HUD shows RTT/loss/etc. against the local DO. Move/aim/fire feel responsive. **Verify method C still works:** open `http://localhost:5173/` (no `?arena`), Host + Deploy a normal single/co-op session — unchanged.
+Terminal 1: `cd worker && bunx wrangler dev --port 8787`. Terminal 2: `bun run dev`. Open `http://localhost:5173/?arena=TEST&netlog`. Expected: the game appears on the first snapshot, showing a **held-night arena with a live horde**; your player predicts locally and the world interpolates; the `#netstat` HUD shows RTT/loss/etc. against the local DO. Move/aim/fire feel responsive. **Confirm the RTT probe is live** (the #1-risk gate instrument): the `#netstat` `RTT` value must be non-zero and updating — `Client.render()` sends a ping ~1×/s and the DO's `onMessage` echoes `{t:"pong",id}` (Task 7). If RTT stays 0, the ping path isn't firing under `doclient` (check the `live`/`started` gates in `Client.render`). **Verify method C still works:** open `http://localhost:5173/` (no `?arena`), Host + Deploy a normal single/co-op session — unchanged.
 
 - [ ] **Step 6: Commit — closes Milestone A**
 
@@ -1223,46 +1236,75 @@ git commit -m "feat(net): atomic cutover — single DO client path; delete singl
 
 ---
 
-## Task 13: Delete method-C dead code
+## Task 13: Delete the method-C transport modules + repoint `PeerLink`
 
 **Files:**
 - Delete: `game/net/host.ts`, `game/net/transport.ts`, `game/net/ticker.ts`
-- Modify: `game/net/net.ts` (drop `"host"`/`"single"` from `NetMode`, drop `host` field), `game/net/client.ts` (drop the WebRTC `PeerLink` import if it pointed at `transport.ts` — repoint to a local type or `wsLink`), `game/main.ts` + `game/net/signaling.ts` (remove host-lobby / SDP / quick-match-becomes-host wiring), `worker/room.ts` (remove the `/room/:CODE` SDP-relay route + the `Room` DO if fully unused), `worker/wrangler.toml` (drop the `Room` binding/migration only if `Room` is deleted)
+- Modify: `game/net/net.ts` (drop `"host"`/`"single"` from `NetMode`, drop `Net.host`, drop `import type { Host }`), `game/net/client.ts` + `game/net/wsLink.ts` (repoint the `PeerLink` import off `./transport`)
 
-**Interfaces:** pure deletion of the now-unreachable WebRTC listen-server path. No behavior change (the code is dead after Task 12).
+**Interfaces:** pure deletion of the unreachable WebRTC listen-server + its browser ticker. No behavior change (dead after Task 12). **Split from the signaling/lobby prune (Task 14)** because the rubber-duck flagged the combined deletion as a several-hundred-line tangle across `main.ts`/`signaling.ts`/`registry.ts`/`session.ts` — do the self-contained module removal first, then the entangled UI/signaling prune.
 
-- [ ] **Step 1: Delete the transport + host + ticker modules**
+- [ ] **Step 1: Move the `PeerLink` interface out of `transport.ts` first**
+
+`transport.ts` is about to be deleted but its `PeerLink` interface (the 7-method contract, `transport.ts:94`) is imported by `client.ts` and `wsLink.ts`. Move it into a new `game/net/link.ts` (`export interface PeerLink { … }`) and repoint both imports to `./link`. Typecheck.
+
+- [ ] **Step 2: Delete the modules**
 
 ```bash
 git rm game/net/host.ts game/net/transport.ts game/net/ticker.ts
 ```
 
-- [ ] **Step 2: Repoint the `PeerLink` type**
+- [ ] **Step 3: Prune `net.ts`**
 
-`client.ts` and `wsLink.ts` import `PeerLink` from `./transport`. Move the `PeerLink` interface (7 methods) into `game/net/wsLink.ts` (or a small `game/net/link.ts`) and repoint both imports. `PeerLink` is the transport contract, now WebSocket-only.
+`NetMode` → `"client"` (drop `"single"`/`"host"`/`"doclient"` — after cutover there is one mode; keep the type as a single-member alias or inline it). Remove the `Net.host` field and `import type { Host }`. `PROTOCOL_VERSION` already moved to `sim/net/protocol.ts` (Task 7) — keep the re-export or repoint importers.
 
-- [ ] **Step 3: Prune `net.ts`, signaling, and main.ts**
+- [ ] **Step 4: Typecheck (expect a cascade of unresolved refs → Task 14)**
 
-`NetMode` becomes just `"client"` (or drop the type if trivial). Remove `Net.host`. In `signaling.ts` remove `roomUrl(..., "host")` / host + SDP-relay helpers, keeping only `arenaUrl` (and any client join used by the arena flow). In `main.ts` remove the host-lobby UI wiring (`openHostLobby`, public/private toggle, quick-match-becomes-host, registry meta heartbeat, the reconnect ladder if it targeted method C). Let `tsc` + `knip` drive the dead-code removal. **Do not** remove the arena reconnect if you added one; if not, note reconnect is 2b.
+Run: `bun run typecheck`. Expect errors in `main.ts`/`signaling.ts` from removed symbols (`Host`, `startTicker`, host-lobby helpers) — those are Task 14's surface. Confirm `client.ts`/`wsLink.ts`/`net.ts` themselves are clean. Do **not** commit a broken typecheck — Tasks 13+14 land as one green commit if the cascade is unavoidable; otherwise stub Task 14's call sites to `void`/no-op here and commit, then fill in Task 14. Prefer the latter (keeps commits green).
 
-- [ ] **Step 4: Prune the worker SDP relay**
-
-If the `Room`/`Registry` signaling DOs are now fully unused (the game no longer dials `/room/:CODE`), remove the `/room/` route + the `Room` class + its binding/migration. If the public-room registry is still wanted for arena discovery later, leave `Registry` and note it; otherwise remove it too. Keep the `[assets]` game-serving block and `/turn` (TURN is WebRTC-only and now dead — remove `/turn` + its budget code as well if nothing uses it). Be conservative: delete only what `tsc`/grep proves unreachable; note anything deferred.
-
-- [ ] **Step 5: Full gates + build + knip**
-
-Run: `bun run typecheck && bun run test && bun run lint && bun run build` (PASS). `bunx tsc --noEmit -p worker/tsconfig.json` (PASS). Run `bunx knip` and confirm no new dead-code regressions beyond the known data-table exports.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit (green)**
 
 ```bash
 git add -A
-git commit -m "refactor(net): delete method-C listen server (host/WebRTC transport/ticker/SDP relay)"
+git commit -m "refactor(net): delete method-C transport modules (host/WebRTC transport/ticker); PeerLink→link.ts"
 ```
 
 ---
 
-## Task 14: Feel gate
+## Task 14: Delete the method-C lobby / signaling / registry / reconnect + worker SDP relay
+
+**Files:**
+- Modify: `game/main.ts` (remove host-lobby UI, quick-match, reconnect ladder, worker ticker remnants), `game/net/signaling.ts` (remove `roomUrl`/host + SDP helpers, keep `arenaUrl`), `game/net/registry.ts` + `game/net/session.ts` (remove if fully unused)
+- Modify/Delete: `worker/room.ts` (remove `/room/:CODE` SDP relay + `Room` if unused), `worker/registry.ts`, `worker/wrangler.toml` (drop `Room`/`Registry` bindings + migrations only if the classes are deleted)
+
+**Interfaces:** the entangled dead-code removal the rubber-duck flagged as several hundred lines. Delete **only what `tsc`/`grep`/`knip` prove unreachable**; note anything deferred rather than guessing.
+
+- [ ] **Step 1: DECISION — arena reconnect**
+
+The method-C reconnect ladder (`main.ts` `reconnectClient`/backoff, `signaling.ts` `rejoinRoom`) is WebRTC-specific and gets deleted here. **Arena reconnect is not built in 2a** (spec defers robust drop-in reconnect to 2b). That means after this task, a mid-session host/network drop ends the session (back to title) with no auto-rejoin. **Confirm this is acceptable for the gate** (it is — the gate is a short held-night feel test; the DO's grace-hold still lets a *manual* reconnect re-attach the body within `graceMs`). Record the decision in the commit message; if unacceptable, a minimal arena reconnect (dial `arenaUrl` again, replay the stored `{pid,nonce}` as `rejoin`) is a small add — but that is scope creep on 2a, so default to deferring.
+
+- [ ] **Step 2: Prune the client lobby/signaling**
+
+In `main.ts` remove: the worker `startTicker` block if any remnant survived Task 12, `openHostLobby`/public-private toggle/`startHostRun`, `quickMatch`/`beginPublicHostFromQuickMatch`/`pollRooms`/registry meta heartbeat, `reconnectClient` + the watchdog, and the `wireCoop` host/join lobby wiring not needed for the arena entry. Keep the room-code entry that drives `arenaUrl` (Task 12). In `signaling.ts` remove `roomUrl` + `hostRoom`/`joinRoom`/`rejoinRoom`/SDP helpers, keep `arenaUrl`. Remove `game/net/registry.ts`/`session.ts` if `knip`/`grep` show no remaining importers.
+
+- [ ] **Step 3: Prune the worker SDP relay + TURN (conservative)**
+
+The game no longer dials `/room/:CODE` (WebRTC signaling) or `/turn` (WebRTC-only TURN). Remove the `/room/` route + `Room` class + `turnIceServers`/budget code + the `Room` binding/migration, **only after `grep` confirms nothing references them**. **Keep** the `[assets]` game-serving block. **Decision:** the public-room `Registry` — if a future arena browser wants it, leave it (note as deferred); else remove it with its binding/migration. Do not delete a migration that was already applied in production without confirming the class is gone (removing a DO class needs a `deleted_classes` migration — note this for the deploy, don't silently drop it).
+
+- [ ] **Step 4: Full gates + build + knip**
+
+Run: `bun run typecheck && bun run test && bun run lint && bun run build` (PASS). `bunx tsc --noEmit -p worker/tsconfig.json` (PASS). `bunx knip` — confirm no dead-code regressions beyond the known data-table exports; anything knip still flags as unused from method C should be deleted or explicitly justified.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "refactor(net): delete method-C lobby/signaling/registry/reconnect + worker SDP relay (arena reconnect deferred to 2b)"
+```
+
+---
+
+## Task 15: Feel gate
 
 **Files:**
 - Modify: `docs/superpowers/notes/2026-07-12-method-c-netstats-baseline.md` (append the DO-path comparison), or a sibling `-do-gate-result.md`
@@ -1271,7 +1313,7 @@ git commit -m "refactor(net): delete method-C listen server (host/WebRTC transpo
 
 - [ ] **Step 1: Local harness feel + metrics**
 
-`wrangler dev` + `bun run dev`; play the held-night arena solo with `?netlog`. Read the `#netstat` HUD and the DO's `[arena] effective … Hz · snap … B` console logs. Confirm the DO holds ~60 Hz and snapshot size is reasonable (well under 16 KB). Record feel vs. the Task 1 baseline.
+`wrangler dev` + `bun run dev`; play the held-night arena solo with `?netlog`. Read the `#netstat` HUD and the DO's `[arena] effective … Hz · snap … B` console logs. Confirm the DO holds ~60 Hz and snapshot size is reasonable (well under 16 KB). Record feel vs. the Task 1 baseline. **Also check the clock HUD (rubber-duck):** the held night re-arms `phaseT` at `nightDuration`, and the client applies `snap.phaseT` without running `sysSiege`, so the diegetic clock (`clockLabel`/`clockFrac`) may jump/stutter at the re-arm boundary. Confirm it doesn't read as a visible glitch; if it does, hold the clock display steady during held-night (cosmetic, client-side).
 
 - [ ] **Step 2: Edge placement + real latency**
 
@@ -1296,15 +1338,16 @@ git commit -m "docs(net): DO-path feel-gate result vs method-C baseline"
 - (a) DO lifecycle (pickSlot 0-based, nonce-rejoin, grace, no-host, drop-in, empty-stop, standard WS) → Tasks 2, 6, 7. ✓
 - (b) headless `stepSim` (exclude sysFx/sysCamera, decouple openShop/gameOver, held-night invariant) → Tasks 4, 5. ✓
 - (c) derive-first, zero wire fxEvents, phase-edge transitions, local-muzzle predicted → Tasks 6 (DO clears fxEvents), 10; `effects()` unchanged (kept). ✓
-- (d) single-WS transport + 1-byte tag, PeerLink adapter, input rate-limit, reconcile retune, main.ts collapse, method-C deletion, wrangler-dev harness, baseline capture → Tasks 1, 3, 8, 9, 11, 12, 13. ✓
-- Feel gate (real browsers + permanent tick-rate/snapshot metrics) → Tasks 6 (metrics), 14. ✓
-- Bisection-safe sequencing (coexist through A, atomic cutover in B) → Milestone split + Task 9/12. ✓
-- Two porting constraints (await-free slot commit, drop-in-only) → Task 7 Step 2. ✓
-- **Out of scope (correctly):** per-player shop, day/night cycle, death/respawn, arenaReset wire events, matchmaking pool, synthetic load-driver → 2b / sub-project 3. ✓
+- (d) single-WS transport + 1-byte tag, PeerLink adapter, input rate-limit, reconcile retune, main.ts collapse, method-C deletion, wrangler-dev harness, baseline capture → Tasks 1, 3, 8, 9, 11, 12, 13, 14. ✓
+- Feel gate (real browsers + permanent tick-rate/snapshot metrics) → Tasks 6 (metrics), 15. ✓
+- Bisection-safe sequencing (coexist through A, atomic cutover in B, deletion split so each commit is green) → Milestone split + Tasks 9/12/13/14. ✓
+- Two porting constraints (await-free slot commit, drop-in-only) → Task 7 Step 2 + its constraints note. ✓
+- **Rubber-duck fixes incorporated:** DO `binaryType="arraybuffer"` before `accept()` (Task 6, verified vs CF changelog 2026-04-21); non-`async` `onMessage` type-enforced (Task 7); pre-snapshot loading gate + RTT-probe verification (Task 9); T13/T14 deletion split with green-commit discipline + arena-reconnect-deferred decision (Tasks 13, 14); held-night clock-HUD check (Task 15); `running` not-in-snapshot noted (Task 7).
+- **Out of scope (correctly):** per-player shop, day/night cycle, death/respawn, arenaReset wire events, arena reconnect, matchmaking pool, synthetic load-driver → 2b / sub-project 3. ✓
 
-**2. Placeholder scan:** No "TBD"/"handle appropriately". Non-TDD tasks (DO/transport/cutover) show concrete code and exact `wrangler dev`/gate verification. Task 13's conservative-deletion guidance is explicit ("delete only what tsc/grep proves unreachable; note anything deferred") rather than hand-waving.
+**2. Placeholder scan:** No "TBD"/"handle appropriately". Non-TDD tasks (DO/transport/cutover) show concrete code and exact `wrangler dev`/gate verification. Tasks 13/14's conservative-deletion guidance is explicit ("delete only what tsc/grep/knip proves unreachable; note anything deferred") and flags the applied-migration hazard rather than hand-waving.
 
-**3. Type consistency:** `pickSlot(decidedPids, max)` (Task 2) used with `CONFIG.net.maxPlayers` (Tasks 4, 7). `stepSim` return union `"night"|"dawn"|"wipe"|null` (Task 5) consumed identically by the DO (Task 6/7) and the `game.ts` wrapper (Task 5). `NET_TAG`/`frameSnap`/`frameRel`/`unframe` (Task 3) used by both the DO (Task 6) and `wsLink` (Task 8). `PeerLink` shape stable (Task 8 → repointed Task 13). `siegeEdgeCue(prev,next,day)` (Task 10) matches the `FxEvent` `announce`/`audio` variants from Phase 1. `heldNight` field (Task 4) read in `stepSim`/`sysSiege` and set by the DO (Task 6).
+**3. Type consistency:** `pickSlot(decidedPids, max)` (Task 2) used with `CONFIG.net.maxPlayers` (Tasks 4, 7). `stepSim` return union `"night"|"dawn"|"wipe"|null` (Task 5) consumed identically by the DO (Task 6/7) and the `game.ts` wrapper (Task 5). `NET_TAG`/`frameSnap`/`frameRel`/`unframe` (Task 3) used by both the DO (Task 6) and `wsLink` (Task 8). `PeerLink` shape stable (Task 8 → moved to `link.ts` Task 13). `siegeEdgeCue(prev,next,day)` (Task 10) matches the `FxEvent` `announce`/`audio` variants from Phase 1. `heldNight` field (Task 4) read in `stepSim`/`sysSiege` and set by the DO (Task 6).
 
 ## Execution Handoff
 
