@@ -20,6 +20,12 @@ class_name = "Room"
 name = "REGISTRY"
 class_name = "Registry"
 
+# Authoritative game-arena DO (sub-project 2a). One arena = one DO (idFromName = room code).
+# Runs the sim loop + broadcasts snapshots over one WebSocket per client.
+[[durable_objects.bindings]]
+name = "ARENA"
+class_name = "Arena"
+
 # SQLite-backed DO classes => available on the free Workers plan (we don't use storage).
 [[migrations]]
 tag = "v1"
@@ -28,6 +34,10 @@ new_sqlite_classes = ["Room"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["Registry"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["Arena"]
 
 # Serve the built game from this same Worker (single origin => no cross-origin / Mixed Content,
 # one deploy). `directory` is relative to this file (worker/), so ../dist = repo-root dist/.

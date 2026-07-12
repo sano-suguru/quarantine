@@ -11,6 +11,7 @@
  * just never touch storage.
  */
 
+export { Arena } from "./arena";
 // Re-export the registry DO so wrangler can bind it from this main module (see wrangler.toml).
 export { Registry } from "./registry";
 
@@ -18,6 +19,8 @@ export interface Env {
   ROOM: DurableObjectNamespace;
   // Global public-room registry (quick-match / browser). Written only by Room DOs, read by GET /rooms.
   REGISTRY: DurableObjectNamespace;
+  // Authoritative game-arena DO (sub-project 2a).
+  ARENA: DurableObjectNamespace;
   // Cloudflare Realtime TURN key (set as Worker secrets; absent => /turn returns STUN-only).
   TURN_KEY_ID?: string;
   TURN_TOKEN?: string;
@@ -42,6 +45,14 @@ export default {
       if (req.headers.get("Sec-Fetch-Site") === "cross-site") return json({ rooms: [] }, 403);
       const reg = env.REGISTRY.get(env.REGISTRY.idFromName("global"));
       return reg.fetch("https://reg/list");
+    }
+    const arenaMatch = url.pathname.match(/^\/arena\/([^/]+)$/);
+    if (arenaMatch) {
+      if (req.headers.get("Upgrade") !== "websocket") {
+        return new Response("expected websocket", { status: 426 });
+      }
+      const code = decodeURIComponent(arenaMatch[1] as string).toUpperCase();
+      return env.ARENA.get(env.ARENA.idFromName(code)).fetch(req);
     }
     const match = url.pathname.match(/^\/room\/([^/]+)$/);
     if (!match) return new Response("not found", { status: 404 });

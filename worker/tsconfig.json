@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["room.ts"]
+  "include": ["room.ts", "arena.ts"]
 }
