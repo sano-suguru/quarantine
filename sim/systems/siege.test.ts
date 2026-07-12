@@ -81,6 +81,13 @@ describe("sysSiege", () => {
     expect(sysSiege(s, 1)).toBeNull();
     expect(s.phase).toBe("night");
   });
+
+  it("dawns at night's end with no held-night re-arm", () => {
+    const s = newState();
+    startNight(s);
+    s.phaseT = 0.5;
+    expect(sysSiege(s, 1)).toBe("dawn"); // no heldNight flag exists to re-arm the clock
+  });
 });
 
 describe("nightDuration", () => {
@@ -138,30 +145,5 @@ describe("clockLabel / clockFrac", () => {
   it("frac runs 0 at phase start to 1 at phase end", () => {
     expect(clockFrac("day", 35, 1)).toBeCloseTo(0, 5);
     expect(clockFrac("day", 0, 1)).toBeCloseTo(1, 5);
-  });
-});
-
-describe("heldNight", () => {
-  it("never returns dawn while held; the night clock stays positive", () => {
-    const s = newState();
-    s.running = true;
-    s.heldNight = true;
-    startNight(s); // phase=night, phaseT=nightDuration(day)
-    // drive far past the normal night length
-    for (let i = 0; i < 100000; i++) {
-      const ev = sysSiege(s, 1 / 60);
-      expect(ev).not.toBe("dawn");
-    }
-    expect(s.phase).toBe("night");
-    expect(s.phaseT).toBeGreaterThan(0);
-  });
-
-  it("still returns dawn when NOT held", () => {
-    const s = newState();
-    s.running = true;
-    s.heldNight = false;
-    startNight(s);
-    s.phaseT = 0.0001;
-    expect(sysSiege(s, 1 / 60)).toBe("dawn");
   });
 });

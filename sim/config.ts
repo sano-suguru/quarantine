@@ -250,7 +250,6 @@ export const CONFIG = {
     nightCapMax: 90, // hard ceiling (perf / snapshot bound)
     duskFrac: 0.25, // fraction of the day over which light crossfades down to night (sunset)
     dawnFrac: 0.2, // fraction of the night over which light crossfades up to day (predawn)
-    heldNightDay: 4, // representative mid-game day the DO starts the held night at (DO 2a gate)
   },
   cache: {
     searchTime: 1.5, // seconds of holding interact (and standing still) to loot (day)
