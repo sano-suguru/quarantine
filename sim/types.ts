@@ -176,6 +176,9 @@ export interface Player {
   /** co-op revive progress (seconds) accumulated on THIS player while downed and a teammate
    *  tends them nearby; reaches CONFIG.assist.reviveTime to revive. Always 0 in single-player. */
   assistT: number;
+  /** seconds spent downed (hp<=0). Ticks in sysRespawn; at CONFIG.siege.respawnDelay the player
+   *  auto-respawns at the fortress. Reset to 0 by revivePlayer (peer/timer/dawn). */
+  downT: number;
   /** co-op (P4): true while this player's client is disconnected and the host is holding the
    *  body for a possible reconnect. An absent player is inert — not a zombie target, not
    *  counted by anyAlive, no input sim — and rendered as a faded ghost. Always false in SP. */
@@ -562,13 +565,13 @@ export interface State {
   day: number;
   /** seconds left in the current phase (day countdown) */
   phaseT: number;
-  /** DO held-night gate (2a): sysSiege never transitions to dawn while true, so the arena runs
-   *  a sustained night and never globally pauses (per-player shop + day/night cycle = 2b). */
-  heldNight: boolean;
   cam: Cam;
   wave: Wave;
   /** total kills this run (shared run stat; drives wave count and SALVAGE) */
   kills: number;
+  /** cumulative SALVAGE already banked to clients this arena life; baseline for the per-dawn
+   *  delta (dawn banks salvageEarned(day,kills) - salvageBanked, split among present players). */
+  salvageBanked: number;
   /** which weapons are available this run (starters + meta-unlocked). Shared = account-level
    *  unlock axis; per-player power (wlevel/muls/money) lives on Player. */
   owned: Record<string, boolean>;

@@ -21,7 +21,7 @@ import { siegeEdgeCue } from "../../sim/systems/siegeEdge";
 import type { Bullet, SiegePhase } from "../../sim/types";
 import { Audio } from "../engine/audio";
 import { drainFxEvents } from "../fx-drain";
-import { clientApplyHello, clientGameOver, getState, startClientGame } from "../game";
+import { clientApplyHello, clientBanked, clientGameOver, getState, startClientGame } from "../game";
 import { advanceGhosts } from "./ghost";
 import type { PeerLink } from "./link";
 import { type NetMsg, PROTOCOL_VERSION } from "./net";
@@ -123,6 +123,8 @@ export class Client {
         if (this.started) clientApplyHello(msg.localId, msg.owned);
       } else if (msg.t === "gameover") {
         clientGameOver(msg.salvage, msg.day, msg.kills, msg.money);
+      } else if (msg.t === "banked") {
+        clientBanked(msg.salvage);
       } else if (msg.t === "roomfull") {
         // host turned us away (room at capacity). Stop net activity and tear down our own link
         // — the host deliberately did NOT close it (so this rel wasn't dropped from the buffer).

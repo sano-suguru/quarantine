@@ -1,5 +1,4 @@
 import { CONFIG } from "./config";
-import { anyAlive } from "./engine/players";
 import { pushFx } from "./events";
 import { sysAI } from "./systems/ai";
 import { sysAssist } from "./systems/assist";
@@ -7,17 +6,20 @@ import { sysBullets } from "./systems/bullets";
 import { sysDeployables } from "./systems/deployables";
 import { sysPickups } from "./systems/pickups";
 import { sysPlayer } from "./systems/player";
+import { sysRespawn } from "./systems/respawn";
 import { sysSiege } from "./systems/siege";
 import { spawnStalker, sysStalker } from "./systems/stalker";
 import type { State } from "./types";
 
 /**
  * The headless authoritative step. The DO's setInterval loop calls this once per fixed tick.
- * Returns the frame's discrete siege/end outcome INSTEAD of calling the client-side reactions
- * (openShop on dawn, gameOver on wipe) — the caller decides. Excludes sysFx/sysCamera (cosmetic,
- * per-client). Pushed transition events are cosmetic fxEvents; the DO clears them each tick.
+ * Returns the frame's discrete siege outcome ("night"/"dawn"/null) INSTEAD of driving the
+ * world reactions itself — the caller (the DO) advances the day on "dawn". There is no
+ * game-over: an all-down party keeps running (respawn timers + the night clock carry to dawn).
+ * Excludes sysFx/sysCamera (cosmetic, per-client). Pushed transition events are cosmetic
+ * fxEvents; the DO clears them each tick.
  */
-export function stepSim(state: State, dt: number): "night" | "dawn" | "wipe" | null {
+export function stepSim(state: State, dt: number): "night" | "dawn" | null {
   if (!state.running || state.paused) return null;
   let sdt = dt;
   if (state.hitstopT > 0) {
@@ -28,8 +30,8 @@ export function stepSim(state: State, dt: number): "night" | "dawn" | "wipe" | n
   state.time += sdt;
   sysPlayer(state, sdt);
   sysAssist(state, sdt);
+  sysRespawn(state, sdt);
   sysAI(state, sdt);
-  if (!anyAlive(state)) return "wipe";
   if (state.stalker) sysStalker(state, sdt);
   sysDeployables(state, sdt);
   sysBullets(state, sdt);

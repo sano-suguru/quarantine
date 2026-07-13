@@ -84,10 +84,5 @@ export function sysSiege(state: State, dt: number): "night" | "dawn" | null {
   sysWave(state, dt, nightMaxZombies(state.day));
   state.phaseT -= dt;
   if (state.phaseT > 0) return null;
-  if (state.heldNight) {
-    // held night (DO 2a): re-arm the night clock so it loops (18:00→06:00 repeats) and never dawns
-    state.phaseT = nightDuration(state.day);
-    return null;
-  }
   return "dawn";
 }

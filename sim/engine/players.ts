@@ -56,6 +56,7 @@ export function makePlayer(id: number, x: number, y: number, name = `P${id + 1}`
     fireRateMul: 1,
     reserveMul: 1,
     assistT: 0,
+    downT: 0,
     absent: false,
     searching: false,
     noise: 0,
@@ -111,6 +112,7 @@ export function revivePlayer(
   p.recoilX = 0;
   p.recoilY = 0;
   p.assistT = 0;
+  p.downT = 0;
   p.curMoveMul = WEAPONS[p.weapon]?.moveMul ?? 1; // resync the ramp so host/client agree on revive
   p.input = emptyInput();
 }
