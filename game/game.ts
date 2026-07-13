@@ -10,6 +10,7 @@ import {
 } from "../sim/data/arsenal";
 import { DEPLOYABLE_TYPES } from "../sim/data/deployables";
 import { ENEMY_TYPES } from "../sim/data/enemies";
+import { WORKBENCH } from "../sim/data/map";
 import { PICKUP_TYPES } from "../sim/data/pickups";
 import { PLAYER_COLORS } from "../sim/data/players";
 import { UNLOCKABLE_CARDS, UPGRADES } from "../sim/data/upgrades";
@@ -547,6 +548,14 @@ export function draw(): void {
   drawShelter(R);
   drawCaches(R);
   drawDeployables(R);
+
+  // --- fortress workbench marker (shop spot): a ring, brighter by day when it's usable ---
+  if (state.phase === "day") {
+    R.ring(WORKBENCH.x, WORKBENCH.y, 22, 0.9, 0.8, 0.4, 0.9);
+    R.glow(WORKBENCH.x, WORKBENCH.y, 46, 0.5, 0.42, 0.2, 0.5);
+  } else {
+    R.ring(WORKBENCH.x, WORKBENCH.y, 22, 0.4, 0.4, 0.45, 0.4);
+  }
 
   // --- normal particles (shards / smoke / flesh fragments) ---
   for (const pt of state.particles) {
