@@ -1,6 +1,7 @@
 import { salvageEarned, salvageShare } from "../data/arsenal";
 import { revivePlayer } from "../engine/players";
 import type { State } from "../types";
+import { rollDraft } from "./shop";
 import { startDay } from "./siege";
 
 /** Bank the SALVAGE earned since the last dawn to each present (non-absent) player.
@@ -27,5 +28,10 @@ export function sysDawn(state: State): { pid: number; salvage: number }[] {
   const banked = bankSalvageAtDawn(state);
   reviveStragglers(state);
   startDay(state);
+  for (const p of state.players) {
+    if (p.absent || p.draftRolledForDay === state.day) continue;
+    rollDraft(state, p);
+    p.draftRolledForDay = state.day;
+  }
   return banked;
 }

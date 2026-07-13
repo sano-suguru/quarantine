@@ -14,6 +14,7 @@ import { encodeSnapshot } from "../sim/snapshot";
 import { newState } from "../sim/state";
 import { stepSim } from "../sim/step";
 import { sysDawn } from "../sim/systems/dawn";
+import { rollDraft } from "../sim/systems/shop";
 import { startDay } from "../sim/systems/siege";
 import type { State } from "../sim/types";
 
@@ -215,6 +216,15 @@ export class Arena {
     const x = HOME_SPAWN.x + ((pid % 4) - 1.5) * 36;
     // drop-in: spawn ALIVE at the fortress in the current phase (respawn/spectate handled by sysRespawn)
     addPlayer(s, pid, x, HOME_SPAWN.y, `P${pid + 1}`);
+    // a joiner arriving mid-day missed the dawn roll — give them an offer now (stamped so the
+    // next dawn's roll pass skips them and they don't get a second set of free picks).
+    if (s.phase === "day") {
+      const p = s.players.find((pl) => pl.id === pid);
+      if (p) {
+        rollDraft(s, p);
+        p.draftRolledForDay = s.day;
+      }
+    }
   }
 
   private sendHello(peer: Peer): void {

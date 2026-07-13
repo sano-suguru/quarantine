@@ -204,6 +204,9 @@ export interface Player {
    *  cannot resurface and stack within one night. Weapon (`lvl:`) cards are intentionally excluded
    *  from this list — they are maxLevel-capped by canBuy and may be re-upgraded the same night. */
   draftTaken: string[];
+  /** the state.day a fresh draft offer was last rolled for this player — guards a mid-day joiner
+   *  (rolled on spawn) against a second roll by the same day's dawn pass (which would re-grant free picks). */
+  draftRolledForDay: number;
 }
 
 export interface Zombie {
