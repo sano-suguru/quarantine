@@ -539,9 +539,6 @@ interface Cam {
 export interface State {
   running: boolean;
   paused: boolean;
-  /** between-nights arsenal shop is open (host-authoritative; synced in snapshots so
-   *  clients show the same shop overlay). Distinct from `paused` (manual pause). */
-  inShop: boolean;
   time: number;
   /** monotonic id allocator for zombies/bullets/pickups (host-authoritative) */
   nextId: number;

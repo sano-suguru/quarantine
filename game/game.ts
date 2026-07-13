@@ -46,8 +46,8 @@ export function getState(): State {
 }
 
 // Whether THIS client's shop overlay is open. Client-local UI state — the sim no longer pauses
-// and there is no synced `inShop`. Opened by interacting at the fortress workbench during the day
-// (main.ts), closed by the Done control or leaving. Movement input is suppressed while open.
+// and the snapshot carries no shop flag. Opened by interacting at the fortress workbench during
+// the day (main.ts), closed by the Done control or leaving. Movement input is suppressed while open.
 let shopOpen = false;
 export function isShopOpen(): boolean {
   return shopOpen;
@@ -1274,7 +1274,8 @@ export function updateHUD(): void {
   }
 
   // pause overlay is state-driven (so a host pause shows on every client via the
-  // snapshot); the shop has its own overlay and also sets paused, so suppress it there.
+  // snapshot); shopOpen is a client-local overlay, not a sim pause — suppress the
+  // pause banner while the shop is open to avoid stacking two overlays.
   if (state.paused && !shopOpen) show("pause");
   else hide("pause");
 }
