@@ -1,21 +1,14 @@
 import { CONFIG } from "../sim/config";
 import {
   cardItem,
-  draftPool,
   effWeapon,
   meleeArc,
   meleeReach,
   rerollCost,
-  rollOffer,
   type StoreItem,
   storeItems,
 } from "../sim/data/arsenal";
-import {
-  DEPLOYABLE_TYPES,
-  deployableCount,
-  placeDeployable,
-  placeSpot,
-} from "../sim/data/deployables";
+import { DEPLOYABLE_TYPES } from "../sim/data/deployables";
 import { ENEMY_TYPES } from "../sim/data/enemies";
 import { PICKUP_TYPES } from "../sim/data/pickups";
 import { PLAYER_COLORS } from "../sim/data/players";
@@ -1334,92 +1327,6 @@ function buildWeaponSlots(): void {
  */
 const shopRowSig = (it: StoreItem, i: number): string => `${i}:${it.id}:${it.price}:${it.desc}`;
 
-/**
- * Apply a purchase host-authoritatively. `buyer` is the player who paid (perks with
- * personal stats apply to them). Returns false (and changes nothing) if the shop is
- * closed, the buyer is gone (dead/left), or the item can't be afforded.
- */
-export function applyBuy(s: State, itemId: string, buyer: Player | undefined): boolean {
-  if (!s.inShop || !buyer) return false;
-  const it = storeItems(s, buyer).find((x) => x.id === itemId);
-  if (!it?.canBuy(s, buyer)) return false;
-  buyer.money -= it.price;
-  it.buy(s, buyer);
-  return true;
-}
-
-/**
- * Place the front of `player`'s deploy queue at their feet (in front, along aim), host-
- * authoritatively. Returns false (consuming nothing) if the player is down, holds nothing,
- * the world is at the type's cap, or there's no valid spot. The hard cap is re-checked here
- * (the buy gate is only a per-player view), so co-op buy races can't exceed it.
- */
-export function applyPlace(s: State, player: Player | undefined): boolean {
-  if (!player || player.hp <= 0) return false;
-  const defId = player.deployQueue[0];
-  if (!defId) return false;
-  const def = DEPLOYABLE_TYPES[defId];
-  if (!def || deployableCount(s, defId) >= def.cap) return false;
-  const spot = placeSpot(s, player, def);
-  if (!spot) return false;
-  placeDeployable(s, defId, spot.x, spot.y);
-  player.deployQueue.shift();
-  return true;
-}
-
-/** Host/single: roll a fresh nightly offer for player `p` and reset their free pick + reroll count. */
-export function rollDraft(state: State, p: Player): void {
-  p.draftOffer = rollOffer(draftPool(state, p), CONFIG.arsenal.offerSize).map((it) => it.id);
-  p.draftFreePicksUsed = 0;
-  p.draftRerolls = 0;
-  p.draftTaken = [];
-}
-
-/**
- * Apply a draft "take" host-authoritatively. The first CONFIG.arsenal.freePicks takes of the night
- * are FREE (counted by draftFreePicksUsed); further takes cost SCRAP (canBuy-gated). The card must
- * be in the buyer's current offer. Returns false (changing nothing) on any guard miss.
- */
-export function applyDraftTake(s: State, buyer: Player | undefined, cardId: string): boolean {
-  if (!s.inShop || !buyer?.draftOffer.includes(cardId)) return false;
-  const it = cardItem(s, buyer, cardId);
-  if (!it) return false;
-  if (buyer.draftFreePicksUsed < CONFIG.arsenal.freePicks) {
-    it.buy(s, buyer);
-    buyer.draftFreePicksUsed += 1;
-  } else {
-    if (!it.canBuy(s, buyer)) return false;
-    buyer.money -= it.price;
-    it.buy(s, buyer);
-  }
-  // Record perk takes so a reroll can't resurface them (perks have no per-night cap, so a
-  // re-offered perk could be taken again and stack). Weapon (`lvl:`) cards are intentionally NOT
-  // recorded — canBuy caps them at maxLevel and they may be upgraded again the same night.
-  if (cardId.startsWith("perk:")) buyer.draftTaken.push(cardId);
-  buyer.draftOffer = buyer.draftOffer.filter((id) => id !== cardId);
-  return true;
-}
-
-/** Apply a draft reroll host-authoritatively: charge escalating SCRAP, bump the reroll counter,
- *  and redraw the cards the buyer currently has SHOWN (`draftOffer.length`). CONSEQUENCE: taking a
- *  card before rerolling permanently shrinks the hand (3 → 2), and the pool/exclude rules can shrink
- *  it further on repeated rerolls. This is host-authoritative and consistent (no correctness issue),
- *  but it is order-dependent: rerolling before a pick sees a fuller hand than rerolling after. Whether
- *  that asymmetry is a fair timing choice or an optimization trap is an OPEN design decision pending
- *  playtest (see the economy spec). The alternative is to always redraw a full hand:
- *  `rollOffer(draftPool(s, buyer), CONFIG.arsenal.offerSize, buyer.draftTaken)`. */
-export function applyDraftReroll(s: State, buyer: Player | undefined): boolean {
-  if (!s.inShop || !buyer || buyer.draftOffer.length === 0) return false;
-  const cost = rerollCost(buyer.draftRerolls);
-  if (buyer.money < cost) return false;
-  buyer.money -= cost;
-  buyer.draftRerolls += 1;
-  buyer.draftOffer = rollOffer(draftPool(s, buyer), buyer.draftOffer.length, buyer.draftTaken).map(
-    (it) => it.id,
-  );
-  return true;
-}
-
 function renderShop(): void {
   const me = localPlayer(state);
   el("shop-credits").textContent = String(me.money);
@@ -1472,17 +1379,8 @@ function renderShop(): void {
 /** Buy a Fortify (deployable) item by id. Client → request; host/single → apply + re-render. */
 export function buyItem(itemId: string): void {
   if (!state.inShop) return;
-  if (Net.mode === "client") {
-    Net.client?.requestBuy(itemId);
-    Audio.ui(true);
-    return;
-  }
-  if (applyBuy(state, itemId, localPlayer(state))) {
-    Audio.ui(true);
-    renderShop();
-  } else {
-    Audio.ui(false);
-  }
+  Net.client?.requestBuy(itemId);
+  Audio.ui(true);
 }
 
 /**
@@ -1492,46 +1390,22 @@ export function buyItem(itemId: string): void {
  * the caller in main.ts.
  */
 export function deployPlace(): void {
-  if (Net.mode === "client") {
-    Net.client?.requestPlace();
-    Audio.ui(true);
-    return;
-  }
-  const placed = applyPlace(state, localPlayer(state));
-  if (placed) Audio.repair();
-  else Audio.ui(false);
+  Net.client?.requestPlace();
+  Audio.ui(true);
 }
 
-/** Take a draft card. Client → request to host; host/single → apply authoritatively + re-render. */
+/** Take a draft card. Ships a request to the DO (applied authoritatively). */
 export function draftTake(cardId: string): void {
   if (!state.inShop) return;
-  if (Net.mode === "client") {
-    Net.client?.requestDraftTake(cardId);
-    Audio.ui(true);
-    return;
-  }
-  if (applyDraftTake(state, localPlayer(state), cardId)) {
-    Audio.ui(true);
-    renderShop();
-  } else {
-    Audio.ui(false);
-  }
+  Net.client?.requestDraftTake(cardId);
+  Audio.ui(true);
 }
 
-/** Reroll the local player's draft offer. Client → request; host/single → apply + re-render. */
+/** Reroll the local player's draft offer. Ships a request to the DO (applied authoritatively). */
 export function draftReroll(): void {
   if (!state.inShop) return;
-  if (Net.mode === "client") {
-    Net.client?.requestDraftReroll();
-    Audio.ui(true);
-    return;
-  }
-  if (applyDraftReroll(state, localPlayer(state))) {
-    Audio.ui(true);
-    renderShop();
-  } else {
-    Audio.ui(false);
-  }
+  Net.client?.requestDraftReroll();
+  Audio.ui(true);
 }
 
 /**
