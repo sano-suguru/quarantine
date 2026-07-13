@@ -16,13 +16,12 @@ import { UNLOCKABLE_CARDS, UPGRADES } from "../sim/data/upgrades";
 import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "../sim/data/weapons";
 import { type LightCandidate, selectLights } from "../sim/engine/lights";
 import { cameraTarget, localPlayer, nearestPlayer } from "../sim/engine/players";
-import { pushFx } from "../sim/events";
 import { newState, setUnlockProvider } from "../sim/state";
 import { actionMotion, deriveActionChannel } from "../sim/systems/actionFeel";
 import { flashlightIntensity } from "../sim/systems/flashlight";
 import { integrityGrade } from "../sim/systems/integrity";
 import { effectiveSearchTime } from "../sim/systems/player";
-import { ambientForClock, clockFrac, clockLabel, startDay } from "../sim/systems/siege";
+import { ambientForClock, clockFrac, clockLabel } from "../sim/systems/siege";
 import type { Player, State, WeaponDef } from "../sim/types";
 import { resolveHotbarSlot } from "./autoAim";
 import { Audio } from "./engine/audio";
@@ -43,6 +42,20 @@ let state: State = newState();
 
 export function getState(): State {
   return state;
+}
+
+// Whether THIS client's shop overlay is open. Client-local UI state — the sim no longer pauses
+// and there is no synced `inShop`. Opened by interacting at the fortress workbench during the day
+// (main.ts), closed by the Done control or leaving. Movement input is suppressed while open.
+let shopOpen = false;
+export function isShopOpen(): boolean {
+  return shopOpen;
+}
+export function openShopOverlay(): void {
+  shopOpen = true;
+}
+export function closeShopOverlay(): void {
+  shopOpen = false;
 }
 
 const TOXIC: [number, number, number] = [0.49, 1.0, 0.31];
@@ -1235,7 +1248,7 @@ export function updateHUD(): void {
   el("downed").classList.toggle("show", p.hp <= 0);
 
   // Mobile action buttons: only shown under body.mobile while in an active run (not in shop)
-  if (document.body.classList.contains("mobile") && state.running && !state.inShop) {
+  if (document.body.classList.contains("mobile") && state.running && !shopOpen) {
     show("action-btns");
     // Heal: always visible; show medkit count
     el("btn-heal-count").textContent = `×${p.medkits}`;
@@ -1253,7 +1266,7 @@ export function updateHUD(): void {
 
   // pause overlay is state-driven (so a host pause shows on every client via the
   // snapshot); the shop has its own overlay and also sets paused, so suppress it there.
-  if (state.paused && !state.inShop) show("pause");
+  if (state.paused && !shopOpen) show("pause");
   else hide("pause");
 }
 
@@ -1378,7 +1391,7 @@ function renderShop(): void {
 
 /** Buy a Fortify (deployable) item by id. Client → request; host/single → apply + re-render. */
 export function buyItem(itemId: string): void {
-  if (!state.inShop) return;
+  if (!shopOpen) return;
   Net.client?.requestBuy(itemId);
   Audio.ui(true);
 }
@@ -1396,43 +1409,32 @@ export function deployPlace(): void {
 
 /** Take a draft card. Ships a request to the DO (applied authoritatively). */
 export function draftTake(cardId: string): void {
-  if (!state.inShop) return;
+  if (!shopOpen) return;
   Net.client?.requestDraftTake(cardId);
   Audio.ui(true);
 }
 
 /** Reroll the local player's draft offer. Ships a request to the DO (applied authoritatively). */
 export function draftReroll(): void {
-  if (!state.inShop) return;
+  if (!shopOpen) return;
   Net.client?.requestDraftReroll();
   Audio.ui(true);
 }
 
-/**
- * Leave the arsenal and start the next day. Client → request to the host (idempotent);
- * host/single → authoritative transition. The overlay is hidden by syncShopUI.
- */
+/** Close this client's shop overlay (day-start already happened on the DO at dawn). Local only. */
 export function shopDeploy(): void {
-  if (Net.mode === "client") {
-    Net.client?.requestDeploy();
-    return;
-  }
-  if (!state.inShop) return;
+  if (!shopOpen) return;
   Audio.ui(true);
-  state.inShop = false;
-  state.paused = false;
-  state.day++;
-  startDay(state);
-  pushFx(state, { t: "announce", label: "DAY", day: state.day });
+  closeShopOverlay();
 }
 
 /**
- * Reconcile the shop overlay with `state.inShop` every frame (all modes). Clients open it
- * straight from the snapshot. renderShop is called each frame while open — renderList diffs
- * so only changed cards rebuild.
+ * Reconcile the shop overlay with `shopOpen` every frame (all modes). Clients open it
+ * locally when they interact with the workbench. renderShop is called each frame while open —
+ * renderList diffs so only changed cards rebuild.
  */
 export function syncShopUI(): void {
-  const open = state.inShop;
+  const open = shopOpen;
   const shown = shopVisible();
   if (open && !shown) {
     el("shop-wave").textContent = String(state.day);
@@ -1621,7 +1623,7 @@ export function closeArsenal(): void {
 
 export function togglePause(): void {
   if (Net.mode === "client") return; // MVP: only the host pauses the shared sim
-  if (!state.running || state.inShop) return;
+  if (!state.running || shopOpen) return;
   state.paused = !state.paused;
   // the overlay itself is driven by state.paused in updateHUD (so a host pause shows on
   // every client via the snapshot) — no imperative show/hide here.

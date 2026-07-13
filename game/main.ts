@@ -15,6 +15,7 @@ import {
   draftTake,
   draw,
   getState,
+  isShopOpen,
   openArsenal,
   renderArsenal,
   shopDeploy,
@@ -179,7 +180,7 @@ async function main(): Promise<void> {
     (e) => {
       e.preventDefault();
       const st = getState();
-      if (!st.running || st.inShop || settingsOpen) return;
+      if (!st.running || isShopOpen() || settingsOpen) return;
       if (localPlayer(st).hp <= 0) return;
       const now = performance.now();
       if (now - lastPlaceAt < 300) return;
@@ -240,7 +241,7 @@ async function main(): Promise<void> {
       refreshSettings(); // keep the options-panel mute label in sync if it's open
       return;
     }
-    if (state.inShop) {
+    if (isShopOpen()) {
       const me = localPlayer(state);
       const digit = /^Digit([1-9])$/.exec(e.code);
       if (digit) {
@@ -312,7 +313,7 @@ async function main(): Promise<void> {
       if (live) sysCamera(st, dt);
     }
 
-    // reconcile the shop overlay with state.inShop (opened from the snapshot).
+    // reconcile the shop overlay with shopOpen (client-local overlay state).
     if (st.running) syncShopUI();
 
     if (spritesLoaded) draw();
@@ -321,7 +322,7 @@ async function main(): Promise<void> {
 
     // options panel: force-close on state transitions (gameover/shop) so it's never
     // left stranded, and suppress the pause overlay underneath it so the two never stack.
-    if (settingsOpen && (st.inShop || !el("over").classList.contains("hidden"))) closeSettings();
+    if (settingsOpen && (isShopOpen() || !el("over").classList.contains("hidden"))) closeSettings();
     if (settingsOpen) hide("pause");
 
     // ?netlog: live net-stat readout to drive feel-tuning
