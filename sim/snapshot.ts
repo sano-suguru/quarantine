@@ -170,8 +170,6 @@ export interface Snapshot {
   time: number;
   isFull: boolean;
   paused: boolean;
-  /** between-nights shop open (host-authoritative; drives the client's shop overlay) */
-  inShop: boolean;
   phase: SiegePhase;
   day: number;
   phaseT: number;
@@ -218,7 +216,6 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
     time: state.time,
     isFull,
     paused: state.paused,
-    inShop: state.inShop,
     phase: state.phase,
     day: state.day,
     phaseT: state.phaseT,
@@ -373,7 +370,6 @@ export function applySnapshot(
 ): void {
   state.time = snap.time;
   state.paused = snap.paused;
-  state.inShop = snap.inShop;
   state.phase = snap.phase;
   state.day = snap.day;
   state.phaseT = snap.phaseT;
@@ -636,13 +632,8 @@ export function encode(snap: Snapshot): ArrayBuffer {
   const w = new Writer();
   w.u32(snap.tick);
   w.f32(snap.time);
-  // flags: bit0 isFull, bit1 paused, bit2 phase(night), bit3 inShop
-  w.u8(
-    (snap.isFull ? 1 : 0) |
-      (snap.paused ? 2 : 0) |
-      (snap.phase === "night" ? 4 : 0) |
-      (snap.inShop ? 8 : 0),
-  );
+  // flags: bit0 isFull, bit1 paused, bit2 phase(night), bit3 reserved
+  w.u8((snap.isFull ? 1 : 0) | (snap.paused ? 2 : 0) | (snap.phase === "night" ? 4 : 0));
   w.u16(snap.day);
   w.f32(snap.phaseT);
   w.u32(snap.kills);
@@ -1248,7 +1239,6 @@ export function decode(buf: ArrayBuffer): Snapshot {
     isFull: (flags & 1) !== 0,
     paused: (flags & 2) !== 0,
     phase: (flags & 4) !== 0 ? "night" : "day",
-    inShop: (flags & 8) !== 0,
     day,
     phaseT,
     kills,

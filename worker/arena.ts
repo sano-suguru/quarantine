@@ -14,6 +14,13 @@ import { encodeSnapshot } from "../sim/snapshot";
 import { newState } from "../sim/state";
 import { stepSim } from "../sim/step";
 import { sysDawn } from "../sim/systems/dawn";
+import {
+  applyBuy,
+  applyDraftReroll,
+  applyDraftTake,
+  applyPlace,
+  rollDraft,
+} from "../sim/systems/shop";
 import { startDay } from "../sim/systems/siege";
 import type { State } from "../sim/types";
 
@@ -171,8 +178,31 @@ export class Arena {
       if (p) p.input = msg.input as State["players"][number]["input"];
     } else if (msg.t === "ping") {
       this.send(peer.ws, { t: "pong", id: msg.id });
+    } else if (msg.t === "buy") {
+      applyBuy(
+        s,
+        msg.itemId as string,
+        s.players.find((pl) => pl.id === peer.pid),
+      );
+    } else if (msg.t === "place") {
+      applyPlace(
+        s,
+        s.players.find((pl) => pl.id === peer.pid),
+      );
+    } else if (msg.t === "draftTake") {
+      applyDraftTake(
+        s,
+        s.players.find((pl) => pl.id === peer.pid),
+        msg.cardId as string,
+      );
+    } else if (msg.t === "draftReroll") {
+      applyDraftReroll(
+        s,
+        s.players.find((pl) => pl.id === peer.pid),
+      );
     }
-    // buy/place/deploy/draft: 2b (per-player shop). Not handled in the held-night gate.
+    // "deploy" is retired in 2b: the day starts at dawn on the DO, and closing the shop overlay
+    // is client-local. A stray "deploy" from an old client is ignored (no branch).
   }
 
   private decideFresh(peer: Peer): void {
@@ -215,6 +245,15 @@ export class Arena {
     const x = HOME_SPAWN.x + ((pid % 4) - 1.5) * 36;
     // drop-in: spawn ALIVE at the fortress in the current phase (respawn/spectate handled by sysRespawn)
     addPlayer(s, pid, x, HOME_SPAWN.y, `P${pid + 1}`);
+    // a joiner arriving mid-day missed the dawn roll — give them an offer now (stamped so the
+    // next dawn's roll pass skips them and they don't get a second set of free picks).
+    if (s.phase === "day") {
+      const p = s.players.find((pl) => pl.id === pid);
+      if (p) {
+        rollDraft(s, p);
+        p.draftRolledForDay = s.day;
+      }
+    }
   }
 
   private sendHello(peer: Peer): void {

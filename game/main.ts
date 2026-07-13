@@ -1,5 +1,6 @@
 import "./style.css";
 import { CONFIG } from "../sim/config";
+import { WORKBENCH } from "../sim/data/map";
 import { localPlayer } from "../sim/engine/players";
 import { emptyInput } from "../sim/playerInput";
 import { sysCamera } from "../sim/systems/camera";
@@ -15,7 +16,9 @@ import {
   draftTake,
   draw,
   getState,
+  isShopOpen,
   openArsenal,
+  openShopOverlay,
   renderArsenal,
   shopDeploy,
   syncShopUI,
@@ -52,6 +55,19 @@ let lastPlaceAt = -1e9;
 // personal options overlay (#settings): client-local, separate from the host-authoritative
 // pause. While open, local input is zeroed (so you don't act blind behind the overlay).
 let settingsOpen = false;
+
+// Open the client-local shop overlay if the local player is at the fortress workbench during the
+// day. Returns true if it handled the press (opened the shop) so the caller skips repair/search.
+// Does NOT close — closing is the Done button / Enter (see shopDeploy).
+function openWorkbenchShop(): boolean {
+  const st = getState();
+  if (!st.running || st.phase !== "day" || isShopOpen()) return false;
+  const lp = localPlayer(st);
+  if (Math.hypot(lp.x - WORKBENCH.x, lp.y - WORKBENCH.y) >= CONFIG.siege.interactRadius)
+    return false;
+  openShopOverlay();
+  return true;
+}
 
 /**
  * Terminal teardown of the current arena session. Called on restart, tab close, and before
@@ -161,6 +177,7 @@ async function main(): Promise<void> {
     "touchstart",
     (e) => {
       e.preventDefault();
+      if (openWorkbenchShop()) return; // at the workbench by day → open the shop, not repair
       Input.touchInteract = true;
     },
     { passive: false },
@@ -179,7 +196,7 @@ async function main(): Promise<void> {
     (e) => {
       e.preventDefault();
       const st = getState();
-      if (!st.running || st.inShop || settingsOpen) return;
+      if (!st.running || isShopOpen() || settingsOpen) return;
       if (localPlayer(st).hp <= 0) return;
       const now = performance.now();
       if (now - lastPlaceAt < 300) return;
@@ -234,13 +251,14 @@ async function main(): Promise<void> {
     // Typing into a text field must not trigger game hotkeys.
     if (isEditableTarget(e.target)) return;
     const state = getState();
+    if (e.code === "KeyE" && !e.repeat && openWorkbenchShop()) return;
     if (e.code === "KeyM") {
       Audio.toggleMute();
       refreshMute();
       refreshSettings(); // keep the options-panel mute label in sync if it's open
       return;
     }
-    if (state.inShop) {
+    if (isShopOpen()) {
       const me = localPlayer(state);
       const digit = /^Digit([1-9])$/.exec(e.code);
       if (digit) {
@@ -296,8 +314,12 @@ async function main(): Promise<void> {
 
     if (Net.mode === "client") {
       // no authoritative sim — predict our player, interpolate the world, ship input.
-      // While options is open, send zeroed input so the host holds us idle (not acting blind).
-      const inp = live ? (settingsOpen ? emptyInput() : sampleLocalInput(st)) : null;
+      // While options or the shop overlay is open, send zeroed input so the host holds us idle.
+      const inp = live
+        ? settingsOpen || isShopOpen()
+          ? emptyInput()
+          : sampleLocalInput(st)
+        : null;
       // throttle input send to ~25 Hz (latest-wins); predict & render still run every frame
       sendAcc += dt;
       if (inp && sendAcc >= inputStep) {
@@ -312,7 +334,7 @@ async function main(): Promise<void> {
       if (live) sysCamera(st, dt);
     }
 
-    // reconcile the shop overlay with state.inShop (opened from the snapshot).
+    // reconcile the shop overlay with shopOpen (client-local overlay state).
     if (st.running) syncShopUI();
 
     if (spritesLoaded) draw();
@@ -321,7 +343,7 @@ async function main(): Promise<void> {
 
     // options panel: force-close on state transitions (gameover/shop) so it's never
     // left stranded, and suppress the pause overlay underneath it so the two never stack.
-    if (settingsOpen && (st.inShop || !el("over").classList.contains("hidden"))) closeSettings();
+    if (settingsOpen && (isShopOpen() || !el("over").classList.contains("hidden"))) closeSettings();
     if (settingsOpen) hide("pause");
 
     // ?netlog: live net-stat readout to drive feel-tuning

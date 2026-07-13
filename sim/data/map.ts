@@ -14,6 +14,9 @@ const HH = 150;
 /** Default spawn / respawn point, inside HOME and clear of the walls. */
 export const HOME_SPAWN = { x: 0, y: 80 };
 
+/** Fortress shop workbench: interact here during the day to open the per-player shop overlay. */
+export const WORKBENCH = { x: 0, y: 0 };
+
 export const HOME: { walls: Segment[]; openings: Segment[] } = {
   walls: [
     { x1: -HW, y1: -HH, x2: -50, y2: -HH },

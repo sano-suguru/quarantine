@@ -1,35 +1,28 @@
 import { CONFIG } from "../sim/config";
 import {
   cardItem,
-  draftPool,
   effWeapon,
   meleeArc,
   meleeReach,
   rerollCost,
-  rollOffer,
   type StoreItem,
   storeItems,
 } from "../sim/data/arsenal";
-import {
-  DEPLOYABLE_TYPES,
-  deployableCount,
-  placeDeployable,
-  placeSpot,
-} from "../sim/data/deployables";
+import { DEPLOYABLE_TYPES } from "../sim/data/deployables";
 import { ENEMY_TYPES } from "../sim/data/enemies";
+import { WORKBENCH } from "../sim/data/map";
 import { PICKUP_TYPES } from "../sim/data/pickups";
 import { PLAYER_COLORS } from "../sim/data/players";
 import { UNLOCKABLE_CARDS, UPGRADES } from "../sim/data/upgrades";
 import { UNLOCKABLE, WEAPON_ORDER, WEAPONS } from "../sim/data/weapons";
 import { type LightCandidate, selectLights } from "../sim/engine/lights";
 import { cameraTarget, localPlayer, nearestPlayer } from "../sim/engine/players";
-import { pushFx } from "../sim/events";
 import { newState, setUnlockProvider } from "../sim/state";
 import { actionMotion, deriveActionChannel } from "../sim/systems/actionFeel";
 import { flashlightIntensity } from "../sim/systems/flashlight";
 import { integrityGrade } from "../sim/systems/integrity";
 import { effectiveSearchTime } from "../sim/systems/player";
-import { ambientForClock, clockFrac, clockLabel, startDay } from "../sim/systems/siege";
+import { ambientForClock, clockFrac, clockLabel } from "../sim/systems/siege";
 import type { Player, State, WeaponDef } from "../sim/types";
 import { resolveHotbarSlot } from "./autoAim";
 import { Audio } from "./engine/audio";
@@ -50,6 +43,20 @@ let state: State = newState();
 
 export function getState(): State {
   return state;
+}
+
+// Whether THIS client's shop overlay is open. Client-local UI state — the sim no longer pauses
+// and the snapshot carries no shop flag. Opened by interacting at the fortress workbench during
+// the day (main.ts), closed by the Done control or leaving. Movement input is suppressed while open.
+let shopOpen = false;
+export function isShopOpen(): boolean {
+  return shopOpen;
+}
+export function openShopOverlay(): void {
+  shopOpen = true;
+}
+export function closeShopOverlay(): void {
+  shopOpen = false;
 }
 
 const TOXIC: [number, number, number] = [0.49, 1.0, 0.31];
@@ -541,6 +548,14 @@ export function draw(): void {
   drawShelter(R);
   drawCaches(R);
   drawDeployables(R);
+
+  // --- fortress workbench marker (shop spot): a ring, brighter by day when it's usable ---
+  if (state.phase === "day") {
+    R.ring(WORKBENCH.x, WORKBENCH.y, 22, 0.9, 0.8, 0.4, 0.9);
+    R.glow(WORKBENCH.x, WORKBENCH.y, 46, 0.5, 0.42, 0.2, 0.5);
+  } else {
+    R.ring(WORKBENCH.x, WORKBENCH.y, 22, 0.4, 0.4, 0.45, 0.4);
+  }
 
   // --- normal particles (shards / smoke / flesh fragments) ---
   for (const pt of state.particles) {
@@ -1242,7 +1257,7 @@ export function updateHUD(): void {
   el("downed").classList.toggle("show", p.hp <= 0);
 
   // Mobile action buttons: only shown under body.mobile while in an active run (not in shop)
-  if (document.body.classList.contains("mobile") && state.running && !state.inShop) {
+  if (document.body.classList.contains("mobile") && state.running && !shopOpen) {
     show("action-btns");
     // Heal: always visible; show medkit count
     el("btn-heal-count").textContent = `×${p.medkits}`;
@@ -1259,8 +1274,9 @@ export function updateHUD(): void {
   }
 
   // pause overlay is state-driven (so a host pause shows on every client via the
-  // snapshot); the shop has its own overlay and also sets paused, so suppress it there.
-  if (state.paused && !state.inShop) show("pause");
+  // snapshot); shopOpen is a client-local overlay, not a sim pause — suppress the
+  // pause banner while the shop is open to avoid stacking two overlays.
+  if (state.paused && !shopOpen) show("pause");
   else hide("pause");
 }
 
@@ -1334,92 +1350,6 @@ function buildWeaponSlots(): void {
  */
 const shopRowSig = (it: StoreItem, i: number): string => `${i}:${it.id}:${it.price}:${it.desc}`;
 
-/**
- * Apply a purchase host-authoritatively. `buyer` is the player who paid (perks with
- * personal stats apply to them). Returns false (and changes nothing) if the shop is
- * closed, the buyer is gone (dead/left), or the item can't be afforded.
- */
-export function applyBuy(s: State, itemId: string, buyer: Player | undefined): boolean {
-  if (!s.inShop || !buyer) return false;
-  const it = storeItems(s, buyer).find((x) => x.id === itemId);
-  if (!it?.canBuy(s, buyer)) return false;
-  buyer.money -= it.price;
-  it.buy(s, buyer);
-  return true;
-}
-
-/**
- * Place the front of `player`'s deploy queue at their feet (in front, along aim), host-
- * authoritatively. Returns false (consuming nothing) if the player is down, holds nothing,
- * the world is at the type's cap, or there's no valid spot. The hard cap is re-checked here
- * (the buy gate is only a per-player view), so co-op buy races can't exceed it.
- */
-export function applyPlace(s: State, player: Player | undefined): boolean {
-  if (!player || player.hp <= 0) return false;
-  const defId = player.deployQueue[0];
-  if (!defId) return false;
-  const def = DEPLOYABLE_TYPES[defId];
-  if (!def || deployableCount(s, defId) >= def.cap) return false;
-  const spot = placeSpot(s, player, def);
-  if (!spot) return false;
-  placeDeployable(s, defId, spot.x, spot.y);
-  player.deployQueue.shift();
-  return true;
-}
-
-/** Host/single: roll a fresh nightly offer for player `p` and reset their free pick + reroll count. */
-export function rollDraft(state: State, p: Player): void {
-  p.draftOffer = rollOffer(draftPool(state, p), CONFIG.arsenal.offerSize).map((it) => it.id);
-  p.draftFreePicksUsed = 0;
-  p.draftRerolls = 0;
-  p.draftTaken = [];
-}
-
-/**
- * Apply a draft "take" host-authoritatively. The first CONFIG.arsenal.freePicks takes of the night
- * are FREE (counted by draftFreePicksUsed); further takes cost SCRAP (canBuy-gated). The card must
- * be in the buyer's current offer. Returns false (changing nothing) on any guard miss.
- */
-export function applyDraftTake(s: State, buyer: Player | undefined, cardId: string): boolean {
-  if (!s.inShop || !buyer?.draftOffer.includes(cardId)) return false;
-  const it = cardItem(s, buyer, cardId);
-  if (!it) return false;
-  if (buyer.draftFreePicksUsed < CONFIG.arsenal.freePicks) {
-    it.buy(s, buyer);
-    buyer.draftFreePicksUsed += 1;
-  } else {
-    if (!it.canBuy(s, buyer)) return false;
-    buyer.money -= it.price;
-    it.buy(s, buyer);
-  }
-  // Record perk takes so a reroll can't resurface them (perks have no per-night cap, so a
-  // re-offered perk could be taken again and stack). Weapon (`lvl:`) cards are intentionally NOT
-  // recorded — canBuy caps them at maxLevel and they may be upgraded again the same night.
-  if (cardId.startsWith("perk:")) buyer.draftTaken.push(cardId);
-  buyer.draftOffer = buyer.draftOffer.filter((id) => id !== cardId);
-  return true;
-}
-
-/** Apply a draft reroll host-authoritatively: charge escalating SCRAP, bump the reroll counter,
- *  and redraw the cards the buyer currently has SHOWN (`draftOffer.length`). CONSEQUENCE: taking a
- *  card before rerolling permanently shrinks the hand (3 → 2), and the pool/exclude rules can shrink
- *  it further on repeated rerolls. This is host-authoritative and consistent (no correctness issue),
- *  but it is order-dependent: rerolling before a pick sees a fuller hand than rerolling after. Whether
- *  that asymmetry is a fair timing choice or an optimization trap is an OPEN design decision pending
- *  playtest (see the economy spec). The alternative is to always redraw a full hand:
- *  `rollOffer(draftPool(s, buyer), CONFIG.arsenal.offerSize, buyer.draftTaken)`. */
-export function applyDraftReroll(s: State, buyer: Player | undefined): boolean {
-  if (!s.inShop || !buyer || buyer.draftOffer.length === 0) return false;
-  const cost = rerollCost(buyer.draftRerolls);
-  if (buyer.money < cost) return false;
-  buyer.money -= cost;
-  buyer.draftRerolls += 1;
-  buyer.draftOffer = rollOffer(draftPool(s, buyer), buyer.draftOffer.length, buyer.draftTaken).map(
-    (it) => it.id,
-  );
-  return true;
-}
-
 function renderShop(): void {
   const me = localPlayer(state);
   el("shop-credits").textContent = String(me.money);
@@ -1471,18 +1401,9 @@ function renderShop(): void {
 
 /** Buy a Fortify (deployable) item by id. Client → request; host/single → apply + re-render. */
 export function buyItem(itemId: string): void {
-  if (!state.inShop) return;
-  if (Net.mode === "client") {
-    Net.client?.requestBuy(itemId);
-    Audio.ui(true);
-    return;
-  }
-  if (applyBuy(state, itemId, localPlayer(state))) {
-    Audio.ui(true);
-    renderShop();
-  } else {
-    Audio.ui(false);
-  }
+  if (!shopOpen) return;
+  Net.client?.requestBuy(itemId);
+  Audio.ui(true);
 }
 
 /**
@@ -1492,73 +1413,38 @@ export function buyItem(itemId: string): void {
  * the caller in main.ts.
  */
 export function deployPlace(): void {
-  if (Net.mode === "client") {
-    Net.client?.requestPlace();
-    Audio.ui(true);
-    return;
-  }
-  const placed = applyPlace(state, localPlayer(state));
-  if (placed) Audio.repair();
-  else Audio.ui(false);
-}
-
-/** Take a draft card. Client → request to host; host/single → apply authoritatively + re-render. */
-export function draftTake(cardId: string): void {
-  if (!state.inShop) return;
-  if (Net.mode === "client") {
-    Net.client?.requestDraftTake(cardId);
-    Audio.ui(true);
-    return;
-  }
-  if (applyDraftTake(state, localPlayer(state), cardId)) {
-    Audio.ui(true);
-    renderShop();
-  } else {
-    Audio.ui(false);
-  }
-}
-
-/** Reroll the local player's draft offer. Client → request; host/single → apply + re-render. */
-export function draftReroll(): void {
-  if (!state.inShop) return;
-  if (Net.mode === "client") {
-    Net.client?.requestDraftReroll();
-    Audio.ui(true);
-    return;
-  }
-  if (applyDraftReroll(state, localPlayer(state))) {
-    Audio.ui(true);
-    renderShop();
-  } else {
-    Audio.ui(false);
-  }
-}
-
-/**
- * Leave the arsenal and start the next day. Client → request to the host (idempotent);
- * host/single → authoritative transition. The overlay is hidden by syncShopUI.
- */
-export function shopDeploy(): void {
-  if (Net.mode === "client") {
-    Net.client?.requestDeploy();
-    return;
-  }
-  if (!state.inShop) return;
+  Net.client?.requestPlace();
   Audio.ui(true);
-  state.inShop = false;
-  state.paused = false;
-  state.day++;
-  startDay(state);
-  pushFx(state, { t: "announce", label: "DAY", day: state.day });
+}
+
+/** Take a draft card. Ships a request to the DO (applied authoritatively). */
+export function draftTake(cardId: string): void {
+  if (!shopOpen) return;
+  Net.client?.requestDraftTake(cardId);
+  Audio.ui(true);
+}
+
+/** Reroll the local player's draft offer. Ships a request to the DO (applied authoritatively). */
+export function draftReroll(): void {
+  if (!shopOpen) return;
+  Net.client?.requestDraftReroll();
+  Audio.ui(true);
+}
+
+/** Close this client's shop overlay (day-start already happened on the DO at dawn). Local only. */
+export function shopDeploy(): void {
+  if (!shopOpen) return;
+  Audio.ui(true);
+  closeShopOverlay();
 }
 
 /**
- * Reconcile the shop overlay with `state.inShop` every frame (all modes). Clients open it
- * straight from the snapshot. renderShop is called each frame while open — renderList diffs
- * so only changed cards rebuild.
+ * Reconcile the shop overlay with `shopOpen` every frame (all modes). Clients open it
+ * locally when they interact with the workbench. renderShop is called each frame while open —
+ * renderList diffs so only changed cards rebuild.
  */
 export function syncShopUI(): void {
-  const open = state.inShop;
+  const open = shopOpen;
   const shown = shopVisible();
   if (open && !shown) {
     el("shop-wave").textContent = String(state.day);
@@ -1747,7 +1633,7 @@ export function closeArsenal(): void {
 
 export function togglePause(): void {
   if (Net.mode === "client") return; // MVP: only the host pauses the shared sim
-  if (!state.running || state.inShop) return;
+  if (!state.running || shopOpen) return;
   state.paused = !state.paused;
   // the overlay itself is driven by state.paused in updateHUD (so a host pause shows on
   // every client via the snapshot) — no imperative show/hide here.

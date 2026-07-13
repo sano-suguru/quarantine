@@ -72,7 +72,6 @@ export function newState(): State {
   return {
     running: false,
     paused: false,
-    inShop: false,
     time: 0,
     nextId: 1,
     players: [makePlayer(0, 0, 0)],

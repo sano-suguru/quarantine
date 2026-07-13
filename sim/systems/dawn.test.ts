@@ -52,4 +52,28 @@ describe("sysDawn", () => {
     expect(p.hp).toBe(p.maxHp);
     expect(p.downT).toBe(0);
   });
+
+  it("rolls a fresh draft offer for each present player at dawn (once per day)", () => {
+    const s = newState();
+    s.players = [];
+    const a = addPlayer(s, 0, 0, 0);
+    const b = addPlayer(s, 1, 0, 0);
+    s.owned = { pistol: true, smg: true, shotgun: true }; // ensure the pool is non-empty
+    sysDawn(s); // day 1 -> 2
+    expect(a.draftOffer.length).toBeGreaterThan(0);
+    expect(b.draftOffer.length).toBeGreaterThan(0);
+    expect(a.draftRolledForDay).toBe(s.day);
+    expect(b.draftRolledForDay).toBe(s.day);
+  });
+
+  it("does not re-roll a player already rolled for the current day", () => {
+    const s = newState();
+    s.players = [];
+    const a = addPlayer(s, 0, 0, 0);
+    s.day = 5;
+    a.draftRolledForDay = 6; // pretend a mid-day joiner was rolled for the day sysDawn will produce
+    a.draftFreePicksUsed = 2; // and has already spent free picks
+    sysDawn(s); // day 5 -> 6; a is already stamped for day 6
+    expect(a.draftFreePicksUsed).toBe(2); // not reset — no second roll
+  });
 });

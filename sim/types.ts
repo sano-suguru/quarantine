@@ -204,6 +204,9 @@ export interface Player {
    *  cannot resurface and stack within one night. Weapon (`lvl:`) cards are intentionally excluded
    *  from this list — they are maxLevel-capped by canBuy and may be re-upgraded the same night. */
   draftTaken: string[];
+  /** the state.day a fresh draft offer was last rolled for this player — guards a mid-day joiner
+   *  (rolled on spawn) against a second roll by the same day's dawn pass (which would re-grant free picks). */
+  draftRolledForDay: number;
 }
 
 export interface Zombie {
@@ -536,9 +539,6 @@ interface Cam {
 export interface State {
   running: boolean;
   paused: boolean;
-  /** between-nights arsenal shop is open (host-authoritative; synced in snapshots so
-   *  clients show the same shop overlay). Distinct from `paused` (manual pause). */
-  inShop: boolean;
   time: number;
   /** monotonic id allocator for zombies/bullets/pickups (host-authoritative) */
   nextId: number;
