@@ -119,8 +119,7 @@ export class Arena {
       }
     } else if (outcome === "reset") {
       // fortress fell → rebuild to a fresh Day-1. Communal only; per-player SALVAGE is client meta.
-      // (M-B will persist the settled Day-1 here.)
-      resetArena(s);
+      resetArena(s); // the settled Day-1 is persisted by the persist() call below
     }
     // "breached"/"night"/null need no DO reaction — the frozen tableau keeps broadcasting and the
     // client derives the beat + reset from the synced phase edge.
