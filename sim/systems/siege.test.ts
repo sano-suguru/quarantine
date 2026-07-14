@@ -221,7 +221,7 @@ describe("resetArena", () => {
     s.zombies.push({ ...(s.zombies[0] ?? {}), id: 9999, x: 0, y: 0 } as (typeof s.zombies)[number]);
     s.bullets.push({} as (typeof s.bullets)[number]);
     for (const b of s.barricades) b.hp = 1;
-    const p = s.players[0]!;
+    const p = s.players[0] as (typeof s.players)[number];
     p.hp = 0;
 
     resetArena(s);

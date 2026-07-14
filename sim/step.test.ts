@@ -16,10 +16,12 @@ describe("stepSim freeze during reset phases", () => {
       x: 500,
       y: 0,
     } as (typeof s.zombies)[number]);
-    const zx = s.zombies[s.zombies.length - 1]!.x;
+    const last0 = s.zombies[s.zombies.length - 1] as (typeof s.zombies)[number];
+    const zx = last0.x;
     const t0 = s.phaseT;
     stepSim(s, 1 / 60);
-    expect(s.zombies[s.zombies.length - 1]!.x).toBe(zx); // sysAI skipped
+    const last1 = s.zombies[s.zombies.length - 1] as (typeof s.zombies)[number];
+    expect(last1.x).toBe(zx); // sysAI skipped
     expect(s.phaseT).toBeLessThan(t0); // sysSiege ran
   });
 });
