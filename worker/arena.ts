@@ -7,6 +7,7 @@ import { CONFIG } from "../sim/config";
 import { HOME_SPAWN } from "../sim/data/map";
 import { addPlayer, removePlayer } from "../sim/engine/players";
 import { clearFx } from "../sim/events";
+import { applyCycle, type CycleBlob, SCHEMA_VERSION, serializeCycle } from "../sim/net/persist";
 import { PROTOCOL_VERSION } from "../sim/net/protocol";
 import { makeNonce, pickSlot, rejoinMatches } from "../sim/net/roster";
 import { frameRel, frameSnap, unframe } from "../sim/net/wire";
@@ -21,7 +22,7 @@ import {
   applyPlace,
   rollDraft,
 } from "../sim/systems/shop";
-import { resetArena, startDay } from "../sim/systems/siege";
+import { rearmThaw, resetArena, startDay } from "../sim/systems/siege";
 import type { State } from "../sim/types";
 
 // No Env export: the Arena class takes no env binding in 2a (the DO itself is looked up by name
@@ -50,6 +51,22 @@ export class Arena {
   private ticksThisWindow = 0;
   private windowStartMs = 0;
   private lastSnapBytes = 0;
+  private ctx: DurableObjectState;
+  private saved: CycleBlob | null = null;
+
+  constructor(ctx: DurableObjectState, _env: unknown) {
+    this.ctx = ctx;
+    // Cold start: hydrate the frozen cycle before any request is processed. Must not throw
+    // (that would abort the DO) — a missing/corrupt/stale blob just means "fresh Day-1".
+    ctx.blockConcurrencyWhile(async () => {
+      try {
+        const blob = await ctx.storage.get<CycleBlob>("cycle");
+        this.saved = blob && blob.schemaVersion === SCHEMA_VERSION ? blob : null;
+      } catch {
+        this.saved = null;
+      }
+    });
+  }
 
   async fetch(req: Request): Promise<Response> {
     if (req.headers.get("Upgrade") !== "websocket") {
@@ -74,7 +91,12 @@ export class Arena {
     if (!this.state) {
       const s = newState();
       s.running = true;
-      startDay(s); // fresh Day-1 (newState is already day/phaseT; this seeds caches + roamers)
+      if (this.saved) {
+        applyCycle(s, this.saved); // restore the frozen communal cycle (day/phase/phaseT/…)
+        rearmThaw(s); // re-arm the phase's spawner WITHOUT touching restored phaseT/caches
+      } else {
+        startDay(s); // brand-new arena → fresh Day-1
+      }
       this.state = s;
     }
     if (!this.loop) {
@@ -102,6 +124,7 @@ export class Arena {
     }
     // "breached"/"night"/null need no DO reaction — the frozen tableau keeps broadcasting and the
     // client derives the beat + reset from the synced phase edge.
+    if (outcome === "dawn" || outcome === "night" || outcome === "reset") this.persist();
     clearFx(s); // zero fxEvents on the wire — cues are all client-derived
     this.tick++;
     this.ticksThisWindow++;
@@ -301,12 +324,25 @@ export class Arena {
     this.peers.delete(peer.ws);
   }
 
+  /** Snapshot the communal cycle to the in-memory cache + DO storage. Skipped during the
+   *  transient breached/resetting beat (never resume into it). Fire-and-forget: the sync step
+   *  loop must not await; a rare one-tick broadcast delay at a boundary is acceptable. */
+  private persist(): void {
+    const s = this.state;
+    if (!s || s.phase === "breached" || s.phase === "resetting") return;
+    this.saved = serializeCycle(s);
+    this.ctx.storage
+      .put("cycle", this.saved)
+      .catch((e) => console.log("[arena] persist failed", e));
+  }
+
   private stop(): void {
+    this.persist(); // freeze the cycle to storage before discarding in-memory state
     if (this.loop) {
       clearInterval(this.loop);
       this.loop = null;
     }
-    this.state = null; // 2a: a fully-empty arena resets (persistence = 2b)
+    this.state = null;
     this.tick = 0;
     // Reset metrics so stale numbers don't appear if this DO instance is reused.
     this.ticksThisWindow = 0;
