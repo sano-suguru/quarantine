@@ -164,6 +164,24 @@ describe("isFortressBreached", () => {
   });
 });
 
+describe("sysSiege reset machine", () => {
+  it("breached counts down to resetting, resetting counts down to 'reset'", () => {
+    const s = newState();
+    s.running = true;
+    s.phase = "breached";
+    s.phaseT = CONFIG.siege.breachedDuration;
+    // exhaust breached
+    let out: ReturnType<typeof sysSiege> = null;
+    for (let i = 0; i < Math.ceil(CONFIG.siege.breachedDuration * 60) + 2; i++)
+      out = sysSiege(s, 1 / 60);
+    expect(s.phase).toBe("resetting");
+    // exhaust resetting
+    for (let i = 0; i < Math.ceil(CONFIG.siege.resettingDuration * 60) + 2 && out !== "reset"; i++)
+      out = sysSiege(s, 1 / 60);
+    expect(out).toBe("reset");
+  });
+});
+
 describe("sysSiege breach detection", () => {
   it("fires 'breached' after the interior stays overrun for breachSustain, and freezes the clock there", () => {
     const s = nightState();

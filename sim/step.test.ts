@@ -1,6 +1,28 @@
 import { describe, expect, it } from "vitest";
+import { CONFIG } from "./config";
 import { newState } from "./state";
 import { stepSim } from "./step";
+
+describe("stepSim freeze during reset phases", () => {
+  it("does not advance gameplay while phase is 'breached', but the reset clock ticks", () => {
+    const s = newState();
+    s.running = true;
+    s.phase = "breached";
+    s.phaseT = CONFIG.siege.breachedDuration;
+    // a zombie that would move if sysAI ran
+    s.zombies.push({
+      ...(s.zombies[0] ?? {}),
+      id: 999,
+      x: 500,
+      y: 0,
+    } as (typeof s.zombies)[number]);
+    const zx = s.zombies[s.zombies.length - 1]!.x;
+    const t0 = s.phaseT;
+    stepSim(s, 1 / 60);
+    expect(s.zombies[s.zombies.length - 1]!.x).toBe(zx); // sysAI skipped
+    expect(s.phaseT).toBeLessThan(t0); // sysSiege ran
+  });
+});
 
 describe("stepSim", () => {
   it("returns 'night' and pushes the NIGHT/waveStart cues on the day→night edge", () => {

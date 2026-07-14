@@ -19,7 +19,7 @@ import type { State } from "./types";
  * Excludes sysFx/sysCamera (cosmetic, per-client). Pushed transition events are cosmetic
  * fxEvents; the DO clears them each tick.
  */
-export function stepSim(state: State, dt: number): "night" | "dawn" | null {
+export function stepSim(state: State, dt: number): "night" | "dawn" | "breached" | "reset" | null {
   if (!state.running || state.paused) return null;
   let sdt = dt;
   if (state.hitstopT > 0) {
@@ -27,14 +27,17 @@ export function stepSim(state: State, dt: number): "night" | "dawn" | null {
     sdt = dt * CONFIG.feel.hitstopScale;
   }
   state.time += sdt;
-  sysPlayer(state, sdt);
-  sysAssist(state, sdt);
-  sysRespawn(state, sdt);
-  sysAI(state, sdt);
-  if (state.stalker) sysStalker(state, sdt);
-  sysDeployables(state, sdt);
-  sysBullets(state, sdt);
-  sysPickups(state, sdt);
+  const frozen = state.phase === "breached" || state.phase === "resetting";
+  if (!frozen) {
+    sysPlayer(state, sdt);
+    sysAssist(state, sdt);
+    sysRespawn(state, sdt);
+    sysAI(state, sdt);
+    if (state.stalker) sysStalker(state, sdt);
+    sysDeployables(state, sdt);
+    sysBullets(state, sdt);
+    sysPickups(state, sdt);
+  }
   const ev = sysSiege(state, sdt);
   if (ev === "night") {
     spawnStalker(state);
@@ -47,5 +50,7 @@ export function stepSim(state: State, dt: number): "night" | "dawn" | null {
     pushFx(state, { t: "audio", cue: "dawn" });
     return "dawn";
   }
+  if (ev === "breached") return "breached";
+  if (ev === "reset") return "reset";
   return null;
 }

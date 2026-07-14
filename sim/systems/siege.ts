@@ -95,17 +95,35 @@ export function sysSiege(state: State, dt: number): "night" | "dawn" | "breached
     }
     return null;
   }
-  // night: spawns keep coming (capped); dawn arrives on the clock, not on a wipe-out
-  sysWave(state, dt, nightMaxZombies(state.day));
-  // breach: the interior being overrun for breachSustain seconds falls the fortress
-  let indoor = 0;
-  for (const z of state.zombies) if (Math.abs(z.x) < HW && Math.abs(z.y) < HH) indoor++;
-  state.breachT = isFortressBreached(indoor) ? state.breachT + dt : Math.max(0, state.breachT - dt);
-  if (state.breachT >= CONFIG.siege.breachSustain) {
-    enterBreached(state);
-    return "breached";
+  if (state.phase === "night") {
+    // night: spawns keep coming (capped); dawn arrives on the clock, not on a wipe-out
+    sysWave(state, dt, nightMaxZombies(state.day));
+    // breach: the interior being overrun for breachSustain seconds falls the fortress
+    let indoor = 0;
+    for (const z of state.zombies) if (Math.abs(z.x) < HW && Math.abs(z.y) < HH) indoor++;
+    state.breachT = isFortressBreached(indoor)
+      ? state.breachT + dt
+      : Math.max(0, state.breachT - dt);
+    if (state.breachT >= CONFIG.siege.breachSustain) {
+      enterBreached(state);
+      return "breached";
+    }
+    state.phaseT -= dt;
+    if (state.phaseT > 0) return null;
+    return "dawn";
   }
-  state.phaseT -= dt;
-  if (state.phaseT > 0) return null;
-  return "dawn";
+  if (state.phase === "breached") {
+    state.phaseT -= dt;
+    if (state.phaseT <= 0) {
+      state.phase = "resetting";
+      state.phaseT = CONFIG.siege.resettingDuration;
+    }
+    return null;
+  }
+  if (state.phase === "resetting") {
+    state.phaseT -= dt;
+    if (state.phaseT <= 0) return "reset";
+    return null;
+  }
+  return null;
 }
