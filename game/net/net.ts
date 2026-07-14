@@ -25,11 +25,11 @@ export type NetMsg =
       t: "hello";
       localId: number;
       owned: Record<string, boolean>;
-      /** per-player reconnect token (P4): client stores {localId, nonce} and replays it on
-       *  rejoin so the host re-attaches to the same player slot. Optional for back-compat. */
+      /** per-player reconnect token: client stores {localId, nonce} and replays it on rejoin so
+       *  the DO re-attaches to the same player slot. Optional for back-compat. */
       nonce?: string;
-      /** host's PROTOCOL_VERSION (D): lets the manual-SDP path — which bypasses the signaling
-       *  version gate — detect a mismatch after the P2P link opens. */
+      /** the DO's PROTOCOL_VERSION: the client re-checks it after the arena WS opens to detect a
+       *  wire-version mismatch (defence-in-depth alongside the signaling version gate). */
       v?: number;
       /** DO → client: true if this Hello re-attached the client's still-held body (rejoin within
        *  grace); false/absent = a fresh slot (initial join, or a rejoin after graceMs retired the
