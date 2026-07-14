@@ -8,6 +8,7 @@ import {
   isFortressBreached,
   nightDuration,
   nightMaxZombies,
+  resetArena,
   startDay,
   startNight,
   sysSiege,
@@ -205,5 +206,34 @@ describe("sysSiege breach detection", () => {
     const s = nightState();
     for (let i = 0; i < 30; i++) expect(sysSiege(s, 1 / 60)).not.toBe("breached");
     expect(s.breachT).toBe(0);
+  });
+});
+
+describe("resetArena", () => {
+  it("rebuilds a fresh Day-1: clears the horde, restores barricades/economy, revives players", () => {
+    const s = newState();
+    s.running = true;
+    s.day = 6;
+    s.phase = "resetting";
+    s.kills = 120;
+    s.salvageBanked = 300;
+    s.breachT = 5;
+    s.zombies.push({ ...(s.zombies[0] ?? {}), id: 5, x: 0, y: 0 } as (typeof s.zombies)[number]);
+    s.bullets.push({} as (typeof s.bullets)[number]);
+    for (const b of s.barricades) b.hp = 1;
+    const p = s.players[0]!;
+    p.hp = 0;
+
+    resetArena(s);
+
+    expect(s.day).toBe(1);
+    expect(s.phase).toBe("day");
+    expect(s.zombies.length).toBe(0);
+    expect(s.bullets.length).toBe(0);
+    expect(s.kills).toBe(0);
+    expect(s.salvageBanked).toBe(0);
+    expect(s.breachT).toBe(0);
+    expect(s.barricades.every((b) => b.hp === CONFIG.siege.boardMaxHp)).toBe(true);
+    expect(p.hp).toBe(p.maxHp); // revived
   });
 });
