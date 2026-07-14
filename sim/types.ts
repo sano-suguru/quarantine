@@ -510,8 +510,9 @@ export type FxEvent =
   | { t: "pickup"; x: number; y: number; glow: [number, number, number] }
   | { t: "deployDestroy"; x: number; y: number; color: [number, number, number]; rtb: boolean };
 
-/** Day = lit scavenge/repair window; night = the dark horde siege. */
-export type SiegePhase = "day" | "night";
+/** Day = lit scavenge window; night = the horde siege; breached = the frozen "fortress fell"
+ *  beat; resetting = the brief Day-1 rebuild window. */
+export type SiegePhase = "day" | "night" | "breached" | "resetting";
 
 export interface WaveDefinition {
   /** composition weights sampled per spawn pulse */
@@ -565,6 +566,9 @@ export interface State {
   day: number;
   /** seconds left in the current phase (day countdown) */
   phaseT: number;
+  /** breach-detection sustain accumulator (counts up while the interior is overrun, decays below
+   *  threshold). Server-only + transient — NOT snapshotted, NOT persisted (like flow/navTick). */
+  breachT: number;
   cam: Cam;
   wave: Wave;
   /** total kills this run (shared run stat; drives wave count and SALVAGE) */

@@ -103,5 +103,6 @@ export function newState(): State {
     // transient host-only nav state — NOT in captureSnapshot/encode
     flow: null,
     navTick: 0,
+    breachT: 0,
   };
 }

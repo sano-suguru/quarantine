@@ -252,6 +252,11 @@ export const CONFIG = {
     duskFrac: 0.25, // fraction of the day over which light crossfades down to night (sunset)
     dawnFrac: 0.2, // fraction of the night over which light crossfades up to day (predawn)
     respawnDelay: 17, // seconds a downed player spectates before auto-respawning at the fortress
+    // --- soft-reset (2b②-M-A) ---
+    breachZombies: 14, // interior (HOME-rect) zombie count that reads as "fortress overrun"
+    breachSustain: 1.5, // seconds the interior must stay overrun before the breach fires (anti-flicker)
+    breachedDuration: 3, // seconds of the frozen "FORTRESS FALLEN" beat
+    resettingDuration: 0.5, // brief rebuild hold; >= one broadcast interval so clients see the edge
   },
   cache: {
     searchTime: 1.5, // seconds of holding interact (and standing still) to loot (day)

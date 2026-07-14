@@ -5,6 +5,7 @@ import {
   ambientForClock,
   clockFrac,
   clockLabel,
+  isFortressBreached,
   nightDuration,
   nightMaxZombies,
   startDay,
@@ -145,5 +146,46 @@ describe("clockLabel / clockFrac", () => {
   it("frac runs 0 at phase start to 1 at phase end", () => {
     expect(clockFrac("day", 35, 1)).toBeCloseTo(0, 5);
     expect(clockFrac("day", 0, 1)).toBeCloseTo(1, 5);
+  });
+});
+
+function nightState() {
+  const s = newState();
+  s.running = true;
+  startNight(s); // phase="night", phaseT=nightDuration(day)
+  return s;
+}
+
+describe("isFortressBreached", () => {
+  it("is false below the threshold and true at/above it", () => {
+    expect(isFortressBreached(CONFIG.siege.breachZombies - 1)).toBe(false);
+    expect(isFortressBreached(CONFIG.siege.breachZombies)).toBe(true);
+    expect(isFortressBreached(CONFIG.siege.breachZombies + 5)).toBe(true);
+  });
+});
+
+describe("sysSiege breach detection", () => {
+  it("fires 'breached' after the interior stays overrun for breachSustain, and freezes the clock there", () => {
+    const s = nightState();
+    // place enough zombies inside the HOME rect to be overrun. A fresh night state has zombies:[]
+    // (startNight only arms the spawner), so DON'T spread s.zombies[0] (it is undefined) — build a
+    // minimal literal; sysSiege's breach count reads only x/y. Matches the existing cast style in
+    // this file (e.g. `{ id: 1 } as (typeof s.zombies)[number]`).
+    for (let i = 0; i < CONFIG.siege.breachZombies + 2; i++) {
+      s.zombies.push({ id: 1000 + i, x: 0, y: 0 } as (typeof s.zombies)[number]);
+    }
+    let out: ReturnType<typeof sysSiege> = null;
+    // step past the sustain window
+    const steps = Math.ceil(CONFIG.siege.breachSustain / (1 / 60)) + 2;
+    for (let i = 0; i < steps && out !== "breached"; i++) out = sysSiege(s, 1 / 60);
+    expect(out).toBe("breached");
+    expect(s.phase).toBe("breached");
+    expect(s.phaseT).toBeCloseTo(CONFIG.siege.breachedDuration, 5);
+  });
+
+  it("does not fire when the interior is empty (breachT decays)", () => {
+    const s = nightState();
+    for (let i = 0; i < 30; i++) expect(sysSiege(s, 1 / 60)).not.toBe("breached");
+    expect(s.breachT).toBe(0);
   });
 });

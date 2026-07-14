@@ -1,4 +1,5 @@
 import { CONFIG } from "../config";
+import { HH, HW } from "../data/map";
 import { clamp } from "../engine/math";
 import type { SiegePhase, State } from "../types";
 import { restockCaches } from "./caches";
@@ -19,6 +20,18 @@ export function nightDuration(day: number): number {
 export function nightMaxZombies(day: number): number {
   const s = CONFIG.siege;
   return Math.min(s.nightCapMax, s.nightCapBase + (day - 1) * s.nightCapPerDay);
+}
+
+/** Overrun test: the interior holds at least this many zombies. Pure — the caller counts. */
+export function isFortressBreached(indoorCount: number): boolean {
+  return indoorCount >= CONFIG.siege.breachZombies;
+}
+
+/** Enter the frozen failure beat. */
+export function enterBreached(state: State): void {
+  state.phase = "breached";
+  state.phaseT = CONFIG.siege.breachedDuration;
+  state.breachT = 0;
 }
 
 /** Ambient light as a function of the clock: flat by day/night, crossfading over dusk/dawn. */
@@ -69,9 +82,11 @@ export function startNight(state: State): void {
 
 /**
  * Advance the siege. Returns "night" the frame day flips to night, "dawn" the frame the night
- * clock elapses (regardless of how many zombies remain — survivors carry into the day), else null.
+ * clock elapses (regardless of how many zombies remain — survivors carry into the day),
+ * "breached" the frame the interior-overrun sustain window expires, "reset" when the resetting
+ * phase ends (Task 2), else null.
  */
-export function sysSiege(state: State, dt: number): "night" | "dawn" | null {
+export function sysSiege(state: State, dt: number): "night" | "dawn" | "breached" | "reset" | null {
   if (state.phase === "day") {
     state.phaseT -= dt;
     if (state.phaseT <= 0) {
@@ -82,6 +97,14 @@ export function sysSiege(state: State, dt: number): "night" | "dawn" | null {
   }
   // night: spawns keep coming (capped); dawn arrives on the clock, not on a wipe-out
   sysWave(state, dt, nightMaxZombies(state.day));
+  // breach: the interior being overrun for breachSustain seconds falls the fortress
+  let indoor = 0;
+  for (const z of state.zombies) if (Math.abs(z.x) < HW && Math.abs(z.y) < HH) indoor++;
+  state.breachT = isFortressBreached(indoor) ? state.breachT + dt : Math.max(0, state.breachT - dt);
+  if (state.breachT >= CONFIG.siege.breachSustain) {
+    enterBreached(state);
+    return "breached";
+  }
   state.phaseT -= dt;
   if (state.phaseT > 0) return null;
   return "dawn";
