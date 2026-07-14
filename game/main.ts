@@ -168,12 +168,14 @@ function startReconnect(): void {
 function scheduleAttempt(): void {
   const delay = reconnectDelay(reconnectAttempt, CONFIG.net.reconnect.backoffMs);
   if (delay === null) {
-    // exhausted every attempt → the arena is unreachable. Tear down and return to the title so the
-    // player can re-Start (endCoop nulls currentLink + disposes the client). No stacked overlay.
+    // exhausted every attempt → the arena is unreachable. Tear down and show the terminal
+    // disconnect screen (same surface as the pre-start drop) so the player isn't left in a
+    // frozen limbo — endCoop nulls currentLink + disposes the client; showLoadError covers the
+    // frozen frame with the #loading overlay + message (reload/re-Start to reconnect).
     cancelReconnect();
     hideReconnectBanner();
     endCoop();
-    toTitle();
+    showLoadError("Disconnected from the arena.");
     return;
   }
   showReconnectBanner(reconnectAttempt + 1, CONFIG.net.reconnect.backoffMs.length);
