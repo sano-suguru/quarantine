@@ -142,9 +142,12 @@ describe("isFortressBreached", () => {
 describe("sysSiege breach detection", () => {
   it("fires 'breached' after the interior stays overrun for breachSustain, and freezes the clock there", () => {
     const s = nightState();
-    // place enough zombies inside the HOME rect to be overrun
+    // place enough zombies inside the HOME rect to be overrun. A fresh night state has zombies:[]
+    // (startNight only arms the spawner), so DON'T spread s.zombies[0] (it is undefined) — build a
+    // minimal literal; sysSiege's breach count reads only x/y. Matches the existing cast style in
+    // this file (e.g. `{ id: 1 } as (typeof s.zombies)[number]`).
     for (let i = 0; i < CONFIG.siege.breachZombies + 2; i++) {
-      s.zombies.push({ ...s.zombies[0], id: 1000 + i, x: 0, y: 0, hp: 10 } as (typeof s.zombies)[number]);
+      s.zombies.push({ id: 1000 + i, x: 0, y: 0 } as (typeof s.zombies)[number]);
     }
     let out: ReturnType<typeof sysSiege> = null;
     // step past the sustain window
@@ -162,7 +165,7 @@ describe("sysSiege breach detection", () => {
   });
 });
 ```
-(If `s.zombies[0]` doesn't exist in a fresh night state, construct a minimal zombie literal matching `Zombie` instead — copy the shape from an existing `spawnZombie` test helper in the file.)
+(The `id`/`x`/`y`-only literal cast to `Zombie` is deliberate — `sysSiege`'s breach loop touches only `z.x`/`z.y`. Do not call `spawnZombie` here; it places zombies at RNG coordinates you can't assert are inside the HOME rect.)
 
 - [ ] **Step 6: Run the test to verify it fails**
 
@@ -210,7 +213,7 @@ Expected: PASS.
 - [ ] **Step 9: Typecheck**
 
 Run: `bun run typecheck`
-Expected: PASS (the widened `SiegePhase` may surface exhaustiveness gaps elsewhere — if so they are addressed by later tasks; if `bun run typecheck` fails now, the only expected breakage is the new `sysSiege` return union not yet handled by `stepSim`/`sysSiege`'s own remaining branches, which Task 2 completes. If a *different* file errors, fix it here.)
+Expected: PASS. The widened `SiegePhase` does NOT break other files — the codebase has no exhaustive `switch (phase)`; every consumer is a `phase === "day"` / `=== "night"` two-value compare with a fallthrough (`ambientForClock`, `sysAI`, `sysPlayer`, `shop.ts`, `game.ts`, etc.), so new values silently take the else branch. This task widens only `sysSiege`'s return type; `stepSim` still narrows on `"night"`/`"dawn"` and lets the rest hit its `return null`, so it compiles unchanged until Task 2. If a different file errors, something is off — investigate before proceeding.
 
 - [ ] **Step 10: Commit**
 
@@ -771,7 +774,7 @@ git commit -m "feat(2b②-A): DO reacts to stepSim 'reset' → resetArena"
 
 Run `bun run dev:coop`, connect (Start → `.../arena/MAIN`). Confirm:
 1. **Breach fires:** stop defending during a night and let the interior fill; a breach actually triggers (does not require a crowd — solo-reachable with `breachZombies: 14`; if unreachable solo, lower the constant and note it).
-2. **The beat reads:** the `breached` phase shows a "FORTRESS FALLEN" banner + the world freezes (bodies/zombies stall) for ~3s — reads as a horror payoff, not a hang.
+2. **The beat reads:** the `breached` phase shows a "FORTRESS FALLEN" banner + the world freezes (bodies/zombies stall) for ~3s — reads as a horror payoff, not a hang. Note: while `phase` is `breached`/`resetting` it is neither `day` nor `night`, so `game.ts`'s day/night ambience both cut out (silence) and `ambientForClock` holds the dark night level. Confirm this silence+dark reads as ominous (the entry `breach` cue + banner carry the beat), not as a disconnect. If it feels dead, that's a cue/ambience tuning follow-up, not a machine bug.
 3. **Clean reset:** the world cuts to a fresh Day-1 with **no mass-kill/mass-spawn fx burst** and no spurious DAY banner, for a player present through the reset. Then open a second client mid-reset and after Day-1 to confirm a fresh joiner sees a coherent Day-1.
 4. **Cycle continues:** Day-1 proceeds normally (day/night, shop, respawn all still work).
 
