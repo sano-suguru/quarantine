@@ -78,8 +78,9 @@ export class Client {
   private gaps: number[] = []; // recent missed-tick counts between accepted snaps (rolling loss %)
   private freezeFrames = 0; // frames where the render time outran the newest snapshot
   private totalFrames = 0;
-  // reconnect (P4): `live` gates send/render/callbacks while suspended between links;
-  // lastSnapAt/lastRelAt drive the main-loop starvation watchdog (a true drop = BOTH go quiet).
+  // Reconnect (M-C): `live` gates send/render/callbacks while suspended between links.
+  // lastSnapAt/lastRelAt feed lastActivityMs(), the half-open-socket backstop in main.ts's loop
+  // (a clean close is caught by the link's onClose directly). On one WS, snap+rel die together.
   private live = true;
   private disposed = false;
   private lastSnapAt = 0;
@@ -89,13 +90,13 @@ export class Client {
     private link: PeerLink,
     private onStart?: () => void,
     private hooks: {
-      /** persist our reconnect identity (localId + nonce from Hello) so rebind can replay it */
+      /** persist our reconnect identity (localId + nonce from Hello) so rebind can replay it on the next arena (re)connect */
       onIdentity?: (pid: number, nonce: string) => void;
-      /** token to claim on the next P2P open: rejoin (reconnect) vs a fresh join */
+      /** token to claim on the next arena (re)connect: rejoin (reconnect) vs a fresh join */
       rejoin?: { pid: number; nonce: string } | null;
-      /** host runs an incompatible wire version (manual-SDP path; signaling gates the rest) */
+      /** DO runs an incompatible wire version (signaling gates the rest) */
       onVersionMismatch?: () => void;
-      /** the room is full (host + 3): stop and surface a terminal "room is full" to the lobby */
+      /** the arena is at capacity: stop and surface a terminal "room is full" to the lobby */
       onRoomFull?: () => void;
       /** fired on every Hello: true if the DO re-attached our held body (rejoin within grace),
        *  false if we got a fresh slot. main.ts uses it to drive the reconnect banner/respawn note. */
@@ -114,7 +115,7 @@ export class Client {
       this.lastRelAt = performance.now();
       const msg = m as NetMsg;
       if (msg.t === "hello") {
-        // wire-version gate for the manual-SDP path (signaling gates room-code / quick-match);
+        // wire-version gate (signaling gates room-code / quick-match);
         // mismatch → stop before showing the game, surface a clear error
         if (msg.v !== undefined && msg.v !== PROTOCOL_VERSION) {
           this.live = false;
@@ -128,8 +129,8 @@ export class Client {
       } else if (msg.t === "banked") {
         clientBanked(msg.salvage);
       } else if (msg.t === "roomfull") {
-        // host turned us away (room at capacity). Stop net activity and tear down our own link
-        // — the host deliberately did NOT close it (so this rel wasn't dropped from the buffer).
+        // the DO turned us away (arena at capacity). Stop net activity and tear down our own link
+        // — the DO deliberately did NOT close it (so this rel wasn't dropped from the buffer).
         this.live = false;
         this.hooks.onRoomFull?.();
         try {
@@ -181,7 +182,7 @@ export class Client {
       }
       this.prev = snap;
     });
-    // every P2P open, claim our identity so the host can re-attach (rejoin) or assign a slot (join)
+    // every arena (re)connect, claim our identity so the DO can re-attach (rejoin) or assign a slot (join)
     link.onOpen(() => {
       const r = this.hooks.rejoin;
       link.sendRel(r ? { t: "rejoin", pid: r.pid, nonce: r.nonce } : { t: "join" });
@@ -244,13 +245,13 @@ export class Client {
     this.pingSent.clear();
   }
 
-  /** Most-recent activity on EITHER channel. The watchdog reconnects only when both have been
-   *  silent (no snap AND no pong) — a snap-only stall is a lossy path, not a dead link. */
+  /** Most-recent activity on the WS (snap or rel). main.ts's watchdog reconnects when this goes
+   *  stale past snapStarvationMs — the backstop for a half-open socket that never fires onClose. */
   lastActivityMs(): number {
     return Math.max(this.lastSnapAt, this.lastRelAt);
   }
 
-  /** Test hook (?netlog): force-drop the P2P link to exercise the reconnect path. */
+  /** Test hook (?netlog): force-drop the arena WebSocket to exercise the reconnect path. */
   debugDrop(): void {
     try {
       this.link.close();
