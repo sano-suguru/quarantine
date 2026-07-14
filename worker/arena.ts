@@ -21,7 +21,7 @@ import {
   applyPlace,
   rollDraft,
 } from "../sim/systems/shop";
-import { startDay } from "../sim/systems/siege";
+import { resetArena, startDay } from "../sim/systems/siege";
 import type { State } from "../sim/types";
 
 // No Env export: the Arena class takes no env binding in 2a (the DO itself is looked up by name
@@ -87,8 +87,6 @@ export class Arena {
     const s = this.state;
     if (!s) return;
     const outcome = stepSim(s, 1 / CONFIG.simHz); // fixed-dt, one tick one step
-    // Only "dawn" needs a DO-side reaction; "night"/null are handled inside stepSim/startNight,
-    // and there is no "wipe" (no game-over — an all-down party rides the night clock to dawn).
     if (outcome === "dawn") {
       // living cycle: advance the day, bank SALVAGE to present players, revive stragglers, re-enter day.
       const payouts = sysDawn(s);
@@ -97,7 +95,13 @@ export class Arena {
         const peer = [...this.peers.values()].find((p) => p.decided && p.pid === pid);
         if (peer) this.send(peer.ws, { t: "banked", salvage });
       }
+    } else if (outcome === "reset") {
+      // fortress fell → rebuild to a fresh Day-1. Communal only; per-player SALVAGE is client meta.
+      // (M-B will persist the settled Day-1 here.)
+      resetArena(s);
     }
+    // "breached"/"night"/null need no DO reaction — the frozen tableau keeps broadcasting and the
+    // client derives the beat + reset from the synced phase edge.
     clearFx(s); // zero fxEvents on the wire — cues are all client-derived
     this.tick++;
     this.ticksThisWindow++;

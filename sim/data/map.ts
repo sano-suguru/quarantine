@@ -8,8 +8,9 @@ import type { Segment } from "../types";
  * POI walls are solid; each POI holds one loot cache.
  */
 
-const HW = 180;
-const HH = 150;
+/** HOME half-extents (the fortress interior is |x| < HW && |y| < HH). Exported for breach detection. */
+export const HW = 180;
+export const HH = 150;
 
 /** Default spawn / respawn point, inside HOME and clear of the walls. */
 export const HOME_SPAWN = { x: 0, y: 80 };

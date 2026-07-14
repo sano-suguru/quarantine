@@ -17,7 +17,7 @@ import {
   goreIntensity,
 } from "../../sim/systems/fx";
 import { integrateMovement } from "../../sim/systems/player";
-import { siegeEdgeCue } from "../../sim/systems/siegeEdge";
+import { isArenaResetEdge, siegeEdgeCue } from "../../sim/systems/siegeEdge";
 import type { Bullet, SiegePhase } from "../../sim/types";
 import { Audio } from "../engine/audio";
 import { drainFxEvents } from "../fx-drain";
@@ -172,6 +172,16 @@ export class Client {
       this.buf.push({ snap, at: performance.now() });
       if (this.buf.length > 8) this.buf.shift();
       this.reconcile(snap);
+      // On the soft-reset churn frame (resetting→day) the whole entity set is replaced at once;
+      // hard-clear the interp buffer + prediction so prev→next diffing doesn't fire a phantom
+      // mass-kill/mass-spawn burst, and skip this frame's effects()/cue entirely. resetNet() nulls
+      // prev/prevPhase/lastTick, so the day-1 snapshot below re-seeds the buffer cleanly.
+      if (isArenaResetEdge(this.prevPhase, snap.phase)) {
+        this.resetNet();
+        this.prev = snap;
+        this.prevPhase = snap.phase;
+        return;
+      }
       if (this.prev) this.effects(this.prev, snap);
       const cues = siegeEdgeCue(this.prevPhase, snap.phase, snap.day);
       this.prevPhase = snap.phase;

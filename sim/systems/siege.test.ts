@@ -5,12 +5,15 @@ import {
   ambientForClock,
   clockFrac,
   clockLabel,
+  isFortressBreached,
   nightDuration,
   nightMaxZombies,
+  resetArena,
   startDay,
   startNight,
   sysSiege,
 } from "./siege";
+import { spawnStalker } from "./stalker";
 
 // Guardrail: siege seeds roamers via spawnZombie (RNG positions), so we assert only the
 // DETERMINISTIC surface — phase, timers, return values, and zombie *counts* — never the
@@ -131,6 +134,12 @@ describe("ambientForClock", () => {
     const predawn = ambientForClock("night", 1, 1); // almost dawn
     expect(predawn).toBeGreaterThan(midNight);
   });
+  it("holds flat dark during breached (phaseT is small, must not dawn-crossfade)", () => {
+    expect(ambientForClock("breached", 3, 5)).toBe(CONFIG.siege.nightAmbient);
+  });
+  it("holds flat dark during resetting", () => {
+    expect(ambientForClock("resetting", 0.5, 5)).toBe(CONFIG.siege.nightAmbient);
+  });
 });
 
 describe("clockLabel / clockFrac", () => {
@@ -145,5 +154,106 @@ describe("clockLabel / clockFrac", () => {
   it("frac runs 0 at phase start to 1 at phase end", () => {
     expect(clockFrac("day", 35, 1)).toBeCloseTo(0, 5);
     expect(clockFrac("day", 0, 1)).toBeCloseTo(1, 5);
+  });
+});
+
+function nightState() {
+  const s = newState();
+  s.running = true;
+  startNight(s); // phase="night", phaseT=nightDuration(day)
+  return s;
+}
+
+describe("isFortressBreached", () => {
+  it("is false below the threshold and true at/above it", () => {
+    expect(isFortressBreached(CONFIG.siege.breachZombies - 1)).toBe(false);
+    expect(isFortressBreached(CONFIG.siege.breachZombies)).toBe(true);
+    expect(isFortressBreached(CONFIG.siege.breachZombies + 5)).toBe(true);
+  });
+});
+
+describe("sysSiege reset machine", () => {
+  it("breached counts down to resetting, resetting counts down to 'reset'", () => {
+    const s = newState();
+    s.running = true;
+    s.phase = "breached";
+    s.phaseT = CONFIG.siege.breachedDuration;
+    // exhaust breached
+    let out: ReturnType<typeof sysSiege> = null;
+    for (let i = 0; i < Math.ceil(CONFIG.siege.breachedDuration * 60) + 2; i++)
+      out = sysSiege(s, 1 / 60);
+    expect(s.phase).toBe("resetting");
+    // exhaust resetting
+    for (let i = 0; i < Math.ceil(CONFIG.siege.resettingDuration * 60) + 2 && out !== "reset"; i++)
+      out = sysSiege(s, 1 / 60);
+    expect(out).toBe("reset");
+  });
+});
+
+describe("sysSiege breach detection", () => {
+  it("fires 'breached' after the interior stays overrun for breachSustain, and freezes the clock there", () => {
+    const s = nightState();
+    // place enough zombies inside the HOME rect to be overrun. A fresh night state has zombies:[]
+    // (startNight only arms the spawner), so DON'T spread s.zombies[0] (it is undefined) — build a
+    // minimal literal; sysSiege's breach count reads only x/y. Matches the existing cast style in
+    // this file (e.g. `{ id: 1 } as (typeof s.zombies)[number]`).
+    for (let i = 0; i < CONFIG.siege.breachZombies + 2; i++) {
+      s.zombies.push({ id: 1000 + i, x: 0, y: 0 } as (typeof s.zombies)[number]);
+    }
+    let out: ReturnType<typeof sysSiege> = null;
+    // step past the sustain window
+    const steps = Math.ceil(CONFIG.siege.breachSustain / (1 / 60)) + 2;
+    for (let i = 0; i < steps && out !== "breached"; i++) out = sysSiege(s, 1 / 60);
+    expect(out).toBe("breached");
+    expect(s.phase).toBe("breached");
+    expect(s.phaseT).toBeCloseTo(CONFIG.siege.breachedDuration, 5);
+  });
+
+  it("does not fire when the interior is empty (breachT decays)", () => {
+    const s = nightState();
+    for (let i = 0; i < 30; i++) expect(sysSiege(s, 1 / 60)).not.toBe("breached");
+    expect(s.breachT).toBe(0);
+  });
+});
+
+describe("resetArena", () => {
+  it("rebuilds a fresh Day-1: clears the horde, restores barricades/economy, revives players", () => {
+    const s = newState();
+    s.running = true;
+    s.day = 6;
+    s.phase = "resetting";
+    s.kills = 120;
+    s.salvageBanked = 300;
+    s.breachT = 5;
+    s.zombies.push({ ...(s.zombies[0] ?? {}), id: 9999, x: 0, y: 0 } as (typeof s.zombies)[number]);
+    s.bullets.push({} as (typeof s.bullets)[number]);
+    for (const b of s.barricades) b.hp = 1;
+    const p = s.players[0] as (typeof s.players)[number];
+    p.hp = 0;
+
+    resetArena(s);
+
+    expect(s.day).toBe(1);
+    expect(s.phase).toBe("day");
+    expect(s.zombies.some((z) => z.id === 9999)).toBe(false); // the stale day-6 zombie is gone
+    expect(s.zombies.length).toBe(CONFIG.siege.roamersPerDay); // fresh Day-1 roamers seeded
+    expect(s.bullets.length).toBe(0);
+    expect(s.kills).toBe(0);
+    expect(s.salvageBanked).toBe(0);
+    expect(s.breachT).toBe(0);
+    expect(s.barricades.every((b) => b.hp === CONFIG.siege.boardMaxHp)).toBe(true);
+    expect(p.hp).toBe(p.maxHp); // revived
+  });
+
+  it("despawns a live stalker so it does not carry into the fresh Day-1", () => {
+    const s = newState();
+    s.running = true;
+    s.phase = "resetting";
+    spawnStalker(s); // place a stalker as if a breach happened mid-night
+    expect(s.stalker).not.toBeNull();
+
+    resetArena(s);
+
+    expect(s.stalker).toBeNull();
   });
 });
