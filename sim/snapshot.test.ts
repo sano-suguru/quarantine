@@ -14,7 +14,7 @@ import {
 import { allocId, newState } from "./state";
 import { spawnPickup } from "./systems/pickups";
 import { spawnZombie } from "./systems/wave";
-import type { Bullet, State } from "./types";
+import type { Bullet, SiegePhase, State } from "./types";
 
 /** A populated world: 2 players, a few zombies, a bullet, a pickup, damage + search progress. */
 function populated(): State {
@@ -501,5 +501,16 @@ describe("deployable wire contract & interpolation", () => {
     expect(md?.x).toBeCloseTo(12, 5);
     expect(md?.y).toBeCloseTo(-8, 5);
     expect(md?.aim).toBeCloseTo(0.7, 5);
+  });
+});
+
+describe("snapshot phase 2-bit round-trip", () => {
+  it("preserves all four phases through encode/decode", () => {
+    for (const phase of ["day", "night", "breached", "resetting"] as SiegePhase[]) {
+      const s = newState();
+      s.phase = phase;
+      const round = decode(encode(captureSnapshot(s, 1)));
+      expect(round.phase).toBe(phase);
+    }
   });
 });

@@ -627,13 +627,17 @@ class Reader {
   }
 }
 
+// phase occupies flag bits 2-3 (index 0-3). day/night keep their pre-2b② single-bit values
+// (0/1 → bit2), breached/resetting add bit3. Byte length is unchanged.
+const PHASE_ORDER = ["day", "night", "breached", "resetting"] as const;
+
 /** Serialize a logical snapshot to a compact binary buffer. */
 export function encode(snap: Snapshot): ArrayBuffer {
   const w = new Writer();
   w.u32(snap.tick);
   w.f32(snap.time);
-  // flags: bit0 isFull, bit1 paused, bit2 phase(night), bit3 reserved
-  w.u8((snap.isFull ? 1 : 0) | (snap.paused ? 2 : 0) | (snap.phase === "night" ? 4 : 0));
+  // flags: bit0 isFull, bit1 paused, bits2-3 phase index (see PHASE_ORDER)
+  w.u8((snap.isFull ? 1 : 0) | (snap.paused ? 2 : 0) | (PHASE_ORDER.indexOf(snap.phase) << 2));
   w.u16(snap.day);
   w.f32(snap.phaseT);
   w.u32(snap.kills);
@@ -1238,7 +1242,7 @@ export function decode(buf: ArrayBuffer): Snapshot {
     time,
     isFull: (flags & 1) !== 0,
     paused: (flags & 2) !== 0,
-    phase: (flags & 4) !== 0 ? "night" : "day",
+    phase: PHASE_ORDER[(flags >> 2) & 3] ?? "day",
     day,
     phaseT,
     kills,
