@@ -233,7 +233,7 @@ export class Arena {
       body.absent = false;
       old.goneAt = 0;
       this.dropPeer(old); // untrack the stale peer (its body is now owned by `peer`)
-      this.sendHello(peer);
+      this.sendHello(peer, true); // re-attached in place
     } else {
       this.decideFresh(peer); // grace expired / unknown token → fresh slot
     }
@@ -256,7 +256,7 @@ export class Arena {
     }
   }
 
-  private sendHello(peer: Peer): void {
+  private sendHello(peer: Peer, resumed = false): void {
     const s = this.state;
     if (!s) return;
     this.send(peer.ws, {
@@ -265,6 +265,7 @@ export class Arena {
       owned: s.owned,
       nonce: peer.nonce,
       v: PROTOCOL_VERSION,
+      resumed,
     });
   }
 

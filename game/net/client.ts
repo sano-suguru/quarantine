@@ -97,6 +97,9 @@ export class Client {
       onVersionMismatch?: () => void;
       /** the room is full (host + 3): stop and surface a terminal "room is full" to the lobby */
       onRoomFull?: () => void;
+      /** fired on every Hello: true if the DO re-attached our held body (rejoin within grace),
+       *  false if we got a fresh slot. main.ts uses it to drive the reconnect banner/respawn note. */
+      onResumed?: (resumed: boolean) => void;
     } = {},
   ) {
     this.wire(link);
@@ -120,6 +123,7 @@ export class Client {
         }
         this.hello = { localId: msg.localId, owned: msg.owned };
         this.hooks.onIdentity?.(msg.localId, msg.nonce ?? "");
+        this.hooks.onResumed?.(msg.resumed ?? false);
         if (this.started) clientApplyHello(msg.localId, msg.owned);
       } else if (msg.t === "banked") {
         clientBanked(msg.salvage);

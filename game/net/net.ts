@@ -31,6 +31,10 @@ export type NetMsg =
       /** host's PROTOCOL_VERSION (D): lets the manual-SDP path — which bypasses the signaling
        *  version gate — detect a mismatch after the P2P link opens. */
       v?: number;
+      /** DO → client: true if this Hello re-attached the client's still-held body (rejoin within
+       *  grace); false/absent = a fresh slot (initial join, or a rejoin after graceMs retired the
+       *  body). Lets the client show a silent in-place resume vs a "respawned" note. Additive JSON. */
+      resumed?: boolean;
     }
   | { t: "input"; input: PlayerInput; seq: number }
   | { t: "ping"; id: number } // client→host RTT probe (rel channel); host echoes pong
