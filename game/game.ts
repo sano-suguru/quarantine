@@ -145,7 +145,7 @@ const reducedMotion =
   typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 // HP→world grade (desaturation + dim): eased current values. sat=1 dim=1 = full color.
 // Gated on state.running so dead-player 0 HP doesn't drain debrief/title screens.
-// Snapped to 1 by endRun/toTitle; held (not advanced) while not running.
+// Snapped to 1 by toTitle (and the newState reset); held (not advanced) while not running.
 let gradeSatCur = 1;
 let gradeDimCur = 1;
 // Full-screen damage flash is a PER-VIEWER cue, owned client-side (not on State / not synced):
@@ -765,7 +765,7 @@ export function draw(): void {
 
   // HP-driven grade (desaturation + dim) and blood vignette: both gated on state.running so a
   // dead player's 0 HP doesn't drain the debrief / title screens. When not running the cur vars
-  // are held at whatever endRun/toTitle already snapped them to (1/1), and blood is zeroed so
+  // are held at whatever toTitle already snapped them to (1/1), and blood is zeroed so
   // the shader pass is skipped entirely. Pause holds (no advance while paused, but draw still runs).
   if (state.running) {
     // share cameraTarget and hpFrac with both grade and blood (different onset/gamma each)
@@ -1415,7 +1415,7 @@ function renderShop(): void {
   });
 }
 
-/** Buy a Fortify (deployable) item by id. Client → request; host/single → apply + re-render. */
+/** Buy a Fortify (deployable) item by id. Client → CoopEvent request; the DO applies authoritatively. */
 export function buyItem(itemId: string): void {
   if (!shopOpen) return;
   Net.client?.requestBuy(itemId);
@@ -1424,8 +1424,8 @@ export function buyItem(itemId: string): void {
 
 /**
  * Place the next queued deployable at the local player's feet. On a client this ships a
- * reliable request to the host (the placement + queue decrement arrive via the snapshot);
- * on host/single it applies authoritatively. Gating (alive, not in shop, etc.) is done by
+ * reliable request to the DO (the placement + queue decrement arrive via the snapshot);
+ * the DO applies it authoritatively. Gating (alive, day-only at the fortress, etc.) is done by
  * the caller in main.ts.
  */
 export function deployPlace(): void {
@@ -1472,31 +1472,8 @@ export function syncShopUI(): void {
   if (open) renderShop();
 }
 
-/** End the run on this machine: bank our salvage share and show the debrief. Shared by
- *  the host/single gameOver and the client's gameover-event handler. */
-function endRun(salvage: number, day: number, kills: number, money: number): void {
-  state.running = false;
-  Audio.gameOver();
-  Audio.stopDread();
-  addSalvage(salvage); // banks to THIS machine's localStorage (each player keeps their own)
-  el("over-wave").textContent = String(day);
-  el("over-kills").textContent = String(kills);
-  el("over-money").textContent = String(money);
-  el("over-salvage").textContent = String(salvage);
-  hide("hud");
-  show("over");
-  // snap grade to full color so debrief / title show no desaturation bleed-through
-  gradeSatCur = 1;
-  gradeDimCur = 1;
-}
-
-/** Apply the host's gameover event: bank our share + show the debrief on this client. */
-export function clientGameOver(salvage: number, day: number, kills: number, money: number): void {
-  endRun(salvage, day, kills, money);
-}
-
-/** Apply a dawn SALVAGE payout: bank this player's share to their cross-run meta. Unlike
- *  clientGameOver this does NOT end the run — the arena keeps cycling. */
+/** Apply a dawn SALVAGE payout: bank this player's share to their cross-run meta. The arena
+ *  keeps cycling — there is no game-over in the living arena. */
 export function clientBanked(salvage: number): void {
   addSalvage(salvage);
 }

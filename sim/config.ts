@@ -6,10 +6,10 @@ export const CONFIG = {
   // Widens the world slice so the player sees more on a narrow phone screen. Desktop is unaffected.
   zoomMobileMul: 0.62,
   maxInstances: 40000,
-  // co-op networking (host-authoritative). client interpolation / prediction params.
+  // co-op networking (DO-authoritative). client interpolation / prediction params.
   // DO-hop: interpDelayMs, smoothCorrect, snapTeleportThresh are starting points, feel-tuned at gate
   net: {
-    sendHz: 30, // host snapshot broadcast rate
+    sendHz: 30, // DO snapshot broadcast rate
     interpDelayMs: 150, // render remote entities this far in the past (DO-hop starting point)
     smoothCorrect: 0.15, // reconciliation lerp factor (DO-hop starting point, gentler for jitterier hop)
     snapTeleportThresh: 120, // px error above which we hard-snap instead of lerp (DO-hop starting point)

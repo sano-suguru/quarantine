@@ -21,14 +21,7 @@ import { siegeEdgeCue } from "../../sim/systems/siegeEdge";
 import type { Bullet, SiegePhase } from "../../sim/types";
 import { Audio } from "../engine/audio";
 import { drainFxEvents } from "../fx-drain";
-import {
-  bumpFlash,
-  clientApplyHello,
-  clientBanked,
-  clientGameOver,
-  getState,
-  startClientGame,
-} from "../game";
+import { bumpFlash, clientApplyHello, clientBanked, getState, startClientGame } from "../game";
 import { advanceGhosts } from "./ghost";
 import type { PeerLink } from "./link";
 import { type NetMsg, PROTOCOL_VERSION } from "./net";
@@ -128,8 +121,6 @@ export class Client {
         this.hello = { localId: msg.localId, owned: msg.owned };
         this.hooks.onIdentity?.(msg.localId, msg.nonce ?? "");
         if (this.started) clientApplyHello(msg.localId, msg.owned);
-      } else if (msg.t === "gameover") {
-        clientGameOver(msg.salvage, msg.day, msg.kills, msg.money);
       } else if (msg.t === "banked") {
         clientBanked(msg.salvage);
       } else if (msg.t === "roomfull") {
@@ -419,9 +410,6 @@ export class Client {
   }
   requestPlace(): void {
     this.link.sendRel({ t: "place" });
-  }
-  requestDeploy(): void {
-    this.link.sendRel({ t: "deploy" });
   }
   requestDraftTake(cardId: string): void {
     this.link.sendRel({ t: "draftTake", cardId });

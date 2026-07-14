@@ -4,7 +4,7 @@ import { addPlayer, localPlayer } from "../engine/players";
 import { newState } from "../state";
 import { applyBuy, applyDraftReroll, applyDraftTake, rollDraft } from "./shop";
 
-describe("applyBuy (Fortify purchase, host-authoritative)", () => {
+describe("applyBuy (Fortify purchase, DO-authoritative)", () => {
   const fortId = "deploy:ammostation"; // Supply Station, cost 70 (DEPLOYABLE_TYPES.ammostation)
   it("buys a fortification: deducts SCRAP and queues it", () => {
     const s = newState();
@@ -57,7 +57,7 @@ describe("applyBuy (Fortify purchase, host-authoritative)", () => {
   });
 });
 
-describe("draft apply (host-authoritative)", () => {
+describe("draft apply (DO-authoritative)", () => {
   it("rollDraft fills an offer of offerSize and resets free/rerolls", () => {
     const s = newState();
     const p = localPlayer(s);
