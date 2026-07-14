@@ -368,21 +368,11 @@ Add a method:
     this.ctx.storage.put("cycle", this.saved).catch((e) => console.log("[arena] persist failed", e));
   }
 ```
-In `step()`, persist after the outcome handlers (the blob captures the post-transition state):
+In `step()`, the `if (outcome === "dawn") { … sysDawn … } else if (outcome === "reset") { resetArena(s); }` block **already exists** (added in M-A) — DO NOT re-add or duplicate it. Add exactly **one new line** immediately after that existing block (before the existing `clearFx(s);` call):
 ```ts
-    if (outcome === "dawn") {
-      const payouts = sysDawn(s);
-      for (const { pid, salvage } of payouts) {
-        if (salvage <= 0) continue;
-        const peer = [...this.peers.values()].find((p) => p.decided && p.pid === pid);
-        if (peer) this.send(peer.ws, { t: "banked", salvage });
-      }
-    } else if (outcome === "reset") {
-      resetArena(s);
-    }
     if (outcome === "dawn" || outcome === "night" || outcome === "reset") this.persist();
 ```
-(`"night"` is returned the frame `startNight` fires; `"dawn"`/`"reset"` after `sysDawn`/`resetArena`. `"breached"`/`null` don't persist.)
+This captures the post-transition state: `"night"` is returned the frame `startNight` already ran (state is night, `phaseT = nightDuration`); `"dawn"` after `sysDawn` (day++/`startDay`); `"reset"` after `resetArena` (Day-1). `"breached"`/`null` don't persist (and `persist()` itself also guards breached/resetting). The one-line addition is the entire change to `step()`'s outcome handling.
 
 - [ ] **Step 4: Persist on last-leave in `stop()`**
 
