@@ -8,6 +8,7 @@ import {
   isFortressBreached,
   nightDuration,
   nightMaxZombies,
+  rearmThaw,
   resetArena,
   startDay,
   startNight,
@@ -255,5 +256,31 @@ describe("resetArena", () => {
     resetArena(s);
 
     expect(s.stalker).toBeNull();
+  });
+});
+
+describe("rearmThaw", () => {
+  it("night: arms the wave without touching phaseT or caches", () => {
+    const s = newState();
+    s.phase = "night";
+    s.day = 4;
+    s.phaseT = 20;
+    (s.caches[0] as (typeof s.caches)[number]).looted = true;
+    rearmThaw(s);
+    expect(s.phaseT).toBe(20); // clock preserved
+    expect((s.caches[0] as (typeof s.caches)[number]).looted).toBe(true); // caches preserved
+    expect(s.wave.def).not.toBeNull(); // wave armed (startWave ran)
+    expect(s.zombies.length).toBe(0); // startWave arms the spawner; it doesn't spawn synchronously
+  });
+
+  it("day: seeds roamers without touching phaseT or caches", () => {
+    const s = newState();
+    s.phase = "day";
+    s.phaseT = 15;
+    (s.caches[0] as (typeof s.caches)[number]).looted = true;
+    rearmThaw(s);
+    expect(s.phaseT).toBe(15);
+    expect((s.caches[0] as (typeof s.caches)[number]).looted).toBe(true);
+    expect(s.zombies.length).toBe(CONFIG.siege.roamersPerDay);
   });
 });
