@@ -78,7 +78,7 @@ export function localPlayer(state: State): Player {
 /**
  * Who the camera follows: yourself while alive, else the nearest living teammate so a
  * downed player spectates the fight instead of staring at their corpse. Falls back to the
- * local player only when the whole party is down (the frame before game over).
+ * local player only when the whole party is down (spectator camera; the arena keeps cycling).
  */
 export function cameraTarget(state: State): Player {
   const lp = localPlayer(state);
@@ -133,9 +133,9 @@ export function nearestPlayer(state: State, x: number, y: number): Player | null
   return best;
 }
 
-/** Any player still standing? (false = whole party wiped → game over). Absent players
+/** Any player still standing? (false = whole party down; the arena keeps running — respawn timers + the night clock carry to dawn). Absent players
  *  (disconnected, body held for reconnect) don't count — a frozen body must not keep the
- *  run alive, nor should the host wait on a player who may never return. */
+ *  run alive, nor should the arena wait on a player who may never return. */
 export function anyAlive(state: State): boolean {
   return state.players.some((p) => p.hp > 0 && !p.absent);
 }

@@ -21,7 +21,7 @@ import { siegeEdgeCue } from "../../sim/systems/siegeEdge";
 import type { Bullet, SiegePhase } from "../../sim/types";
 import { Audio } from "../engine/audio";
 import { drainFxEvents } from "../fx-drain";
-import { clientApplyHello, clientBanked, clientGameOver, getState, startClientGame } from "../game";
+import { bumpFlash, clientApplyHello, clientBanked, getState, startClientGame } from "../game";
 import { advanceGhosts } from "./ghost";
 import type { PeerLink } from "./link";
 import { type NetMsg, PROTOCOL_VERSION } from "./net";
@@ -121,8 +121,6 @@ export class Client {
         this.hello = { localId: msg.localId, owned: msg.owned };
         this.hooks.onIdentity?.(msg.localId, msg.nonce ?? "");
         if (this.started) clientApplyHello(msg.localId, msg.owned);
-      } else if (msg.t === "gameover") {
-        clientGameOver(msg.salvage, msg.day, msg.kills, msg.money);
       } else if (msg.t === "banked") {
         clientBanked(msg.salvage);
       } else if (msg.t === "roomfull") {
@@ -306,7 +304,14 @@ export class Client {
       const p = pp.get(pl.id);
       if (p && pl.hitFlash > p.hitFlash + 0.01) {
         fxHurt(st, pl.x, pl.y);
-        if (pl.id === st.localId) Audio.hurt();
+        if (pl.id === st.localId) {
+          Audio.hurt();
+          // screen flash + camera shake are the LOCAL viewer's own hurt feedback, re-derived
+          // here (the DO discards them — flashT/cam aren't snapshotted). Values mirror the
+          // pre-DO sysAI bump for feel parity.
+          bumpFlash(0.7, [1, 0.18, 0.18]);
+          st.cam.shake = Math.min(st.cam.shake + 8, 20);
+        }
       }
       if (p && p.healT > 0.05 && pl.healT <= 0.05) {
         fxActionBurst(st, pl.x, pl.y, [0.3, 1, 0.45], false);
@@ -405,9 +410,6 @@ export class Client {
   }
   requestPlace(): void {
     this.link.sendRel({ t: "place" });
-  }
-  requestDeploy(): void {
-    this.link.sendRel({ t: "deploy" });
   }
   requestDraftTake(cardId: string): void {
     this.link.sendRel({ t: "draftTake", cardId });

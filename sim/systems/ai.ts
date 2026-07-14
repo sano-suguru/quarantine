@@ -356,13 +356,10 @@ export function sysAI(state: State, dt: number): void {
       if (target.iframe <= 0) {
         target.hitFlash = 0.28;
         target.iframe = CONFIG.feel.hurtIframe;
+        // hurt fx (blood) + the local viewer's screen flash & camera shake are re-derived
+        // client-side off the synced `hitFlash` edge (client.ts effects()); the DO would only
+        // discard them (flashT/cam are not snapshotted).
         pushFx(state, { t: "hurt", x: target.x, y: target.y, local: target.id === state.localId });
-        // screen flash and camera shake are the LOCAL player's own feedback
-        if (target.id === state.localId) {
-          state.flashT = Math.min(1, state.flashT + 0.7);
-          state.flashColor = [1, 0.18, 0.18];
-          state.cam.shake = Math.min(state.cam.shake + 8, 20);
-        }
       }
       if (target.hp <= 0) target.hp = 0;
     }

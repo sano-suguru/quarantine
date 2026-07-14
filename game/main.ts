@@ -11,6 +11,7 @@ import {
   audioLoops,
   clientAmbience,
   closeArsenal,
+  decayFlash,
   deployPlace,
   draftReroll,
   draftTake,
@@ -329,6 +330,7 @@ async function main(): Promise<void> {
       Net.client?.render(performance.now(), inp, dt);
       if (st.running) {
         sysFx(st, dt); // advance client-spawned particles/blood/damage text
+        decayFlash(dt); // decay the per-viewer damage flash (was stepSim's job pre-DO)
         clientAmbience(dt); // dread / heartbeat / groan from the snapshot world
       }
       if (live) sysCamera(st, dt);

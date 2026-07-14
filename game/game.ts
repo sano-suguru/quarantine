@@ -145,9 +145,26 @@ const reducedMotion =
   typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 // HP→world grade (desaturation + dim): eased current values. sat=1 dim=1 = full color.
 // Gated on state.running so dead-player 0 HP doesn't drain debrief/title screens.
-// Snapped to 1 by endRun/toTitle; held (not advanced) while not running.
+// Snapped to 1 by toTitle (and the newState reset); held (not advanced) while not running.
 let gradeSatCur = 1;
 let gradeDimCur = 1;
+// Full-screen damage flash is a PER-VIEWER cue, owned client-side (not on State / not synced):
+// the DO would only compute+discard it. Bumped on the local player's hitFlash edge (client.ts)
+// and by the stalker scare (below); decayed each client frame (main.ts calls decayFlash).
+let flashT = 0;
+let flashColor: [number, number, number] = [1, 0.3, 0.3];
+
+/** Add to this client's screen flash (clamped) and set its color. */
+export function bumpFlash(amt: number, color: [number, number, number]): void {
+  flashT = Math.min(1, flashT + amt);
+  flashColor = color;
+}
+
+/** Exponential decay of this client's screen flash (called from the render loop). */
+export function decayFlash(dt: number): void {
+  flashT *= Math.exp(-CONFIG.feel.flashDecay * dt);
+}
+
 // flashlight-death edge: tracks LOCAL player's battery fraction tick-to-tick so audioAmbience can
 // fire lightDie exactly once when it crosses zero. Reset to 1 each run so a dead battery from a
 // prior run can't suppress the cue at the start of the next.
@@ -443,9 +460,8 @@ export function draw(): void {
       const gdy = sk.y - lplayer.y;
       const near = gdx * gdx + gdy * gdy < (CONFIG.stalker.contactDist * 1.6) ** 2;
       if (lplayer.id === state.localId && lplayer.hp > 0 && near) {
-        // Hard flash (0.7 base + boost, matching the pre-sync host total) in cold stalker purple.
-        state.flashT = Math.min(1, state.flashT + 0.7 + CONFIG.stalker.scareFlashBoost);
-        state.flashColor = [0.8, 0.1, 0.8];
+        // Hard flash (0.7 base + boost) in cold stalker purple — client-owned per-viewer cue.
+        bumpFlash(0.7 + CONFIG.stalker.scareFlashBoost, [0.8, 0.1, 0.8]);
         state.cam.shake = Math.min(state.cam.shake + CONFIG.feel.shakeMax, CONFIG.feel.shakeMax);
         // Camera lurch: bias the camera toward the stalker for one frame by nudging cam position.
         // We use a cam drag rather than directly mutating c.x/c.y so sysCamera's lerp recovers naturally.
@@ -749,7 +765,7 @@ export function draw(): void {
 
   // HP-driven grade (desaturation + dim) and blood vignette: both gated on state.running so a
   // dead player's 0 HP doesn't drain the debrief / title screens. When not running the cur vars
-  // are held at whatever endRun/toTitle already snapped them to (1/1), and blood is zeroed so
+  // are held at whatever toTitle already snapped them to (1/1), and blood is zeroed so
   // the shader pass is skipped entirely. Pause holds (no advance while paused, but draw still runs).
   if (state.running) {
     // share cameraTarget and hpFrac with both grade and blood (different onset/gamma each)
@@ -1250,8 +1266,8 @@ export function updateHUD(): void {
 
   // damage flash overlay
   const fl = el("flash");
-  fl.style.opacity = String(Math.min(0.6, state.flashT));
-  fl.style.background = `radial-gradient(circle at 50% 50%, transparent 40%, rgba(${Math.round(state.flashColor[0] * 255)},${Math.round(state.flashColor[1] * 255)},${Math.round(state.flashColor[2] * 255)},0.9) 100%)`;
+  fl.style.opacity = String(Math.min(0.6, flashT));
+  fl.style.background = `radial-gradient(circle at 50% 50%, transparent 40%, rgba(${Math.round(flashColor[0] * 255)},${Math.round(flashColor[1] * 255)},${Math.round(flashColor[2] * 255)},0.9) 100%)`;
 
   // downed spectator banner (co-op): you're out until the next dawn
   el("downed").classList.toggle("show", p.hp <= 0);
@@ -1399,7 +1415,7 @@ function renderShop(): void {
   });
 }
 
-/** Buy a Fortify (deployable) item by id. Client → request; host/single → apply + re-render. */
+/** Buy a Fortify (deployable) item by id. Client → CoopEvent request; the DO applies authoritatively. */
 export function buyItem(itemId: string): void {
   if (!shopOpen) return;
   Net.client?.requestBuy(itemId);
@@ -1408,8 +1424,8 @@ export function buyItem(itemId: string): void {
 
 /**
  * Place the next queued deployable at the local player's feet. On a client this ships a
- * reliable request to the host (the placement + queue decrement arrive via the snapshot);
- * on host/single it applies authoritatively. Gating (alive, not in shop, etc.) is done by
+ * reliable request to the DO (the placement + queue decrement arrive via the snapshot);
+ * the DO applies it authoritatively. Gating (alive, day-only at the fortress, etc.) is done by
  * the caller in main.ts.
  */
 export function deployPlace(): void {
@@ -1456,31 +1472,8 @@ export function syncShopUI(): void {
   if (open) renderShop();
 }
 
-/** End the run on this machine: bank our salvage share and show the debrief. Shared by
- *  the host/single gameOver and the client's gameover-event handler. */
-function endRun(salvage: number, day: number, kills: number, money: number): void {
-  state.running = false;
-  Audio.gameOver();
-  Audio.stopDread();
-  addSalvage(salvage); // banks to THIS machine's localStorage (each player keeps their own)
-  el("over-wave").textContent = String(day);
-  el("over-kills").textContent = String(kills);
-  el("over-money").textContent = String(money);
-  el("over-salvage").textContent = String(salvage);
-  hide("hud");
-  show("over");
-  // snap grade to full color so debrief / title show no desaturation bleed-through
-  gradeSatCur = 1;
-  gradeDimCur = 1;
-}
-
-/** Apply the host's gameover event: bank our share + show the debrief on this client. */
-export function clientGameOver(salvage: number, day: number, kills: number, money: number): void {
-  endRun(salvage, day, kills, money);
-}
-
-/** Apply a dawn SALVAGE payout: bank this player's share to their cross-run meta. Unlike
- *  clientGameOver this does NOT end the run — the arena keeps cycling. */
+/** Apply a dawn SALVAGE payout: bank this player's share to their cross-run meta. The arena
+ *  keeps cycling — there is no game-over in the living arena. */
 export function clientBanked(salvage: number): void {
   addSalvage(salvage);
 }

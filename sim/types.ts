@@ -582,8 +582,6 @@ export interface State {
   stalker: Stalker | null;
   hash: SpatialHashLike;
   hitstopT: number;
-  flashT: number;
-  flashColor: [number, number, number];
   surrounded: number;
   /** nearby zombies that are outside the flashlight cone (behind / in the dark) */
   lurking: number;
