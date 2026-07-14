@@ -66,16 +66,21 @@ export function clockLabel(phase: SiegePhase, phaseT: number, day: number): stri
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
+/** Seed the day's sparse wanderers. Extracted from startDay so thaw can re-seed without
+ *  re-running startDay's phaseT reset + cache restock. */
+export function seedRoamers(state: State): void {
+  for (let i = 0; i < CONFIG.siege.roamersPerDay; i++) {
+    const type = i % 4 === 3 ? "runner" : "walker";
+    spawnZombie(state, type, 1, 1, { chasing: false, aroundPlayer: false });
+  }
+}
+
 /** Begin the lit scavenge phase: restock caches and seed a few roaming zombies. */
 export function startDay(state: State): void {
   state.phase = "day";
   state.phaseT = CONFIG.siege.dayDuration;
   restockCaches(state);
-  // sparse wanderers across the map make venturing out to loot risky
-  for (let i = 0; i < CONFIG.siege.roamersPerDay; i++) {
-    const type = i % 4 === 3 ? "runner" : "walker";
-    spawnZombie(state, type, 1, 1, { chasing: false, aroundPlayer: false });
-  }
+  seedRoamers(state);
 }
 
 /** Begin the horde night: arm the continuous spawner and start the night clock. */
@@ -83,6 +88,16 @@ export function startNight(state: State): void {
   state.phase = "night";
   state.phaseT = nightDuration(state.day);
   startWave(state, state.day);
+}
+
+/**
+ * Re-arm the current phase's ambient spawner after a thaw, WITHOUT touching the restored clock
+ * or caches (startDay/startNight would overwrite phaseT and restock caches). Night: arm the wave.
+ * Day: seed roamers. (breached/resetting are never persisted, so they never reach here.)
+ */
+export function rearmThaw(state: State): void {
+  if (state.phase === "night") startWave(state, state.day);
+  else if (state.phase === "day") seedRoamers(state);
 }
 
 /**
