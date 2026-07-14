@@ -23,16 +23,17 @@ export const CONFIG = {
     devArenaHost: "127.0.0.1:8787",
     // if the arena WebSocket never opens, surface a connect failure (main.ts).
     arenaOpenTimeoutMs: 15000,
-    // Client auto-reconnect (P4). The client triggers a reconnect when BOTH data channels go
-    // quiet (no snapshot AND no rel pong) for snapStarvationMs — a true loss, not a snap-only
-    // blip (host keeps broadcasting through pause/shop, so a quiet snap path = the link died).
-    // The host keeps a dropped player's body (gear/hp/pos) "absent" for graceMs so a quick
-    // rejoin re-attaches in place (no respawn); past graceMs the body is removed → fresh respawn.
+    // Client auto-reconnect (M-C). On one multiplexed WebSocket, snap and rel die together, so a
+    // drop is a single "WS silent" condition: a clean close fires onClose (primary trigger), and a
+    // half-open socket is caught by the frame-loop starvation watchdog (snapStarvationMs). The DO
+    // holds a dropped player's body "absent" for graceMs so a quick rejoin re-attaches in place (no
+    // respawn); past graceMs the body is retired → the reconnect lands as a fresh spawn.
     reconnect: {
-      snapStarvationMs: 2500, // both channels silent this long while running → reconnect
-      backoffMs: [1000, 2000, 4000, 8000], // per-attempt delay; length = max attempts
-      graceMs: 20000, // host holds a dropped player's body this long (> backoff total) for re-attach
-      rejoinClaimTimeoutMs: 1000, // host waits this for the client's first rel (join/rejoin) before assuming fresh
+      snapStarvationMs: 2500, // WS silent this long while running → reconnect (half-open backstop)
+      backoffMs: [1000, 2000, 4000, 8000], // per-attempt delay; length = max attempts before title
+      attemptTimeoutMs: 4000, // per-attempt open+Hello budget; a stuck dial rolls to the next backoff
+      graceMs: 20000, // DO holds a dropped player's body this long for in-place re-attach
+      rejoinClaimTimeoutMs: 1000, // DO waits this for the client's first rel (join/rejoin) before assuming fresh
     },
     maxPlayers: 12, // max squad size (DO 2a)
     inputHz: 25, // player input rate (used in Task 11; add now to co-locate)

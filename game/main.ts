@@ -2,6 +2,7 @@ import "./style.css";
 import { CONFIG } from "../sim/config";
 import { WORKBENCH } from "../sim/data/map";
 import { localPlayer } from "../sim/engine/players";
+import { reconnectDelay } from "../sim/net/reconnect";
 import { emptyInput } from "../sim/playerInput";
 import { sysCamera } from "../sim/systems/camera";
 import { sysFx } from "../sim/systems/fx";
@@ -30,6 +31,7 @@ import {
 import { Input } from "./input";
 import { applyInputMode } from "./inputMode";
 import { Client } from "./net/client";
+import type { PeerLink } from "./net/link";
 import { sampleLocalInput } from "./net/localInput";
 import { Net } from "./net/net";
 import { arenaUrl } from "./net/signaling";
@@ -75,6 +77,10 @@ function openWorkbenchShop(): boolean {
  * starting a new run. Disposes the client link and resets session vars. Idempotent.
  */
 function endCoop(): void {
+  cancelReconnect();
+  hideReconnectBanner();
+  reconnectId = null;
+  currentLink = null;
   Net.client?.dispose();
   Net.client = null;
 }
@@ -84,6 +90,131 @@ function endCoop(): void {
 let spritesLoaded = false;
 // Re-entry latch for the async Start path: a double-click must not launch two awaits / two runs.
 let startingSingleRun = false;
+
+// --- Arena auto-reconnect (M-C) ---------------------------------------------------------------
+// A transient WS drop suspends the client and redials with backoff, replaying our {pid,nonce} so
+// the DO re-attaches the held body in place (within graceMs) — else a fresh slot. Drop detection:
+// PRIMARY = the WS onClose/onError (deterministic); BACKSTOP = the frame-loop starvation watchdog
+// (a half-open socket that stays open but silent). The DO — not the client — decides in-place vs
+// fresh via the grace window; hello.resumed reports which.
+//
+// `currentLink` is the single source of truth for "which link's events matter". Every link's
+// onClose checks `link === currentLink` and ignores superseded links; startReconnect/onAttemptFail
+// null it out BEFORE closing a link so that close's own onClose can't re-enter the state machine.
+let reconnectId: { pid: number; nonce: string } | null = null; // our identity, persisted from Hello
+let currentLink: PeerLink | null = null; // the live/attempt link; stale links' events are ignored
+let reconnecting = false; // true from drop-detected until resume/give-up (guards re-entry + watchdog)
+let reconnectAttempt = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null; // pending backoff wait
+let attemptTimer: ReturnType<typeof setTimeout> | null = null; // pending per-attempt open+Hello budget
+const arenaCode = (): string => new URLSearchParams(location.search).get("arena") ?? "MAIN";
+
+function showReconnectBanner(attempt: number, max: number): void {
+  el("reconnect-main").textContent = "RECONNECTING";
+  el("reconnect-sub").textContent = `attempt ${attempt} / ${max}`;
+  el("reconnect").classList.add("show");
+}
+function hideReconnectBanner(): void {
+  el("reconnect").classList.remove("show");
+}
+function flashRespawnNote(): void {
+  // grace exceeded → we came back as a fresh body at the fortress. Brief neutral note, then hide.
+  el("reconnect-main").textContent = "RECONNECTED";
+  el("reconnect-sub").textContent = "respawned at the fortress";
+  el("reconnect").classList.add("show");
+  setTimeout(hideReconnectBanner, 2500);
+}
+
+/** Cancel any in-flight reconnect (timers + flag). Called on teardown (endCoop) and on success. */
+function cancelReconnect(): void {
+  if (reconnectTimer !== null) clearTimeout(reconnectTimer);
+  if (attemptTimer !== null) clearTimeout(attemptTimer);
+  reconnectTimer = null;
+  attemptTimer = null;
+  reconnecting = false;
+  reconnectAttempt = 0;
+}
+
+/** Wire a link's close so ONLY the current link's death acts: an attempt link dying → next backoff;
+ *  a live (already-resumed) link dying → begin a new reconnect. Superseded links are ignored.
+ *  INVARIANT: only ever call this on a FRESH link (createArenaLink result). wsLink.onClose fires the
+ *  callback synchronously if the link is already closed — calling this on a closed link would
+ *  re-enter the state machine. (Current callers pass only just-created links, so this holds.) */
+function wireLinkClose(link: PeerLink): void {
+  link.onClose(() => {
+    if (link !== currentLink) return; // an old/superseded link closing → ignore
+    if (reconnecting)
+      onAttemptFail(link); // this attempt's link died → next backoff
+    else startReconnect(); // a live link dropped → begin reconnect
+  });
+}
+
+/** A drop was detected while playing. Suspend the client, show the banner, start the backoff loop.
+ *  Idempotent — a second trigger (onClose + watchdog) while already reconnecting is ignored. */
+function startReconnect(): void {
+  if (reconnecting || !Net.client || !reconnectId) return;
+  reconnecting = true;
+  reconnectAttempt = 0;
+  currentLink = null; // detach FIRST: the dropped link's onClose (fired by suspend) must not re-enter
+  if (attemptTimer !== null) {
+    clearTimeout(attemptTimer);
+    attemptTimer = null;
+  }
+  Net.client.suspend(); // live=false, close the dead/half-open link, drop stale buffers
+  scheduleAttempt();
+}
+
+/** Wait this attempt's backoff, then dial. Past the last backoff step → give up to the title. */
+function scheduleAttempt(): void {
+  const delay = reconnectDelay(reconnectAttempt, CONFIG.net.reconnect.backoffMs);
+  if (delay === null) {
+    // exhausted every attempt → the arena is unreachable. Tear down and show the terminal
+    // disconnect screen (same surface as the pre-start drop) so the player isn't left in a
+    // frozen limbo — endCoop nulls currentLink + disposes the client; showLoadError covers the
+    // frozen frame with the #loading overlay + message (reload/re-Start to reconnect).
+    cancelReconnect();
+    hideReconnectBanner();
+    endCoop();
+    showLoadError("Disconnected from the arena.");
+    return;
+  }
+  showReconnectBanner(reconnectAttempt + 1, CONFIG.net.reconnect.backoffMs.length);
+  reconnectTimer = setTimeout(tryAttempt, delay);
+}
+
+/** One reconnect attempt: dial a fresh link (now `currentLink`), rebind (replays our rejoin token on
+ *  open), and arm a per-attempt timeout. Success → onResumed (Step 6); failure → the link closing
+ *  (wireLinkClose → onAttemptFail) or the timeout firing. */
+function tryAttempt(): void {
+  reconnectTimer = null;
+  if (!Net.client || !reconnectId) return;
+  const link = createArenaLink(arenaUrl(arenaCode()));
+  currentLink = link;
+  wireLinkClose(link);
+  attemptTimer = setTimeout(() => {
+    attemptTimer = null;
+    if (link === currentLink && reconnecting) onAttemptFail(link); // opened-but-no-Hello / stuck dial
+  }, CONFIG.net.reconnect.attemptTimeoutMs);
+  Net.client.rebind(link, reconnectId); // wires the link + replays {t:"rejoin",...} on open
+}
+
+/** This attempt failed (link closed or timed out). Detach + close it, then schedule the next. Guarded
+ *  so the close-and-timeout double-fire (or a stale link) can't advance the loop twice. */
+function onAttemptFail(link: PeerLink): void {
+  if (link !== currentLink || !reconnecting) return;
+  currentLink = null; // detach BEFORE closing so this close's onClose no-ops
+  if (attemptTimer !== null) {
+    clearTimeout(attemptTimer);
+    attemptTimer = null;
+  }
+  try {
+    link.close();
+  } catch {
+    /* already closing */
+  }
+  reconnectAttempt++;
+  scheduleAttempt();
+}
 
 /** Surface a load failure in the #loading overlay and stop (the user must reload). */
 function showLoadError(msg: string): void {
@@ -133,11 +264,16 @@ async function startSingleRun(): Promise<void> {
   }, CONFIG.net.arenaOpenTimeoutMs);
   link.onOpen(() => clearTimeout(connectTimer));
   link.onClose(() => {
+    if (link !== currentLink) return; // superseded (a stale link) → ignore
     if (!arenaStarted) {
       clearTimeout(connectTimer);
       showLoadError("Disconnected from the arena.");
+      return;
     }
+    if (reconnecting) onAttemptFail(link);
+    else startReconnect(); // post-start drop → auto-reconnect (primary trigger)
   });
+  currentLink = link; // the initial link is the first "current" link
   Net.client = new Client(
     link,
     () => {
@@ -146,6 +282,18 @@ async function startSingleRun(): Promise<void> {
       hide("loading");
     },
     {
+      onIdentity: (pid, nonce) => {
+        reconnectId = { pid, nonce }; // persist for rebind (updated on a fresh-slot reconnect too)
+      },
+      onResumed: (resumed) => {
+        if (!reconnecting) return; // initial connect → not a reconnect; ignore
+        // success: clear timers + `reconnecting`. currentLink STAYS = the winning link (it is now
+        // the live gameplay link); a future drop of it routes through wireLinkClose → startReconnect.
+        cancelReconnect();
+        if (resumed)
+          hideReconnectBanner(); // re-attached in place → silent resume
+        else flashRespawnNote(); // grace exceeded → fresh body at the fortress
+      },
       onRoomFull: () => showLoadError("This arena is full (12 players). Try again later."),
     },
   );
@@ -328,6 +476,13 @@ async function main(): Promise<void> {
         Net.client?.send(inp);
       }
       Net.client?.render(performance.now(), inp, dt);
+      // Backstop drop detection: a half-open WS can stay open but silent (no onClose). If no
+      // snap AND no rel has arrived for snapStarvationMs while running, treat the link as dead.
+      // (A clean close fires onClose → startReconnect directly; this only catches the silent case.)
+      if (st.running && Net.client && !reconnecting) {
+        const idle = performance.now() - Net.client.lastActivityMs();
+        if (idle > CONFIG.net.reconnect.snapStarvationMs) startReconnect();
+      }
       if (st.running) {
         sysFx(st, dt); // advance client-spawned particles/blood/damage text
         decayFlash(dt); // decay the per-viewer damage flash (was stepSim's job pre-DO)
