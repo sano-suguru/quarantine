@@ -13,6 +13,7 @@ import {
   startNight,
   sysSiege,
 } from "./siege";
+import { spawnStalker } from "./stalker";
 
 // Guardrail: siege seeds roamers via spawnZombie (RNG positions), so we assert only the
 // DETERMINISTIC surface — phase, timers, return values, and zombie *counts* — never the
@@ -133,6 +134,12 @@ describe("ambientForClock", () => {
     const predawn = ambientForClock("night", 1, 1); // almost dawn
     expect(predawn).toBeGreaterThan(midNight);
   });
+  it("holds flat dark during breached (phaseT is small, must not dawn-crossfade)", () => {
+    expect(ambientForClock("breached", 3, 5)).toBe(CONFIG.siege.nightAmbient);
+  });
+  it("holds flat dark during resetting", () => {
+    expect(ambientForClock("resetting", 0.5, 5)).toBe(CONFIG.siege.nightAmbient);
+  });
 });
 
 describe("clockLabel / clockFrac", () => {
@@ -236,5 +243,17 @@ describe("resetArena", () => {
     expect(s.breachT).toBe(0);
     expect(s.barricades.every((b) => b.hp === CONFIG.siege.boardMaxHp)).toBe(true);
     expect(p.hp).toBe(p.maxHp); // revived
+  });
+
+  it("despawns a live stalker so it does not carry into the fresh Day-1", () => {
+    const s = newState();
+    s.running = true;
+    s.phase = "resetting";
+    spawnStalker(s); // place a stalker as if a breach happened mid-night
+    expect(s.stalker).not.toBeNull();
+
+    resetArena(s);
+
+    expect(s.stalker).toBeNull();
   });
 });

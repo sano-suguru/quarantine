@@ -22,8 +22,10 @@ describe("siegeEdgeCue", () => {
 
 describe("siegeEdgeCue reset phases", () => {
   it("fires the fallen cue on night→breached", () => {
-    const cues = siegeEdgeCue("night", "breached", 3);
-    expect(cues.some((c) => c.t === "announce")).toBe(true);
+    expect(siegeEdgeCue("night", "breached", 3)).toEqual([
+      { t: "announce", label: "FORTRESS FALLEN", day: 3 },
+      { t: "audio", cue: "breach" },
+    ]);
   });
   it("is silent on breached→resetting", () => {
     expect(siegeEdgeCue("breached", "resetting", 3)).toEqual([]);

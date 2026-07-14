@@ -1235,11 +1235,21 @@ export function updateHUD(): void {
       .join(" · ")}`;
   }
 
-  // day/night phase — an in-game clock; the dial fills toward dusk (day) / dawn (night)
+  // day/night phase — an in-game clock; the dial fills toward dusk (day) / dawn (night).
+  // During breached/resetting the clock is meaningless (phaseT runs against breachedDuration /
+  // resettingDuration, not dayDuration/nightDuration), so show a feel-appropriate fixed label instead.
   const phaseEl = el("phase");
   const night = state.phase === "night";
-  phaseEl.textContent = `${night ? "NIGHT" : "DAY"} ${state.day} · ${clockLabel(state.phase, state.phaseT, state.day)}`;
-  phaseEl.classList.toggle("night", night);
+  if (state.phase === "breached") {
+    phaseEl.textContent = `FORTRESS FALLEN · DAY ${state.day}`;
+    phaseEl.classList.toggle("night", true);
+  } else if (state.phase === "resetting") {
+    phaseEl.textContent = `REBUILDING… · DAY ${state.day}`;
+    phaseEl.classList.toggle("night", true);
+  } else {
+    phaseEl.textContent = `${night ? "NIGHT" : "DAY"} ${state.day} · ${clockLabel(state.phase, state.phaseT, state.day)}`;
+    phaseEl.classList.toggle("night", night);
+  }
   const dial = el("clock-dial");
   dial.classList.toggle("night", night);
   dial.style.setProperty("--frac", String(clockFrac(state.phase, state.phaseT, state.day)));

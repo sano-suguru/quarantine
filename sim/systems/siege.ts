@@ -4,6 +4,7 @@ import { clamp } from "../engine/math";
 import { revivePlayer } from "../engine/players";
 import type { SiegePhase, State } from "../types";
 import { restockCaches } from "./caches";
+import { despawnStalker } from "./stalker";
 import { spawnZombie, startWave, sysWave } from "./wave";
 
 /**
@@ -43,6 +44,9 @@ export function ambientForClock(phase: SiegePhase, phaseT: number, day: number):
     const window = s.dayDuration * s.duskFrac;
     return phaseT < window ? lerp(phaseT / window) : s.dayAmbient; // sunset over the last duskFrac
   }
+  // breached/resetting: hold flat dark — phaseT is short (3 / 0.5s) and falls in the dawn-crossfade
+  // window, which would otherwise bogusly brighten toward dawn during the horror beat.
+  if (phase === "breached" || phase === "resetting") return s.nightAmbient;
   const window = nightDuration(day) * s.dawnFrac;
   return phaseT < window ? lerp(1 - phaseT / window) : s.nightAmbient; // predawn lift
 }
@@ -145,6 +149,7 @@ export function resetArena(state: State): void {
   state.pickups.length = 0;
   state.particles.length = 0;
   state.decals.length = 0;
+  despawnStalker(state); // a breach can happen mid-night with a live stalker; clear it before Day-1
   for (const b of state.barricades) b.hp = CONFIG.siege.boardMaxHp;
   state.kills = 0;
   state.salvageBanked = 0;
