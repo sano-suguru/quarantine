@@ -135,7 +135,7 @@ export function nearestPlayer(state: State, x: number, y: number): Player | null
 
 /** Any player still standing? (false = whole party down; the arena keeps running — respawn timers + the night clock carry to dawn). Absent players
  *  (disconnected, body held for reconnect) don't count — a frozen body must not keep the
- *  run alive, nor should the host wait on a player who may never return. */
+ *  run alive, nor should the arena wait on a player who may never return. */
 export function anyAlive(state: State): boolean {
   return state.players.some((p) => p.hp > 0 && !p.absent);
 }

@@ -1,12 +1,12 @@
 /**
  * Co-op flow events on the reliable channel. Discrete, money/progress-moving commands
  * that must not be lost or reordered — unlike PlayerInput (sampled every frame,
- * last-write-wins) and unlike snapshots (unreliable). The host is authoritative.
+ * last-write-wins) and unlike snapshots (unreliable). The DO is authoritative.
  *
  * Ownership/levels are NOT events — `owned` rides the Hello, `wlevel` rides the snapshot.
  */
 
-/** Client → host requests. The host validates against the live state and applies once. */
+/** Client → DO requests. The DO validates against the live state and applies once. */
 export type CoopEvent =
   | { t: "buy"; itemId: string } // purchase a store item; buyer = the requesting peer's player
   | { t: "place" } // drop the front of the requester's deploy queue at their feet (host picks the
