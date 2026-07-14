@@ -29,10 +29,11 @@ export const CONFIG = {
     // The host keeps a dropped player's body (gear/hp/pos) "absent" for graceMs so a quick
     // rejoin re-attaches in place (no respawn); past graceMs the body is removed → fresh respawn.
     reconnect: {
-      snapStarvationMs: 2500, // both channels silent this long while running → reconnect
-      backoffMs: [1000, 2000, 4000, 8000], // per-attempt delay; length = max attempts
-      graceMs: 20000, // host holds a dropped player's body this long (> backoff total) for re-attach
-      rejoinClaimTimeoutMs: 1000, // host waits this for the client's first rel (join/rejoin) before assuming fresh
+      snapStarvationMs: 2500, // WS silent this long while running → reconnect (half-open backstop)
+      backoffMs: [1000, 2000, 4000, 8000], // per-attempt delay; length = max attempts before title
+      attemptTimeoutMs: 4000, // per-attempt open+Hello budget; a stuck dial rolls to the next backoff
+      graceMs: 20000, // DO holds a dropped player's body this long for in-place re-attach
+      rejoinClaimTimeoutMs: 1000, // DO waits this for the client's first rel (join/rejoin) before assuming fresh
     },
     maxPlayers: 12, // max squad size (DO 2a)
     inputHz: 25, // player input rate (used in Task 11; add now to co-locate)
