@@ -218,7 +218,7 @@ describe("resetArena", () => {
     s.kills = 120;
     s.salvageBanked = 300;
     s.breachT = 5;
-    s.zombies.push({ ...(s.zombies[0] ?? {}), id: 5, x: 0, y: 0 } as (typeof s.zombies)[number]);
+    s.zombies.push({ ...(s.zombies[0] ?? {}), id: 9999, x: 0, y: 0 } as (typeof s.zombies)[number]);
     s.bullets.push({} as (typeof s.bullets)[number]);
     for (const b of s.barricades) b.hp = 1;
     const p = s.players[0]!;
@@ -228,7 +228,8 @@ describe("resetArena", () => {
 
     expect(s.day).toBe(1);
     expect(s.phase).toBe("day");
-    expect(s.zombies.length).toBe(0);
+    expect(s.zombies.some((z) => z.id === 9999)).toBe(false); // the stale day-6 zombie is gone
+    expect(s.zombies.length).toBe(CONFIG.siege.roamersPerDay); // fresh Day-1 roamers seeded
     expect(s.bullets.length).toBe(0);
     expect(s.kills).toBe(0);
     expect(s.salvageBanked).toBe(0);

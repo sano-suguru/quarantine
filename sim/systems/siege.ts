@@ -134,23 +134,21 @@ export function sysSiege(state: State, dt: number): "night" | "dawn" | "breached
  * the horde/economy/barricades reset and every player is revived at the fortress; per-player
  * SALVAGE/unlocks are client-side meta and untouched. Symmetric with sysDawn.
  *
- * NOTE: startDay is called first so the phase/timer/caches are set, then all transient arrays
- * (including any roamers startDay seeded) are wiped — the arena starts Day-1 with an empty field
- * rather than inheriting stale day-N corpses or pre-seeded roamers from the breach night.
+ * Transient arrays are cleared BEFORE startDay so startDay's fresh Day-1 roamers survive into
+ * the reset arena — matching a normal boot Day-1 (CONFIG.siege.roamersPerDay wanderers present).
  */
 export function resetArena(state: State): void {
   state.day = 1;
-  for (const b of state.barricades) b.hp = CONFIG.siege.boardMaxHp;
-  state.kills = 0;
-  state.salvageBanked = 0;
-  state.breachT = 0;
-  for (const p of state.players) revivePlayer(state, p); // fortress spawn, full hp, clears downT
-  startDay(state); // phase="day", phaseT=dayDuration, restock caches
-  // clear all transient simulation arrays AFTER startDay so we also erase any roamers it seeded;
-  // the fresh arena begins with an empty field on Day-1
+  // clear the stale horde/effects BEFORE startDay so its fresh Day-1 roamers survive
   state.zombies.length = 0;
   state.bullets.length = 0;
   state.pickups.length = 0;
   state.particles.length = 0;
   state.decals.length = 0;
+  for (const b of state.barricades) b.hp = CONFIG.siege.boardMaxHp;
+  state.kills = 0;
+  state.salvageBanked = 0;
+  state.breachT = 0;
+  for (const p of state.players) revivePlayer(state, p); // fortress spawn, full hp, clears downT
+  startDay(state); // phase="day", phaseT=dayDuration, restock caches, seed roamers
 }
