@@ -97,8 +97,6 @@ export function newState(): State {
     unlockedCards,
     hash: new SpatialHash(64),
     hitstopT: 0,
-    flashT: 0,
-    flashColor: [1, 0.3, 0.3],
     surrounded: 0,
     lurking: 0,
     stalker: null,

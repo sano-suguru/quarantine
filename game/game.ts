@@ -148,6 +148,23 @@ const reducedMotion =
 // Snapped to 1 by endRun/toTitle; held (not advanced) while not running.
 let gradeSatCur = 1;
 let gradeDimCur = 1;
+// Full-screen damage flash is a PER-VIEWER cue, owned client-side (not on State / not synced):
+// the DO would only compute+discard it. Bumped on the local player's hitFlash edge (client.ts)
+// and by the stalker scare (below); decayed each client frame (main.ts calls decayFlash).
+let flashT = 0;
+let flashColor: [number, number, number] = [1, 0.3, 0.3];
+
+/** Add to this client's screen flash (clamped) and set its color. */
+export function bumpFlash(amt: number, color: [number, number, number]): void {
+  flashT = Math.min(1, flashT + amt);
+  flashColor = color;
+}
+
+/** Exponential decay of this client's screen flash (called from the render loop). */
+export function decayFlash(dt: number): void {
+  flashT *= Math.exp(-CONFIG.feel.flashDecay * dt);
+}
+
 // flashlight-death edge: tracks LOCAL player's battery fraction tick-to-tick so audioAmbience can
 // fire lightDie exactly once when it crosses zero. Reset to 1 each run so a dead battery from a
 // prior run can't suppress the cue at the start of the next.
@@ -443,9 +460,8 @@ export function draw(): void {
       const gdy = sk.y - lplayer.y;
       const near = gdx * gdx + gdy * gdy < (CONFIG.stalker.contactDist * 1.6) ** 2;
       if (lplayer.id === state.localId && lplayer.hp > 0 && near) {
-        // Hard flash (0.7 base + boost, matching the pre-sync host total) in cold stalker purple.
-        state.flashT = Math.min(1, state.flashT + 0.7 + CONFIG.stalker.scareFlashBoost);
-        state.flashColor = [0.8, 0.1, 0.8];
+        // Hard flash (0.7 base + boost) in cold stalker purple — client-owned per-viewer cue.
+        bumpFlash(0.7 + CONFIG.stalker.scareFlashBoost, [0.8, 0.1, 0.8]);
         state.cam.shake = Math.min(state.cam.shake + CONFIG.feel.shakeMax, CONFIG.feel.shakeMax);
         // Camera lurch: bias the camera toward the stalker for one frame by nudging cam position.
         // We use a cam drag rather than directly mutating c.x/c.y so sysCamera's lerp recovers naturally.
@@ -1250,8 +1266,8 @@ export function updateHUD(): void {
 
   // damage flash overlay
   const fl = el("flash");
-  fl.style.opacity = String(Math.min(0.6, state.flashT));
-  fl.style.background = `radial-gradient(circle at 50% 50%, transparent 40%, rgba(${Math.round(state.flashColor[0] * 255)},${Math.round(state.flashColor[1] * 255)},${Math.round(state.flashColor[2] * 255)},0.9) 100%)`;
+  fl.style.opacity = String(Math.min(0.6, flashT));
+  fl.style.background = `radial-gradient(circle at 50% 50%, transparent 40%, rgba(${Math.round(flashColor[0] * 255)},${Math.round(flashColor[1] * 255)},${Math.round(flashColor[2] * 255)},0.9) 100%)`;
 
   // downed spectator banner (co-op): you're out until the next dawn
   el("downed").classList.toggle("show", p.hp <= 0);

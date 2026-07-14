@@ -26,7 +26,6 @@ export function stepSim(state: State, dt: number): "night" | "dawn" | null {
     state.hitstopT -= dt;
     sdt = dt * CONFIG.feel.hitstopScale;
   }
-  state.flashT *= Math.exp(-CONFIG.feel.flashDecay * dt);
   state.time += sdt;
   sysPlayer(state, sdt);
   sysAssist(state, sdt);
