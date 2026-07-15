@@ -539,7 +539,6 @@ interface Cam {
 
 export interface State {
   running: boolean;
-  paused: boolean;
   time: number;
   /** monotonic id allocator for zombies/bullets/pickups (host-authoritative) */
   nextId: number;

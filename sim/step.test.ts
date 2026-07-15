@@ -36,11 +36,10 @@ describe("stepSim", () => {
     expect(s.fxEvents.some((e) => e.t === "announce" && e.label === "NIGHT")).toBe(true);
     expect(s.fxEvents.some((e) => e.t === "audio" && e.cue === "waveStart")).toBe(true);
   });
-  it("returns null on a normal tick and does NOT set paused (no openShop)", () => {
+  it("returns null on a normal tick", () => {
     const s = newState();
     s.running = true;
     expect(stepSim(s, 1 / 60)).toBe(null);
-    expect(s.paused).toBe(false);
   });
   it("keeps running (returns null, not a wipe) when every player is down", () => {
     const s = newState();

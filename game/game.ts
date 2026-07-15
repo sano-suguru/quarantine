@@ -249,13 +249,13 @@ export function audioAmbience(dt: number): void {
 }
 
 /**
- * Drive the looping ambience + rummage samples. Called once per rAF frame from main.ts (NOT from
- * update, which is skipped while paused) so loops correctly stop during pause/shop/title/gameover
+ * Drive the looping ambience + rummage samples. Called once per rAF frame from main.ts so loops
+ * correctly stop at title/gameover
  * and stay consistent across single/host/client (all share the render frame). Reads state only —
  * no mutation — so single-player stays byte-for-byte and clients drive it from the synced world.
  */
 export function audioLoops(): void {
-  const live = state.running && !state.paused;
+  const live = state.running;
   // day/night ambience (crossfades because both are toggled from the same phase)
   Audio.loop("amb_day", live && state.phase === "day", CONFIG.audio.ambVolume);
   Audio.loop("amb_night", live && state.phase === "night", CONFIG.audio.ambVolume);
@@ -766,7 +766,7 @@ export function draw(): void {
   // HP-driven grade (desaturation + dim) and blood vignette: both gated on state.running so a
   // dead player's 0 HP doesn't drain the debrief / title screens. When not running the cur vars
   // are held at whatever toTitle already snapped them to (1/1), and blood is zeroed so
-  // the shader pass is skipped entirely. Pause holds (no advance while paused, but draw still runs).
+  // the shader pass is skipped entirely.
   if (state.running) {
     // share cameraTarget and hpFrac with both grade and blood (different onset/gamma each)
     const cb = cameraTarget(state);
@@ -1298,12 +1298,6 @@ export function updateHUD(): void {
   } else {
     hide("action-btns");
   }
-
-  // pause overlay is state-driven (so a host pause shows on every client via the
-  // snapshot); shopOpen is a client-local overlay, not a sim pause — suppress the
-  // pause banner while the shop is open to avoid stacking two overlays.
-  if (state.paused && !shopOpen) show("pause");
-  else hide("pause");
 }
 
 /* --------------------------- FLOW / UI -------------------------- */
@@ -1634,14 +1628,6 @@ export function closeArsenal(): void {
   hide("arsenal-screen");
 }
 
-export function togglePause(): void {
-  if (Net.mode === "client") return; // MVP: only the host pauses the shared sim
-  if (!state.running || shopOpen) return;
-  state.paused = !state.paused;
-  // the overlay itself is driven by state.paused in updateHUD (so a host pause shows on
-  // every client via the snapshot) — no imperative show/hide here.
-}
-
 function shopVisible(): boolean {
   return !el("shop").classList.contains("hidden");
 }
@@ -1691,7 +1677,7 @@ export function startClientGame(): void {
   // Defense-in-depth: `state = newState()` is destructive. A reconnect reuses the existing
   // Client (rebind), but if any path ever constructed a second Client mid-run its first
   // snapshot would wipe the live game — no-op here so only the first client boot builds state.
-  if (state.running && Net.mode === "client") return;
+  if (state.running) return;
   state = newState();
   Renderer.setWalls(state.walls);
   deployableSeen.clear();

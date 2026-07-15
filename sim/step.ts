@@ -21,7 +21,7 @@ import type { State } from "./types";
  * fxEvents; the DO clears them each tick.
  */
 export function stepSim(state: State, dt: number): "night" | "dawn" | "breached" | "reset" | null {
-  if (!state.running || state.paused) return null;
+  if (!state.running) return null;
   let sdt = dt;
   if (state.hitstopT > 0) {
     state.hitstopT -= dt;

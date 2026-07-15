@@ -2,9 +2,6 @@ import type { PlayerInput } from "../../sim/playerInput";
 import type { Client } from "./client";
 import type { CoopEvent, HostEvent } from "./events";
 
-/** Which role this client is playing this session. */
-export type NetMode = "client";
-
 /**
  * Co-op wire-protocol version. Host and client MUST match or they desync silently (the snapshot
  * binary layout + NetMsg/CoopEvent shapes are not self-describing). Sent on the signaling URL
@@ -44,9 +41,7 @@ export type NetMsg =
 
 /** Session-wide networking state, read by the main loop. */
 export const Net: {
-  mode: NetMode;
   client: Client | null;
 } = {
-  mode: "client",
   client: null,
 };
