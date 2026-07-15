@@ -24,7 +24,6 @@ import {
   renderArsenal,
   shopDeploy,
   syncShopUI,
-  togglePause,
   toTitle,
   updateHUD,
 } from "./game";
@@ -251,7 +250,6 @@ async function startSingleRun(): Promise<void> {
   // Audio is ready — connect to the Arena DO. The world appears on the first snapshot;
   // onStart hides #loading. Use ?arena=CODE param if present, else default "MAIN".
   const code = new URLSearchParams(location.search).get("arena") ?? "MAIN";
-  Net.mode = "client";
   let arenaStarted = false;
   const link = createArenaLink(arenaUrl(code));
   // Connect-failure surfaces: timeout + early close + room-full.
@@ -436,15 +434,10 @@ async function main(): Promise<void> {
       return;
     }
     if (e.code === "Escape" || e.code === "KeyP") {
-      // Esc closes the options panel first (without touching the host-authoritative pause)
+      // Esc/P closes the options panel (pause was removed — the DO-authoritative world never pauses).
       if (settingsOpen) {
         e.preventDefault();
         closeSettings();
-        return;
-      }
-      if (state.running) {
-        e.preventDefault();
-        togglePause();
       }
     }
   });
@@ -459,37 +452,31 @@ async function main(): Promise<void> {
     const dt = (now - rLast) / 1000;
     rLast = now;
     const st = getState();
-    const live = st.running && !st.paused;
+    const live = st.running;
 
-    if (Net.mode === "client") {
-      // no authoritative sim — predict our player, interpolate the world, ship input.
-      // While options or the shop overlay is open, send zeroed input so the host holds us idle.
-      const inp = live
-        ? settingsOpen || isShopOpen()
-          ? emptyInput()
-          : sampleLocalInput(st)
-        : null;
-      // throttle input send to ~25 Hz (latest-wins); predict & render still run every frame
-      sendAcc += dt;
-      if (inp && sendAcc >= inputStep) {
-        sendAcc = 0;
-        Net.client?.send(inp);
-      }
-      Net.client?.render(performance.now(), inp, dt);
-      // Backstop drop detection: a half-open WS can stay open but silent (no onClose). If no
-      // snap AND no rel has arrived for snapStarvationMs while running, treat the link as dead.
-      // (A clean close fires onClose → startReconnect directly; this only catches the silent case.)
-      if (st.running && Net.client && !reconnecting) {
-        const idle = performance.now() - Net.client.lastActivityMs();
-        if (idle > CONFIG.net.reconnect.snapStarvationMs) startReconnect();
-      }
-      if (st.running) {
-        sysFx(st, dt); // advance client-spawned particles/blood/damage text
-        decayFlash(dt); // decay the per-viewer damage flash (was stepSim's job pre-DO)
-        clientAmbience(dt); // dread / heartbeat / groan from the snapshot world
-      }
-      if (live) sysCamera(st, dt);
+    // no authoritative sim — predict our player, interpolate the world, ship input.
+    // While options or the shop overlay is open, send zeroed input so the host holds us idle.
+    const inp = live ? (settingsOpen || isShopOpen() ? emptyInput() : sampleLocalInput(st)) : null;
+    // throttle input send to ~25 Hz (latest-wins); predict & render still run every frame
+    sendAcc += dt;
+    if (inp && sendAcc >= inputStep) {
+      sendAcc = 0;
+      Net.client?.send(inp);
     }
+    Net.client?.render(performance.now(), inp, dt);
+    // Backstop drop detection: a half-open WS can stay open but silent (no onClose). If no
+    // snap AND no rel has arrived for snapStarvationMs while running, treat the link as dead.
+    // (A clean close fires onClose → startReconnect directly; this only catches the silent case.)
+    if (st.running && Net.client && !reconnecting) {
+      const idle = performance.now() - Net.client.lastActivityMs();
+      if (idle > CONFIG.net.reconnect.snapStarvationMs) startReconnect();
+    }
+    if (st.running) {
+      sysFx(st, dt); // advance client-spawned particles/blood/damage text
+      decayFlash(dt); // decay the per-viewer damage flash (was stepSim's job pre-DO)
+      clientAmbience(dt); // dread / heartbeat / groan from the snapshot world
+    }
+    if (live) sysCamera(st, dt);
 
     // reconcile the shop overlay with shopOpen (client-local overlay state).
     if (st.running) syncShopUI();
@@ -498,14 +485,12 @@ async function main(): Promise<void> {
     audioLoops(); // looping ambience/rummage — driven here (runs even while paused) in all modes
     if (st.running) updateHUD();
 
-    // options panel: force-close on state transitions (gameover/shop) so it's never
-    // left stranded, and suppress the pause overlay underneath it so the two never stack.
+    // options panel: force-close on state transitions (gameover/shop) so it's never left stranded.
     if (settingsOpen && (isShopOpen() || !el("over").classList.contains("hidden"))) closeSettings();
-    if (settingsOpen) hide("pause");
 
     // ?netlog: live net-stat readout to drive feel-tuning
     if (NETLOG) {
-      const showNet = Net.mode === "client" && st.running;
+      const showNet = st.running;
       netstat.style.display = showNet ? "block" : "none";
       if (showNet) {
         netAcc += dt;
