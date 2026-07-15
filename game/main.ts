@@ -482,7 +482,7 @@ async function main(): Promise<void> {
     if (st.running) syncShopUI();
 
     if (spritesLoaded) draw();
-    audioLoops(); // looping ambience/rummage — driven here (runs even while paused) in all modes
+    audioLoops(); // looping ambience/rummage — driven here every render frame
     if (st.running) updateHUD();
 
     // options panel: force-close on state transitions (gameover/shop) so it's never left stranded.

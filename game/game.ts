@@ -249,8 +249,8 @@ export function audioAmbience(dt: number): void {
 }
 
 /**
- * Drive the looping ambience + rummage samples. Called once per rAF frame from main.ts (NOT from
- * update, which is skipped while paused) so loops correctly stop at title/gameover
+ * Drive the looping ambience + rummage samples. Called once per rAF frame from main.ts so loops
+ * correctly stop at title/gameover
  * and stay consistent across single/host/client (all share the render frame). Reads state only —
  * no mutation — so single-player stays byte-for-byte and clients drive it from the synced world.
  */
@@ -766,7 +766,7 @@ export function draw(): void {
   // HP-driven grade (desaturation + dim) and blood vignette: both gated on state.running so a
   // dead player's 0 HP doesn't drain the debrief / title screens. When not running the cur vars
   // are held at whatever toTitle already snapped them to (1/1), and blood is zeroed so
-  // the shader pass is skipped entirely. Pause holds (no advance while paused, but draw still runs).
+  // the shader pass is skipped entirely.
   if (state.running) {
     // share cameraTarget and hpFrac with both grade and blood (different onset/gamma each)
     const cb = cameraTarget(state);

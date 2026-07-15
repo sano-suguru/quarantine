@@ -505,7 +505,7 @@ export class Client {
 
   /**
    * Render step: interpolate remote entities into state, then overwrite the local player
-   * with the client-predicted position/aim. `inp` is this frame's input (null if paused).
+   * with the client-predicted position/aim. `inp` is this frame's input (null when not running).
    */
   render(nowMs: number, inp: PlayerInput | null, dt: number): void {
     if (!this.live || !this.started || this.buf.length === 0) return;
@@ -580,7 +580,7 @@ export class Client {
       lp.muzzle = Math.max(0, this.predMuzzle);
     }
 
-    // advance existing ghost tracers (always, so they self-expire even while host-paused)
+    // advance existing ghost tracers (always, so they self-expire regardless of run state)
     this.ghosts = advanceGhosts(this.ghosts, dt);
 
     // Predict the FEEL of firing locally (muzzle flash, shot audio, recoil,
