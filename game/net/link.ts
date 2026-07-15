@@ -1,4 +1,4 @@
-/** Minimal contract shared by the Arena WebSocket adapter and (removed) WebRTC PeerLink. */
+/** Minimal contract the Arena WebSocket adapter implements (the client talks to the DO through it). */
 export interface PeerLink {
   sendSnap(buf: ArrayBuffer): void;
   sendRel(obj: unknown): void;

@@ -36,7 +36,7 @@ import { resetStalkerPhantom, sysStalkerPhantom } from "./systems/stalkerPhantom
 import { el, hide, renderList, show } from "./ui";
 
 // Feed persisted meta-unlocks into the (browser-free) sim closure. Registered before the first
-// `newState()` below so single-player boot state is identical to the old direct-`loadMeta` path.
+// `newState()` below so client boot state is identical to the old direct-`loadMeta` path.
 setUnlockProvider(() => loadMeta().unlocked);
 
 let state: State = newState();
@@ -98,8 +98,8 @@ let prevStalkerCd = 0; // contactCd last frame — render-side edge detector for
 
 /* ---- horror "feel" layer (light/sound polish) ----
  * All of this is pure visual/audio re-derived from `state` on whichever machine renders:
- * it never touches the sim (`update`/`state`/`sysFx`/`sysAI`), so single-player stays
- * byte-for-byte and every co-op client produces its own fear locally from the snapshot world. */
+ * it never touches the sim (`update`/`state`/`sysFx`/`sysAI`), so every client
+ * produces its own fear locally from the snapshot world. */
 
 /** Time-correlated 0..1 flicker value: a smooth low tremor with occasional brief surges, so the
  *  cone reads as a failing bulb rather than per-frame static. Decorrelated per `seed` (player id). */
@@ -119,7 +119,7 @@ const DUST = Array.from({ length: CONFIG.flashlight.dustCount }, () => ({
   size: 0.6 + Math.random() * 1.3,
 }));
 
-// darting shadows: visual-only streaks (NOT in state.particles → single-player safe)
+// darting shadows: visual-only streaks (NOT in state.particles → client-safe: not in state.particles)
 interface Dart {
   x: number;
   y: number;
@@ -129,7 +129,7 @@ interface Dart {
   maxLife: number;
 }
 let darts: Dart[] = [];
-let lastDrawT = 0; // for a render-side dt derived from state.time (advances on host & client)
+let lastDrawT = 0; // for a render-side dt derived from state.time (advances on the DO & clients)
 
 // per-zombie voice bookkeeping (groan while lurking / screech on entering the cone). Keyed by
 // zombie id; pure audio state, never synced. recentVoices throttles to avoid 4p×horde saturation.
@@ -211,7 +211,7 @@ export function audioAmbience(dt: number): void {
   Audio.setTension(Math.min(1, state.lurking / CONFIG.horror.surroundCount));
 
   // flashlight-death: one-shot cue when the LOCAL player's battery crosses zero. Runs on every
-  // machine via audioAmbience (single/host/client all call this), so co-op clients hear their
+  // machine via audioAmbience (every client calls this), so co-op clients hear their
   // own cue correctly from their synced battery — NOT from a sysPlayer event (which clients
   // never run). prevBattery is reset to 1 each run so a dead prior-run battery can't suppress it.
   const batf = p.battery / CONFIG.flashlight.batteryMax;
@@ -251,8 +251,8 @@ export function audioAmbience(dt: number): void {
 /**
  * Drive the looping ambience + rummage samples. Called once per rAF frame from main.ts so loops
  * correctly stop at title/gameover
- * and stay consistent across single/host/client (all share the render frame). Reads state only —
- * no mutation — so single-player stays byte-for-byte and clients drive it from the synced world.
+ * and stay consistent across clients (all share the render frame). Reads state only —
+ * no mutation — so every client drives it from the synced world.
  */
 export function audioLoops(): void {
   const live = state.running;
@@ -364,8 +364,8 @@ function spawnDart(lp: Player): void {
 }
 
 /** Visual atmosphere drawn inside the local player's cone: drifting dust + occasional darting
- *  shadows. Pure render (no sim state) so single-player stays byte-for-byte; `ddt` is derived
- *  from state.time (which advances on host & client) since draw() has no dt of its own. */
+ *  shadows. Pure render (no sim state), client-safe; `ddt` is derived
+ *  from state.time (which advances on the DO & clients) since draw() has no dt of its own. */
 function drawAtmosphere(R: typeof Renderer, lp: Player, ddt: number): void {
   const flc = CONFIG.flashlight;
   const ambient = ambientForClock(state.phase, state.phaseT, state.day);
@@ -433,7 +433,7 @@ export function clientAmbience(dt: number): void {
 export function draw(): void {
   const R = Renderer;
   const lp = localPlayer(state);
-  // render-side dt from state.time (advances on host via update + client via snapshot); clamped
+  // render-side dt from state.time (advances via the DO's snapshots); clamped
   // so a backgrounded tab's time jump can't fling darts across the map.
   const ddt = Math.max(0, Math.min(0.1, state.time - lastDrawT));
   lastDrawT = state.time;
@@ -447,7 +447,7 @@ export function draw(): void {
   // --- grab scare (local victim only): the full diegetic grab feedback — hard purple flash +
   //     camera shake + camera lurch + stinger. Keyed off the stalker's contactCd edge (jumps to
   //     max on each grab), which is now SYNCED in the snapshot, so this fires identically on the
-  //     host and on a client victim. Kept in draw() (not sysStalker) so a client — which never runs
+  //     the DO and on a client victim. Kept in draw() (not sysStalker) so a client — which never runs
   //     sysStalker — still gets it. contactCd is per-stalker (global), so a proximity gate limits
   //     the scare to the player actually grabbed (only the victim is within contact range). ---
   if (state.stalker && state.running) {
@@ -896,8 +896,8 @@ function drawPlayer(R: typeof Renderer, pl: Player, isLocal: boolean): void {
     const wd = WEAPONS[pl.weapon];
     if (wd?.melee) {
       // a single crescent blade-arc that SWEEPS across the swing cone. Phase comes from the
-      // synced muzzle (1→0 over the swing window), so the arc reads the same for local, host,
-      // and remote players. (In co-op a remote teammate's muzzle only refreshes at snapshot
+      // synced muzzle (1→0 over the swing window), so the arc reads the same for local & remote
+      // players. (In co-op a remote teammate's muzzle only refreshes at snapshot
       // rate, so the sweep is a touch steppier there — the same limitation the old fade had;
       // solo and your own swing are smooth at frame rate.)
       const k = Math.min(1, pl.muzzle / 0.1); // 1 at swing start → 0 at the end
@@ -1101,8 +1101,8 @@ function drawDeployables(R: typeof Renderer): void {
       drawDeployableHp(R, d, d.x, by);
     } else if (visual === "crate") {
       // supply station: a glowing crate with a beacon that ramps toward each drop. Phase from
-      // state.time (synced on host & client); the emitter drops on the same state.time grid
-      // (see tickEmitter), so the beacon ramp peaks exactly as a drop lands — no host-only state.
+      // state.time (synced via the DO); the emitter drops on the same state.time grid
+      // (see tickEmitter), so the beacon ramp peaks exactly as a drop lands — no server-only state.
       const interval = def.emitter?.interval ?? 8;
       const frac = (state.time % interval) / interval; // 0..1 toward the next drop
       const beacon = 0.3 + 0.6 * frac * frac; // ramps brighter as the drop nears
@@ -1668,10 +1668,10 @@ function interactPrompt(): string | null {
 // PlayerInput and applied in sysPlayer (so they route to the right player in MP).
 
 /**
- * Client-mode boot: a renderable run-state with NO local sim (the host drives the
+ * Client-mode boot: a renderable run-state with NO local sim (the DO drives the
  * world via snapshots). Phase/day/economy all arrive over the wire; we just start a
  * fresh state for the static map (walls/barricades/caches are identical code) and show
- * the HUD. localId + owned/wlevel are filled in by the host's Hello.
+ * the HUD. localId + owned/wlevel are filled in by the DO's Hello.
  */
 export function startClientGame(): void {
   // Defense-in-depth: `state = newState()` is destructive. A reconnect reuses the existing
@@ -1694,7 +1694,7 @@ export function startClientGame(): void {
   buildWeaponSlots();
 }
 
-/** Apply the host's Hello: adopt our player id and the shared weapon ownership. Per-player
+/** Apply the DO's Hello: adopt our player id and the shared weapon ownership. Per-player
  *  weapon levels (wlevel) are no longer shared — they arrive per player in the snapshot. */
 export function clientApplyHello(localId: number, owned: Record<string, boolean>): void {
   state.localId = localId;

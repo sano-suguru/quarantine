@@ -3,10 +3,10 @@ import type { Client } from "./client";
 import type { CoopEvent, HostEvent } from "./events";
 
 /**
- * Co-op wire-protocol version. Host and client MUST match or they desync silently (the snapshot
- * binary layout + NetMsg/CoopEvent shapes are not self-describing). Sent on the signaling URL
- * (`&v=`) so a mismatch is rejected BEFORE P2P, and echoed in Hello so the manual-SDP path (which
- * bypasses signaling) re-checks after open.
+ * Wire-protocol version. The DO and every client MUST match or they desync silently (the snapshot
+ * binary layout + NetMsg/CoopEvent shapes are not self-describing). The DO echoes its version in
+ * the Hello; the client re-checks it after the arena WS opens and self-ejects on a mismatch
+ * (see client.ts onVersionMismatch). There is no separate signaling/handshake layer.
  *
  * BUMP THIS whenever the wire format changes — `snapshot.ts` encode/decode, the `NetMsg`/`CoopEvent`
  * unions, or the Hello fields. The golden byte test in `snapshot.test.ts` fails on any encode change
@@ -26,7 +26,7 @@ export type NetMsg =
        *  the DO re-attaches to the same player slot. Optional for back-compat. */
       nonce?: string;
       /** the DO's PROTOCOL_VERSION: the client re-checks it after the arena WS opens to detect a
-       *  wire-version mismatch (defence-in-depth alongside the signaling version gate). */
+       *  wire-version mismatch after the arena WS opens. */
       v?: number;
       /** DO → client: true if this Hello re-attached the client's still-held body (rejoin within
        *  grace); false/absent = a fresh slot (initial join, or a rejoin after graceMs retired the
@@ -34,7 +34,7 @@ export type NetMsg =
       resumed?: boolean;
     }
   | { t: "input"; input: PlayerInput; seq: number }
-  | { t: "ping"; id: number } // client→host RTT probe (rel channel); host echoes pong
+  | { t: "ping"; id: number } // client→DO RTT probe (rel channel); the DO echoes pong
   | { t: "pong"; id: number }
   | CoopEvent
   | HostEvent;

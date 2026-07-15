@@ -9,9 +9,9 @@
  *
  * RENDER/AUDIO ONLY — no sim state is mutated, nothing written to state.particles or any
  * sim field. Mirrors how `darts` / `drawAtmosphere` are structured in game.ts: purely
- * re-derived from the snapshot world on each client. Single-player stays byte-for-byte safe.
+ * re-derived from the snapshot world on each client. Client-safe: re-derived from the snapshot.
  *
- * Called from game.ts `draw()` (which runs on host, client, and single-player alike).
+ * Called from game.ts `draw()` (which runs on every client).
  * On clients the stalker comes from the synced snapshot (Task 5); this module is
  * agnostic of the source.
  */

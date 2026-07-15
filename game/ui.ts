@@ -13,8 +13,8 @@ export function hide(id: string): void {
 }
 
 /**
- * True when a keystroke is destined for a text field (room-code input, manual-SDP
- * textareas, etc.), so the global game-hotkey listeners can bail out instead of
+ * True when a keystroke is destined for a text field (room-code input, etc.),
+ * so the global game-hotkey listeners can bail out instead of
  * hijacking/preventDefault-ing characters the player is trying to type.
  */
 export function isEditableTarget(target: EventTarget | null): boolean {
