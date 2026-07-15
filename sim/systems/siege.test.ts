@@ -208,12 +208,33 @@ describe("sysSiege breach detection", () => {
     expect(out).toBe("breached");
     expect(s.phase).toBe("breached");
     expect(s.phaseT).toBeCloseTo(CONFIG.siege.breachedDuration, 5);
+    expect(s.breachT).toBe(0); // sysSiege's breach transition zeroes breachT via enterBreached
   });
 
   it("does not fire when the interior is empty (breachT decays)", () => {
     const s = nightState();
     for (let i = 0; i < 30; i++) expect(sysSiege(s, 1 / 60)).not.toBe("breached");
     expect(s.breachT).toBe(0);
+  });
+
+  it("accumulates breachT while overrun then decays to 0 once interior clears", () => {
+    const s = nightState();
+    // Disarm the wave spawner so sysWave doesn't interfere with indoor counts.
+    s.wave.def = null;
+    // place enough zombies inside HOME to be overrun (above threshold)
+    for (let i = 0; i < CONFIG.siege.breachZombies + 2; i++) {
+      s.zombies.push({ id: 2000 + i, x: 0, y: 0 } as (typeof s.zombies)[number]);
+    }
+    // run for fewer frames than breachSustain allows — breachT accumulates but breach hasn't fired
+    const accumFrames = Math.floor(CONFIG.siege.breachSustain * 0.5 * 60); // half the sustain window
+    for (let i = 0; i < accumFrames; i++) sysSiege(s, 1 / 60);
+    expect(s.phase).toBe("night"); // not yet breached — clock still running
+    expect(s.breachT).toBeGreaterThan(0); // overrun count accumulated breachT
+    // now clear the interior — breachT should decay back to 0
+    s.zombies.length = 0;
+    const decayFrames = Math.ceil(s.breachT * 60) + 5;
+    for (let i = 0; i < decayFrames; i++) sysSiege(s, 1 / 60);
+    expect(s.breachT).toBe(0); // decayed to 0 once interior is empty
   });
 });
 

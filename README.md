@@ -35,7 +35,7 @@ The ones you reach for most — see [`package.json`](./package.json) `scripts` f
 | --- | --- |
 | `bun run dev` | Vite dev server with HMR (single-player + manual-SDP co-op) |
 | `bun run dev:coop` | Game + local signaling relay together (room-code co-op) |
-| `bun run signal` | Signaling relay only (`ws://127.0.0.1:8787`) |
+| `bun run worker` | Arena worker only (`ws://127.0.0.1:8787`) |
 | `bun run build` | Type-check then build to `dist/` |
 | `bun run test` | Run the test suite (Vitest) |
 | `bun run typecheck` | Type-check (`tsc --noEmit`) |

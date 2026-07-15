@@ -30,13 +30,13 @@ type RGB = [number, number, number];
 const GREY: RGB = [0.5, 0.5, 0.5];
 
 /**
- * Client role: runs NO authoritative sim. It samples local input, ships it to the host,
+ * Client role: runs NO authoritative sim. It samples local input, ships it to the DO,
  * and renders the world from buffered snapshots. The game screen appears on the FIRST
- * snapshot (once the host presses Deploy); Hello (our id + ownership) is applied then.
+ * snapshot (once the DO deploys / the first snapshot arrives); Hello (our id + ownership) is applied then.
  *
  * Remote entities interpolate at `now - interpDelay` (no 30Hz stepping).
  * The LOCAL player is client-predicted: we integrate our own movement every
- * frame (instant response) and gently reconcile toward the host's authoritative position
+ * frame (instant response) and gently reconcile toward the DO's authoritative position
  * on each snapshot (hard-snap only on large error). aim is fully local. Other local-player
  * fields (hp/ammo/…) come from the snapshot so the HUD stays correct.
  */
@@ -55,7 +55,7 @@ export class Client {
   private predY = 0;
   private predInit = false;
   // local fire-feedback predictor: muzzle/audio/recoil/shake fire instantly;
-  // the actual bullet + damage stay host-authoritative (arrives via snapshot).
+  // the actual bullet + damage stay DO-authoritative (arrives via snapshot).
   private fireCdLocal = 0;
   private firedThisHoldLocal = false;
   // local-player FEEL is predicted too (like position): we own recoil/muzzle frame-to-frame and
@@ -65,7 +65,7 @@ export class Client {
   private predRecoilY = 0;
   private predMuzzle = 0;
   // visual-only predicted tracers (negative id) so the shot's bullet line shows instantly
-  // instead of ~interpDelay late; the real bullet/damage stay host-authoritative.
+  // instead of ~interpDelay late; the real bullet/damage stay DO-authoritative.
   private ghosts: Bullet[] = [];
   private ghostId = -1;
   // net diagnostics (surfaced by the ?netlog HUD): rel-channel ping/pong RTT + snapshot jitter.
@@ -94,7 +94,7 @@ export class Client {
       onIdentity?: (pid: number, nonce: string) => void;
       /** token to claim on the next arena (re)connect: rejoin (reconnect) vs a fresh join */
       rejoin?: { pid: number; nonce: string } | null;
-      /** DO runs an incompatible wire version (signaling gates the rest) */
+      /** DO runs an incompatible wire version — the client self-ejects on mismatch */
       onVersionMismatch?: () => void;
       /** the arena is at capacity: stop and surface a terminal "room is full" to the lobby */
       onRoomFull?: () => void;
@@ -115,7 +115,7 @@ export class Client {
       this.lastRelAt = performance.now();
       const msg = m as NetMsg;
       if (msg.t === "hello") {
-        // wire-version gate (signaling gates room-code / quick-match);
+        // wire-version gate (client-side, after the arena WS opens);
         // mismatch → stop before showing the game, surface a clear error
         if (msg.v !== undefined && msg.v !== PROTOCOL_VERSION) {
           this.live = false;
@@ -164,7 +164,7 @@ export class Client {
       this.lastTick = snap.tick;
       this.lastSnapAt = performance.now();
       if (!this.started) {
-        startClientGame(); // host has deployed — leave the lobby, show the game
+        startClientGame(); // world is live — leave the lobby, show the game
         this.started = true;
         if (this.hello) clientApplyHello(this.hello.localId, this.hello.owned);
         this.onStart?.();
@@ -300,7 +300,7 @@ export class Client {
       if (p && z.flash > p.flash + 0.01) {
         const t = ENEMY_TYPES[z.type];
         // re-derive gore strength from the synced hp drop (no dmg travels in snapshots).
-        // Exact for non-lethal hits; the killing-frame finisher spray is host-only (see spec §E).
+        // Exact for non-lethal hits; the killing-frame finisher spray is server-only (see spec §E).
         const g = CONFIG.fx.gore;
         const intensity = goreIntensity(
           p.hp - z.hp,
@@ -332,10 +332,10 @@ export class Client {
         fxActionBurst(st, pl.x, pl.y, [0.3, 1, 0.45], false);
         if (pl.id === st.localId) Audio.heal();
       }
-      // peer-revive completion only: anchor to the assist gauge (the host fires this burst in
+      // peer-revive completion only: anchor to the assist gauge (the DO fires this burst in
       // sysAssist). A tended teammate always shows assistT>0 in the prev snapshot, while the
       // dawn batch-respawn (revivePlayer, no tending) has assistT==0 — so this no longer
-      // bursts at dawn, matching the host. (Rare: an interrupt→immediate-resume revive can
+      // bursts at dawn, matching the DO. (Rare: an interrupt→immediate-resume revive can
       // show assistT==0 in prev and drop the burst — cosmetic only, never a false fire.)
       if (p && p.hp <= 0 && p.assistT > 0 && pl.hp > 0) {
         fxActionBurst(st, pl.x, pl.y, [0.4, 1, 0.6], true);
@@ -408,18 +408,18 @@ export class Client {
     // synced block above. No additional wiring needed here.
     // Grab scare on the client: game.ts:draw() edge-detects state.stalker.contactCd, which is
     // now SYNCED in the snapshot block, so the flash/shake/lurch/stinger fire for a client
-    // victim exactly as on the host. The pain grunt + blood come from the hitFlash re-derivation
+    // victim exactly as on the DO. The pain grunt + blood come from the hitFlash re-derivation
     // above (fxHurt + Audio.hurt). Local-only, victim-gated by proximity in game.ts.
   }
 
-  /** Send this frame's local input to the host (reliable, sequenced). */
+  /** Send this frame's local input to the DO (reliable, sequenced). */
   send(input: PlayerInput): void {
     if (!this.live) return; // suspended during a reconnect — don't ship to a dead/closing link
     const msg: NetMsg = { t: "input", input, seq: this.seq++ };
     this.link.sendRel(msg);
   }
 
-  /** Co-op flow requests — the host validates and applies them authoritatively. */
+  /** Co-op flow requests — the DO validates and applies them authoritatively. */
   requestBuy(itemId: string): void {
     this.link.sendRel({ t: "buy", itemId });
   }
@@ -474,7 +474,7 @@ export class Client {
     };
   }
 
-  /** Nudge the predicted local position toward the host's authoritative one. */
+  /** Nudge the predicted local position toward the DO's authoritative one. */
   private reconcile(snap: Snapshot): void {
     const id = getState().localId;
     const me = snap.players.find((p) => p.id === id);
@@ -510,8 +510,8 @@ export class Client {
   render(nowMs: number, inp: PlayerInput | null, dt: number): void {
     if (!this.live || !this.started || this.buf.length === 0) return;
 
-    // RTT probe: ping the host on the reliable channel ~1×/s (the host echoes pong). Measures
-    // the actual DataChannel path latency — what gameplay feels — not STUN consent RTT.
+    // RTT probe: ping the DO on the reliable channel ~1×/s (the DO echoes pong). Measures
+    // the actual WS path latency — what gameplay feels.
     this.pingAcc += dt;
     if (this.pingAcc >= 1) {
       this.pingAcc = 0;
@@ -519,7 +519,7 @@ export class Client {
       this.pingSent.set(id, performance.now());
       this.link.sendRel({ t: "ping", id });
       if (this.pingSent.size > 5) {
-        const oldest = this.pingSent.keys().next().value; // drop unanswered (host gone / lossy)
+        const oldest = this.pingSent.keys().next().value; // drop unanswered (DO unreachable / lossy)
         if (oldest !== undefined) this.pingSent.delete(oldest);
       }
     }
@@ -552,7 +552,7 @@ export class Client {
     // only predict while alive; a downed local player is a spectator (camera follows a
     // teammate via cameraTarget), so leave its snapshot position/aim untouched.
     if (this.predInit && lp.hp > 0) {
-      // mirror the host's move-weight ramp from the synced weapon (raw render dt is clamped, since
+      // mirror the DO's move-weight ramp from the synced weapon (raw render dt is clamped, since
       // a backgrounded tab can deliver a huge dt that would overshoot the ramp / teleport us).
       const cdt = Math.min(dt, 0.1);
       lp.curMoveMul = approach(
@@ -570,7 +570,7 @@ export class Client {
       lp.y = this.predY;
       if (inp) lp.aim = inp.aim;
       // feel is predicted like position: decay our owned recoil/muzzle at frame rate, then impose
-      // over the snapshot value (applySnapshot just clobbered them with the host's slice).
+      // over the snapshot value (applySnapshot just clobbered them with the DO's slice).
       const recoilRk = Math.exp(-CONFIG.feel.recoilDecay * cdt);
       this.predRecoilX *= recoilRk;
       this.predRecoilY *= recoilRk;
@@ -585,7 +585,7 @@ export class Client {
 
     // Predict the FEEL of firing locally (muzzle flash, shot audio, recoil,
     // screen shake) so the trigger feels instant. We do NOT spawn a bullet or spend ammo:
-    // the real round + damage are host-authoritative and arrive via snapshot. Gated on the
+    // the real round + damage are DO-authoritative and arrive via snapshot. Gated on the
     // authoritative ammo/reload/heal (from the snapshot) so we never flash on an empty mag.
     if (this.fireCdLocal > 0) this.fireCdLocal -= dt;
     if (inp) {
@@ -602,7 +602,7 @@ export class Client {
         const tipX = lp.x + Math.cos(lp.aim) * lp.r;
         const tipY = lp.y + Math.sin(lp.aim) * lp.r;
         // shared fire-feel (recoil/muzzle/shake/audio + the gun's muzzle sparks) — the exact code
-        // the host runs, so our predicted melee lunge / gun kick can never drift from authority.
+        // the DO runs, so our predicted melee lunge / gun kick can never drift from authority.
         // The slash visual itself is the crescent drawn in drawPlayer off the predicted muzzle.
         applyFireFeel(st, lp, wd);
         drainFxEvents(st); // play THIS client's predicted muzzle (shot/melee audio + muzzle sparks)

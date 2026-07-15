@@ -31,7 +31,7 @@ export const Input = {
 
   init(canvas: HTMLCanvasElement): void {
     addEventListener("keydown", (e) => {
-      // While a text field (room-code input, manual-SDP textareas) is focused, let the
+      // While a text field (room-code input) is focused, let the
       // keystroke through untouched — otherwise the preventDefault below eats characters
       // that are valid in a room code (R, 2, 3, …).
       if (isEditableTarget(e.target)) return;

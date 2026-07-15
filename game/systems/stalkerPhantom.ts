@@ -7,7 +7,7 @@
  *
  * RENDER/AUDIO ONLY — no sim state mutated, nothing written to state.particles or any sim field.
  * Mirrors `stalkerFx` / `darts`: module-level bookkeeping, re-derived per client each draw frame,
- * NOTHING synced. Single-player stays byte-for-byte safe. NO imports from game/net.
+ * NOTHING synced. Client-safe: NOTHING synced. NO imports from game/net.
  *
  * Called from game.ts `draw()` after `stalkerFx` (so it reads the same `dread`).
  */

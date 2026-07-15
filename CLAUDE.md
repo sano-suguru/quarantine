@@ -26,7 +26,7 @@ Two non-negotiables that shape how to work here:
 bun install            # install deps (run `bun pm trust @biomejs/biome` once if postinstall is blocked)
 bun run dev            # Vite game only at http://localhost:5173 (HMR). Boots to the title; Start can't connect without the worker (the game is a DO client) — use dev:coop to actually play.
 bun run dev:coop       # game (Vite) + the worker (wrangler dev) together — the NORMAL dev command. The worker serves the authoritative Arena DO at ws://127.0.0.1:8787/arena/CODE. one-time: `cd worker && bun install`. Ctrl-C stops both.
-bun run signal         # just the worker (cd worker && wrangler dev → ws://127.0.0.1:8787): the arena-only worker (Arena DO). The old WebRTC signaling relay was deleted in 2b-0.
+bun run worker         # just the worker (cd worker && wrangler dev → ws://127.0.0.1:8787): the arena-only worker (Arena DO). The old WebRTC signaling relay was deleted in 2b-0.
 bun run build          # tsc --noEmit && vite build  → dist/
 bun run preview        # serve the production build
 bun run typecheck      # tsc --noEmit
@@ -121,7 +121,7 @@ Feel-first: own player/bullets predicted, others/enemies interpolated. **Derive-
 ### Run / deploy
 - `bun run dev:coop` — game (Vite) **+ the worker** (`wrangler dev`, which serves the Arena DO at `ws://127.0.0.1:8787/arena/CODE`). This is the normal dev command now — the game can't play without the DO. Connect: Start → `arenaUrl` → `.../arena/MAIN` (or `?arena=CODE`). One-time: `cd worker && bun install`.
 - `bun run dev` — game only; boots to the title but Start fails to connect without the worker (surfaces "couldn't reach the arena").
-- `bun run signal` — the worker alone (`cd worker && wrangler dev` → `ws://127.0.0.1:8787`).
+- `bun run worker` — the worker alone (`cd worker && wrangler dev` → `ws://127.0.0.1:8787`).
 - Deploy: worker + game together via **GitHub Actions only** (`deploy-worker.yml`, `workflow_dispatch`; needs `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID`). DO placement is fixed at creation via `locationHint` (Japan → `apac-ne`). WebTransport / unreliable datagrams are **unavailable** on CF DO server-side (verified) — TCP WebSocket is the only transport.
 
 ### Not yet built (don't mistake for live)

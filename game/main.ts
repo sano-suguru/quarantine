@@ -51,11 +51,11 @@ const NETLOG = (() => {
 })();
 
 // Q-to-place: a small local cooldown so a held/mashed key doesn't fire several reliable place
-// requests before the host's snapshot reflects the first (each would consume another queued item).
+// requests before the DO's snapshot reflects the first (each would consume another queued item).
 let lastPlaceAt = -1e9;
 
-// personal options overlay (#settings): client-local, separate from the host-authoritative
-// pause. While open, local input is zeroed (so you don't act blind behind the overlay).
+// personal options overlay (#settings): client-local. While open, local input is zeroed
+// (so you don't act blind behind the overlay).
 let settingsOpen = false;
 
 // Open the client-local shop overlay if the local player is at the fortress workbench during the
@@ -253,7 +253,6 @@ async function startSingleRun(): Promise<void> {
   let arenaStarted = false;
   const link = createArenaLink(arenaUrl(code));
   // Connect-failure surfaces: timeout + early close + room-full.
-  // Mirrors the spirit of the deleted method-C join() failure wiring (timeout/onOpen/onClose).
   const connectTimer = setTimeout(() => {
     if (!arenaStarted) {
       showLoadError("Couldn't reach the arena. Is it running? (check your connection and retry)");
@@ -455,7 +454,7 @@ async function main(): Promise<void> {
     const live = st.running;
 
     // no authoritative sim — predict our player, interpolate the world, ship input.
-    // While options or the shop overlay is open, send zeroed input so the host holds us idle.
+    // While options or the shop overlay is open, send zeroed input so the DO holds us idle.
     const inp = live ? (settingsOpen || isShopOpen() ? emptyInput() : sampleLocalInput(st)) : null;
     // throttle input send to ~25 Hz (latest-wins); predict & render still run every frame
     sendAcc += dt;

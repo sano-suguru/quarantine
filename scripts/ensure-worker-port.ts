@@ -1,5 +1,5 @@
 /**
- * Preflight guard for the arena worker dev port (`bun run signal` / `dev:coop`).
+ * Preflight guard for the arena worker dev port (`bun run worker` / `dev:coop`).
  *
  * The game always dials the arena at CONFIG.net.devArenaHost (127.0.0.1:8787). Wrangler, however,
  * SILENTLY falls back to a random free port when 8787 is already taken — so a stale/zombie worker

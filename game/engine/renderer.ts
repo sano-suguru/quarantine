@@ -281,7 +281,7 @@ function setGrade(sat: number, dim: number): void {
 }
 
 /** upload the static wall segments once; occlusion reads them every frame (walls never change in a run) */
-export function setWalls(walls: { x1: number; y1: number; x2: number; y2: number }[]): void {
+function setWalls(walls: { x1: number; y1: number; x2: number; y2: number }[]): void {
   wallCount = Math.min(walls.length, MAX_WALLS);
   for (let i = 0; i < wallCount; i++) {
     const w = walls[i] as (typeof walls)[number];

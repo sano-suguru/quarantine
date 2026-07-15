@@ -1,7 +1,7 @@
 - Install root deps: `bun install` (if Biome postinstall blocked, run `bun pm trust @biomejs/biome` once).
 - Dev server: `bun run dev`.
 - Game + local signaling relay: `bun run dev:coop`.
-- Signaling relay only: `bun run signal`.
+- Arena worker only: `bun run worker`.
 - Typecheck root game + scripts: `bun run typecheck`.
 - All tests: `bun run test`; one file: `bun run test -- game/data/waves.test.ts`; test name: `bun run test -- game/data/waves.test.ts -t "waveDef"`.
 - Lint: `bun run lint`; autofix lint/format: `bun run lint:fix`; format: `bun run format`.
