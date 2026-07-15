@@ -169,7 +169,6 @@ export interface Snapshot {
   tick: number;
   time: number;
   isFull: boolean;
-  paused: boolean;
   phase: SiegePhase;
   day: number;
   phaseT: number;
@@ -215,7 +214,6 @@ export function captureSnapshot(state: State, tick: number, isFull = true): Snap
     tick,
     time: state.time,
     isFull,
-    paused: state.paused,
     phase: state.phase,
     day: state.day,
     phaseT: state.phaseT,
@@ -369,7 +367,6 @@ export function applySnapshot(
   opts: { skipLocalId?: number } = {},
 ): void {
   state.time = snap.time;
-  state.paused = snap.paused;
   state.phase = snap.phase;
   state.day = snap.day;
   state.phaseT = snap.phaseT;
@@ -636,8 +633,8 @@ export function encode(snap: Snapshot): ArrayBuffer {
   const w = new Writer();
   w.u32(snap.tick);
   w.f32(snap.time);
-  // flags: bit0 isFull, bit1 paused, bits2-3 phase index (see PHASE_ORDER)
-  w.u8((snap.isFull ? 1 : 0) | (snap.paused ? 2 : 0) | (PHASE_ORDER.indexOf(snap.phase) << 2));
+  // flags: bit0 isFull, bit1 reserved (was paused; retired 2b③), bits2-3 phase index (see PHASE_ORDER)
+  w.u8((snap.isFull ? 1 : 0) | (PHASE_ORDER.indexOf(snap.phase) << 2));
   w.u16(snap.day);
   w.f32(snap.phaseT);
   w.u32(snap.kills);
@@ -1241,7 +1238,6 @@ export function decode(buf: ArrayBuffer): Snapshot {
     tick,
     time,
     isFull: (flags & 1) !== 0,
-    paused: (flags & 2) !== 0,
     phase: PHASE_ORDER[(flags >> 2) & 3] ?? "day",
     day,
     phaseT,
