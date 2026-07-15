@@ -3,7 +3,7 @@ main = "index.ts"
 compatibility_date = "2026-06-01"
 
 # Local dev port. The game dials ws://127.0.0.1:8787/arena/CODE; the Arena DO MUST come up here.
-# `bun run signal` also preflights the port (scripts/ensure-signal-port.ts) and passes `--port 8787`
+# `bun run worker` also preflights the port (scripts/ensure-worker-port.ts) and passes `--port 8787`
 # so a busy port fails loudly instead of silently binding elsewhere. Ignored in production.
 [dev]
 port = 8787

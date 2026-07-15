@@ -11,7 +11,7 @@ Use Bun (`packageManager: bun@1.3.14`).
 | Install dependencies | `bun install` |
 | Start game dev server | `bun run dev` |
 | Start game + local arena worker | `bun run dev:coop` |
-| Start arena worker only | `bun run signal` |
+| Start arena worker only | `bun run worker` |
 | Type-check root game + scripts | `bun run typecheck` |
 | Run all tests | `bun run test` |
 | Run one test file | `bun run test -- game/data/waves.test.ts` |

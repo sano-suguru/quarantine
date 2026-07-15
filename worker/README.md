@@ -15,10 +15,10 @@ removed in 2b-0. Method C is gone; the Arena DO is the only path.
 bun run dev:coop
 
 # Worker only:
-bun run signal
+bun run worker
 ```
 
-`bun run signal` (and `dev:coop`) preflights port 8787 (`scripts/ensure-signal-port.ts`) and
+`bun run worker` (and `dev:coop`) preflights port 8787 (`scripts/ensure-worker-port.ts`) and
 passes `--port 8787` so a stale process squatting the port fails loudly with the offending PID
 instead of silently binding a fallback. If you hit that error, `kill <pid>` (add `-9` if it
 survives) and retry.

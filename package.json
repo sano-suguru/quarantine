@@ -11,8 +11,8 @@
   "scripts": {
     "prepare": "lefthook install",
     "dev": "vite",
-    "signal": "bun run scripts/ensure-signal-port.ts && cd worker && bunx wrangler dev --port 8787",
-    "dev:coop": "concurrently -k -n game,signal -c green,cyan \"vite\" \"bun run signal\"",
+    "worker": "bun run scripts/ensure-worker-port.ts && cd worker && bunx wrangler dev --port 8787",
+    "dev:coop": "concurrently -k -n game,worker -c green,cyan \"vite\" \"bun run worker\"",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "gen:sfx": "bun run scripts/gen-sfx.ts",
