@@ -97,7 +97,7 @@ export function sampleVariantCount(key: string): number {
 let loadPromise: Promise<void> | null = null;
 
 /** Required keys that have NOT decoded ≥1 variant, per the `has` predicate. */
-export function missingRequiredSamples(has: (key: string) => boolean): string[] {
+function missingRequiredSamples(has: (key: string) => boolean): string[] {
   return REQUIRED_SAMPLE_KEYS.filter((k) => !has(k));
 }
 

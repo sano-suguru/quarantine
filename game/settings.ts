@@ -55,7 +55,3 @@ export function setLoadout(ids: string[]): string[] {
   save({ ...getSettings(), loadout });
   return loadout;
 }
-
-export function setInputModeOverride(m: InputMode | null): void {
-  save({ ...getSettings(), inputModeOverride: m });
-}

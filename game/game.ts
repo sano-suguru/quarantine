@@ -55,7 +55,7 @@ export function isShopOpen(): boolean {
 export function openShopOverlay(): void {
   shopOpen = true;
 }
-export function closeShopOverlay(): void {
+function closeShopOverlay(): void {
   shopOpen = false;
 }
 
@@ -188,7 +188,7 @@ function resetAtmosphere(): void {
   resetStalkerPhantom();
 }
 
-export function audioAmbience(dt: number): void {
+function audioAmbience(dt: number): void {
   const p = localPlayer(state);
   const hpf = p.hp / p.maxHp;
   const wd = effWeapon(p, p.weapon);
@@ -1420,7 +1420,7 @@ function renderShop(): void {
 }
 
 /** Buy a Fortify (deployable) item by id. Client → CoopEvent request; the DO applies authoritatively. */
-export function buyItem(itemId: string): void {
+function buyItem(itemId: string): void {
   if (!shopOpen) return;
   Net.client?.requestBuy(itemId);
   Audio.ui(true);
