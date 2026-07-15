@@ -101,9 +101,9 @@
 
 Run:
 ```bash
-grep -rniE "single.?player|\bhost\b|method.?c|webrtc|manual.?sdp|\bP2P\b" --include="*.ts" game/ | grep -viE "hostname|localhost|ghost|const host|\? location.host"
+grep -rniE "single.?player|\bhost\b|method.?c|webrtc|manual.?sdp|\bP2P\b" --include="*.ts" game/ | grep -viE "hostname|localhost|ghost|signaling\.ts"
 ```
-Expected: ヒットゼロ（`signaling.ts` の変数 `host` は grep 除外パターンで落ちる）。`signaling`（レイヤ言及）も別途 `grep -rn "signaling" game/ | grep -v "signaling.ts:"` でゼロ確認（import パスの `./net/signaling` はファイル名なので別カウント＝残ってよい）。
+Expected: ヒットゼロ。⚠ **duck 指摘**: 除外は `signaling\.ts`（ファイル名）で行う — `signaling.ts:7` の `const host` 宣言も `:8` の `${host}` 使用も両方この変数（WS ホスト名）で false-stale。旧案の `const host`/`? location.host` 除外だと `:8` が落ちず「ヒットゼロ」不成立だった。`signaling`（レイヤ言及）も別途 `grep -rn "signaling" game/ | grep -v "signaling.ts:"` でゼロ確認（import パスの `./net/signaling` はファイル名なので別カウント＝残ってよい）。
 
 - [ ] **Step 9: typecheck / lint / build（コード不変の担保）**
 
@@ -174,7 +174,8 @@ Claude-Session: https://claude.ai/code/session_0165mBZ5AdBijatR8TPa39cY"
 
 ### Task 3: `signal` → `worker` 改名 (D)
 
-**Files:** `package.json`・`scripts/ensure-signal-port.ts`（→`ensure-worker-port.ts`）・`CLAUDE.md`。
+**Files:** `package.json`・`scripts/ensure-signal-port.ts`（→`ensure-worker-port.ts`）・`CLAUDE.md`・`README.md`・`worker/README.md`・`worker/wrangler.toml`・`.github/copilot-instructions.md`・`.serena/memories/suggested_commands.md`。
+⚠ **duck 指摘（重大漏れ）**: `bun run signal`/`ensure-signal-port` は package.json/CLAUDE.md 以外にも user/agent 向け手順に散在（README・worker/README・wrangler.toml コメント・copilot-instructions・serena メモリ）。全て改名しないと存在しない script を指す。**ただし `docs/superpowers/plans|specs/` の過去マイルストーン文書（2b0/phase2 等）は凍結履歴なので触らない**（本 2b③ の spec/plan の "before" 記述も同様に触らない）。
 
 **Interfaces:** npm script `signal` → `worker`。`bun run worker` / `bun run dev:coop` は挙動同一（arena worker のポート番 + wrangler dev）。
 
@@ -204,15 +205,28 @@ git mv scripts/ensure-signal-port.ts scripts/ensure-worker-port.ts
 
 - [ ] **Step 4: `CLAUDE.md` の `bun run signal` 参照を更新**
 
-`CLAUDE.md` の Commands 節と Run/deploy 節の `bun run signal` を `bun run worker` に、説明文の "just the worker … The old WebRTC signaling relay was deleted in 2b-0." の文面は保ちつつ script 名参照を合わせる（`bun run signal` の 2 箇所）。
+`CLAUDE.md` の Commands 節（`:29`）と Run/deploy 節（`:124`）の `bun run signal` を `bun run worker` に、説明文の "just the worker … The old WebRTC signaling relay was deleted in 2b-0." の文面は保ちつつ script 名参照を合わせる（`bun run signal` の 2 箇所）。
 
-Run（確認）:
+- [ ] **Step 5: user/agent 向け手順の `bun run signal` 参照を全て改名（duck 指摘の漏れ）**
+
+- `README.md:38`: `| \`bun run signal\` | Signaling relay only (\`ws://127.0.0.1:8787\`) |` → `| \`bun run worker\` | Arena worker only (\`ws://127.0.0.1:8787\`) |`（description "Signaling relay only" 自体も stale → "Arena worker only" へ）。
+- `worker/README.md:18`: `bun run signal` → `bun run worker`。`:21`: `` `bun run signal` (and `dev:coop`) preflights port 8787 (`scripts/ensure-signal-port.ts`) `` → `` `bun run worker` (and `dev:coop`) preflights port 8787 (`scripts/ensure-worker-port.ts`) ``。
+- `worker/wrangler.toml:6`: コメント `# \`bun run signal\` also preflights the port (scripts/ensure-signal-port.ts) …` → `# \`bun run worker\` also preflights the port (scripts/ensure-worker-port.ts) …`。
+- `.github/copilot-instructions.md:14`: `| Start arena worker only | \`bun run signal\` |` → `| Start arena worker only | \`bun run worker\` |`。
+- `.serena/memories/suggested_commands.md:4`: `- Signaling relay only: \`bun run signal\`.` → `- Arena worker only: \`bun run worker\`.`（Serena 自動生成メモリだが手順として参照されるので更新）。
+
+- [ ] **Step 6: 全リポジトリで stale 参照ゼロを確認（凍結履歴を除外）**
+
+Run:
 ```bash
-grep -rn "bun run signal\|ensure-signal-port\|-n game,signal" package.json CLAUDE.md scripts/
+grep -rniE "bun run signal|ensure-signal-port|-n game,signal" . \
+  --include="*.md" --include="*.toml" --include="*.json" --include="*.ts" --include="*.yml" --include="*.yaml" \
+  | grep -v "node_modules" | grep -v "\.git/" \
+  | grep -vE "docs/superpowers/(plans|specs)/2026-07-12|docs/superpowers/(plans|specs)/2026-07-15-do-server-2b3"
 ```
-Expected: ヒットゼロ。
+Expected: ヒットゼロ（過去マイルストーン文書 2b0/phase2 と、本 2b③ の spec/plan の "before" 記述は grep 除外＝残ってよい凍結履歴）。
 
-- [ ] **Step 5: 改名後にスクリプトが解決することを確認**
+- [ ] **Step 7: 改名後にスクリプトが解決することを確認**
 
 Run:
 ```bash
@@ -222,7 +236,7 @@ kill %1 2>/dev/null || true
 ```
 Expected: `ensure-worker-port.ts` が走り（ポート空きなら exit 0 で通過）wrangler dev が起動を試みる（8787 が空いていれば起動、埋まっていれば preflight が PID を報告して非ゼロ終了 — どちらも「スクリプトが解決した」証左）。※CI では走らせない、ローカル確認のみ。
 
-- [ ] **Step 6: typecheck（scripts tsconfig）**
+- [ ] **Step 8: typecheck（scripts tsconfig）**
 
 Run:
 ```bash
@@ -230,10 +244,10 @@ bun run typecheck
 ```
 Expected: exit 0（`scripts/tsconfig.json` は `include:["."]` なのでファイル名変更に追従不要）。
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add package.json scripts/ensure-worker-port.ts CLAUDE.md
+git add package.json scripts/ensure-worker-port.ts CLAUDE.md README.md worker/README.md worker/wrangler.toml .github/copilot-instructions.md .serena/memories/suggested_commands.md
 git commit -m "chore(2b③-D): rename 'signal' script → 'worker' (signaling relay retired in 2b-0)
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
@@ -256,9 +270,9 @@ Claude-Session: https://claude.ai/code/session_0165mBZ5AdBijatR8TPa39cY"
 
 `sim/systems/siege.test.ts` の breach 発火テスト（`expect(out).toBe("breached")` を含む `it`、~206-211 付近）に、breachT がリセットされることの pin を追加:
 ```ts
-    expect(s.breachT).toBe(0); // enterBreached zeroes the accumulator on the transition frame
+    expect(s.breachT).toBe(0); // sysSiege's breach transition zeroes breachT via enterBreached
 ```
-（`enterBreached`（siege.ts:33）が breachT を 0 にしていることの回帰保護。既存の phaseT アサーションの直後に足す。）
+（このテストは `sysSiege` 経由で breach に到達するので、コメントは `enterBreached` 直接検証ではなく「sysSiege の breach 遷移が enterBreached 経由で breachT を 0 にする」と正確に述べる（duck 指摘）。`enterBreached`（siege.ts:36）が `state.breachT = 0` する回帰保護。既存の phaseT アサーションの直後に足す。）
 
 - [ ] **Step 3: T1b — sub-threshold で breachT が nonzero に積む→decay するテスト（cheap なら追加、高コストなら skip）**
 
@@ -311,7 +325,7 @@ Claude-Session: https://claude.ai/code/session_0165mBZ5AdBijatR8TPa39cY"
 
 ## Self-Review
 
-- **Spec coverage (PR2)**: A stale コメント（T1、net.ts 最優先含む・false-stale 除外・PR1 済み行除外）✅ / C dead export 削除 + un-export（T2）✅ / D signal→worker（T3、package.json + file rename + CLAUDE.md）✅ / E deferred minors（T4、verify-then-add）✅。
+- **Spec coverage (PR2)**: A stale コメント（T1、net.ts 最優先含む・false-stale 除外・PR1 済み行除外）✅ / C dead export 削除 + un-export（T2）✅ / D signal→worker（T3、package.json + file rename + CLAUDE.md + README + worker/README + wrangler.toml + copilot-instructions + serena メモリ — duck の重大漏れ反映、凍結履歴は除外）✅ / E deferred minors（T4、verify-then-add）✅。
 - **false-stale 保護**: `signaling.ts:7-8` の変数 `host` は grep 除外 + 明記で除外 ✅。意図的 reserve コメント（fxEvents/bit0/bit1）は A 対象外 ✅。
 - **Placeholder scan**: A は vocab ルール + 全サイト列挙 + 最優先の exact rewrite。E の T1b のみ条件付き（cheap なら追加、skip 可を明記）— これは placeholder ではなく明示的な judgment gate ✅。
 - **Type consistency**: コード API 不変（コメント/export キーワード/script 名/テストのみ）✅。

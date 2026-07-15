@@ -180,9 +180,9 @@ export const Net: {
 
 Run:
 ```bash
-grep -rn "Net\.mode\|NetMode" game/ ; grep -rn "\.paused" game/
+grep -rn "Net\.mode\|NetMode" game/ ; grep -rn "\.paused" game/ ; grep -rn '"pause"' game/
 ```
-Expected: `game/` 側ヒットゼロ（`sim/` の `state.paused` は Task 2 で消す。ここで `game/` に残っていれば漏れ）。
+Expected: 3 grep とも `game/` 側ヒットゼロ。特に `"pause"`（`show("pause")`/`hide("pause")`）の残存は Step 9 で `#pause` 要素を消した後 `el()` が throw するので、game.ts:1305-1306 + main.ts:504 が全て消えたことをここで確認（`sim/` の `state.paused` は Task 2 で消す）。
 
 - [ ] **Step 12: typecheck / lint / build**
 
