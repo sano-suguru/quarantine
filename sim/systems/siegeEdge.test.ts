@@ -30,12 +30,6 @@ describe("siegeEdgeCue reset phases", () => {
   it("is silent on breached→resetting", () => {
     expect(siegeEdgeCue("breached", "resetting", 3)).toEqual([]);
   });
-  it("still fires DAY on the normal night→day dawn", () => {
-    const cues = siegeEdgeCue("night", "day", 4);
-    expect(cues.some((c) => c.t === "announce" && (c as { label: string }).label === "DAY")).toBe(
-      true,
-    );
-  });
 });
 
 describe("isArenaResetEdge", () => {

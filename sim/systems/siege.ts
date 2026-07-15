@@ -66,8 +66,8 @@ export function clockLabel(phase: SiegePhase, phaseT: number, day: number): stri
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
-/** Seed the day's sparse wanderers. Extracted from startDay so thaw can re-seed without
- *  re-running startDay's phaseT reset + cache restock. */
+/** Seed the day's sparse wanderers. Callers: startDay (fresh day) and rearmThaw (persistence
+ *  thaw — re-seeds without re-running startDay's phaseT reset + cache restock). */
 export function seedRoamers(state: State): void {
   for (let i = 0; i < CONFIG.siege.roamersPerDay; i++) {
     const type = i % 4 === 3 ? "runner" : "walker";
