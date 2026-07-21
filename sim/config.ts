@@ -124,6 +124,11 @@ export const CONFIG = {
     // wheel events for ~1s, so one-switch-per-burst (re-arm after this gap) stops the wheel
     // from spinning through the whole arsenal. Also used to drain wheel accrued while non-live.
   },
+  wave: {
+    // real-time density: effCount eases toward the live non-absent count at this rate (per sec)
+    // so a join/leave burst ramps the spawn budget smoothly instead of jerking. Playtest-tuned.
+    effCountEase: 0.5,
+  },
   feel: {
     hitstop: 0.05, // seconds of slow-mo on a kill
     hitstopScale: 0.12, // dt multiplier while hitstop is active
@@ -249,6 +254,14 @@ export const CONFIG = {
     nightCapBase: 45, // cap on day 1
     nightCapPerDay: 5, // each later day raises the cap by this much
     nightCapMax: 90, // hard ceiling (perf / snapshot bound)
+    // modest occupancy raise of the concurrent-zombie cap: more players → a denser floor,
+    // bounded by nightCapPlayerMax so the crowd stays within the full-only snapshot budget at
+    // maxPlayers=12. Full high-cap density + 32-scaling (delta snapshots) is out of scope.
+    nightCapPerPlayer: 6, // extra concurrent zombies per player beyond the first
+    nightCapPlayerMax: 40, // ceiling on the occupancy contribution to the cap
+    // breach threshold MUST scale with occupancy: opening the horde for a big party would
+    // otherwise trip the fixed interior count and soft-reset the world exactly at high pop.
+    breachPerPlayer: 3, // interior-zombie breach threshold gains this per player beyond the first
     duskFrac: 0.25, // fraction of the day over which light crossfades down to night (sunset)
     dawnFrac: 0.2, // fraction of the night over which light crossfades up to day (predawn)
     respawnDelay: 17, // seconds a downed player spectates before auto-respawning at the fortress
@@ -277,6 +290,17 @@ export const CONFIG = {
     // spawn count (HP/speed unchanged). 0 in single-player → identical waves.
     waveCountPerPlayer: 0.5,
     repairReward: 0, // no SCRAP fountain from repair (repair is free now — see siege.repairCost=0)
+    // in-run bounty scales with squad size so per-head earnings keep pace with the scaled
+    // threat (sublinear vs waveCountPerPlayer → a big party earns a little less per head).
+    // Cross-run SALVAGE meta is deliberately NOT scaled (stays occupancy-neutral).
+    bountyPerPlayer: 0.35,
+    // per-extra-player shift of the night composition toward tougher types (runner/brute) +
+    // a gentle flat hp bump — the TOUGHNESS / threat-TEXTURE axis (individuals get a bit
+    // harder), NOT the per-person easing. Per-person load actually EASES via the nightMaxZombies
+    // cap growing sublinearly vs headcount (85 zombies / 12p ≈ 7-per-head vs 45 solo). ⚠ Coupling:
+    // raising nightCapPlayerMax weakens that cap-driven easing and lets this toughness surface as
+    // harder-per-person — tune the two together. sqrt(extra) keeps the texture bump sublinear.
+    toughPerPlayer: 0.12,
   },
   // co-op peer support (reviving downed teammates). Uses siege.interactRadius for reach so
   // all context interactions share one distance. Single-player never triggers it (no allies).
