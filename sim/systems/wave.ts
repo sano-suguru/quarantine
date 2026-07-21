@@ -121,6 +121,12 @@ export function startWave(state: State, n: number): void {
  * is passed in (from nightMaxZombies) to keep this module free of a siege import cycle.
  */
 export function sysWave(state: State, dt: number, cap: number): void {
+  // real-time density: ease effCount toward the live count, then re-derive the def so the
+  // budget tracks who's actually here (day+night joins/leaves), smoothed against bursts.
+  const target = liveCount(state);
+  const k = Math.min(1, CONFIG.wave.effCountEase * dt);
+  state.wave.effCount += (target - state.wave.effCount) * k;
+  state.wave.def = waveDef(state.wave.n, Math.round(state.wave.effCount));
   const def = state.wave.def;
   if (!def) return;
   if (state.zombies.length >= cap) return;
