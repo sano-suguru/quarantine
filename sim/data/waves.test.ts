@@ -34,4 +34,29 @@ describe("waveDef", () => {
     expect(d.hpScale).toBeCloseTo(2.0, 5); // 1 + 10*0.10
     expect(d.spdScale).toBeCloseTo(1.15, 5); // 1 + 10*0.015
   });
+
+  it("shifts composition toward tougher types with squad size", () => {
+    // at players=1 the day-only weights are unchanged (regression guard)
+    expect(weight(waveDef(4, 1), "runner")).toBeCloseTo(4.8, 5); // (4-1)*1.6
+    // more players raises runner/brute weight relative to walker
+    const solo = waveDef(4, 1);
+    const party = waveDef(4, 6);
+    const soloRunnerFrac = weight(solo, "runner") / weight(solo, "walker");
+    const partyRunnerFrac = weight(party, "runner") / weight(party, "walker");
+    expect(partyRunnerFrac).toBeGreaterThan(soloRunnerFrac);
+  });
+
+  it("adds a gentle sublinear hp/speed bump with squad size", () => {
+    const solo = waveDef(10, 1);
+    const party = waveDef(10, 6);
+    expect(party.hpScale).toBeGreaterThan(solo.hpScale);
+    expect(party.spdScale).toBeGreaterThanOrEqual(solo.spdScale);
+    // sublinear: the 6-player bump is less than 5× a single-step bump (not linear in players)
+    const perStep = waveDef(10, 2).hpScale - solo.hpScale;
+    expect(party.hpScale - solo.hpScale).toBeLessThan(perStep * 5);
+  });
+
+  it("leaves batch scaling linear (unchanged)", () => {
+    expect(waveDef(1, 3).batch).toBe(2); // round(1 * (1 + 2*0.5)) — regression guard
+  });
 });

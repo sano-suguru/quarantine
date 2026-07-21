@@ -3,7 +3,7 @@ import { CONFIG } from "../config";
 import { addPlayer } from "../engine/players";
 import { newState } from "../state";
 import type { State } from "../types";
-import { awardBounty } from "./economy";
+import { awardBounty, scaledBounty } from "./economy";
 
 const R = CONFIG.econ.bountyRadius;
 
@@ -83,5 +83,18 @@ describe("awardBounty", () => {
     b.money = 0;
     awardBounty(s, 5000, 5000, 4); // kill far from both
     expect(a.money + b.money).toBe(4); // conserved across the squad
+  });
+});
+
+describe("scaledBounty", () => {
+  it("is the base amount for a single player", () => {
+    expect(scaledBounty(20, 1)).toBe(20);
+  });
+
+  it("scales up with squad size and stays integer", () => {
+    const v = scaledBounty(20, 5);
+    expect(v).toBe(Math.round(20 * (1 + 4 * CONFIG.econ.bountyPerPlayer)));
+    expect(Number.isInteger(v)).toBe(true);
+    expect(v).toBeGreaterThan(20);
   });
 });

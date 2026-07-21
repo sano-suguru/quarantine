@@ -3,9 +3,10 @@ import { segmentHitsSegment } from "../engine/geometry";
 import { len } from "../engine/math";
 import { pushFx } from "../events";
 import type { State } from "../types";
-import { awardBounty } from "./economy";
+import { awardBounty, scaledBounty } from "./economy";
 import { goreIntensity } from "./fx";
 import { dropFromKill } from "./pickups";
+import { liveCount } from "./wave";
 
 const STONE: [number, number, number] = [0.5, 0.52, 0.5];
 
@@ -95,7 +96,7 @@ export function killZombie(state: State, idx: number, hitDir: number | null = nu
     state.cam.shake = Math.min(state.cam.shake + (big ? 9 : 3), 20);
     state.hitstopT = Math.max(state.hitstopT, CONFIG.feel.hitstop * (big ? 1.8 : 1));
   }
-  awardBounty(state, z.x, z.y, z.bounty);
+  awardBounty(state, z.x, z.y, scaledBounty(z.bounty, liveCount(state)));
   state.kills++;
   dropFromKill(state, z.x, z.y, big);
   state.zombies[idx] = state.zombies[state.zombies.length - 1] as (typeof state.zombies)[number];

@@ -1,6 +1,13 @@
 import { CONFIG } from "../config";
 import type { State } from "../types";
 
+/** Scale an in-run bounty by squad size so per-head earnings keep pace with the occupancy-
+ *  scaled threat. Cross-run SALVAGE meta is deliberately NOT scaled (stays occupancy-neutral).
+ *  Integer out (money is integer). */
+export function scaledBounty(base: number, players: number): number {
+  return Math.round(base * (1 + Math.max(0, players - 1) * CONFIG.econ.bountyPerPlayer));
+}
+
 /**
  * Credit a kill/loot bounty to players (co-op individual wallets). Proximity model:
  * split evenly among living players within CONFIG.econ.bountyRadius of (x, y); the

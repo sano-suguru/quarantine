@@ -5,7 +5,7 @@ import { revivePlayer } from "../engine/players";
 import type { SiegePhase, State } from "../types";
 import { restockCaches } from "./caches";
 import { despawnStalker } from "./stalker";
-import { spawnZombie, startWave, sysWave } from "./wave";
+import { liveCount, spawnZombie, startWave, sysWave } from "./wave";
 
 /**
  * Day/night siege loop. Day = a lit, timed scavenge/repair window with sparse roamers;
@@ -18,15 +18,24 @@ export function nightDuration(day: number): number {
   return Math.min(s.nightDurationMax, s.nightDurationBase + (day - 1) * s.nightDurationPerDay);
 }
 
-/** Living-zombie cap during the night for a given day (day-scaled under a hard ceiling). */
-export function nightMaxZombies(day: number): number {
+/** Living-zombie cap during the night: day-scaled, plus a modest occupancy raise (bounded by
+ *  nightCapPlayerMax so the crowd stays within the full-snapshot budget at maxPlayers), all
+ *  under the hard perf/snapshot ceiling nightCapMax. */
+export function nightMaxZombies(day: number, players = 1): number {
   const s = CONFIG.siege;
-  return Math.min(s.nightCapMax, s.nightCapBase + (day - 1) * s.nightCapPerDay);
+  const dayCap = s.nightCapBase + (day - 1) * s.nightCapPerDay;
+  const occ = Math.min(s.nightCapPlayerMax, Math.max(0, players - 1) * s.nightCapPerPlayer);
+  return Math.min(s.nightCapMax, dayCap + occ);
 }
 
-/** Overrun test: the interior holds at least this many zombies. Pure — the caller counts. */
-export function isFortressBreached(indoorCount: number): boolean {
-  return indoorCount >= CONFIG.siege.breachZombies;
+/** Overrun test: the interior holds at least the occupancy-scaled threshold. Pure — the caller
+ *  counts the interior zombies and passes the live player count. Scaling with players is
+ *  MANDATORY: without it, opening the horde for a big party trips the fixed count and soft-
+ *  resets the world exactly where the party should be thriving. */
+export function isFortressBreached(indoorCount: number, players = 1): boolean {
+  const s = CONFIG.siege;
+  const threshold = s.breachZombies + Math.max(0, players - 1) * s.breachPerPlayer;
+  return indoorCount >= threshold;
 }
 
 /** Enter the frozen failure beat. */
@@ -117,11 +126,11 @@ export function sysSiege(state: State, dt: number): "night" | "dawn" | "breached
   }
   if (state.phase === "night") {
     // night: spawns keep coming (capped); dawn arrives on the clock, not on a wipe-out
-    sysWave(state, dt, nightMaxZombies(state.day));
+    sysWave(state, dt, nightMaxZombies(state.day, liveCount(state)));
     // breach: the interior being overrun for breachSustain seconds falls the fortress
     let indoor = 0;
     for (const z of state.zombies) if (Math.abs(z.x) < HW && Math.abs(z.y) < HH) indoor++;
-    state.breachT = isFortressBreached(indoor)
+    state.breachT = isFortressBreached(indoor, liveCount(state))
       ? state.breachT + dt
       : Math.max(0, state.breachT - dt);
     if (state.breachT >= CONFIG.siege.breachSustain) {

@@ -89,7 +89,7 @@ export function newState(): State {
     day: 1,
     phaseT: CONFIG.siege.dayDuration,
     cam: { x: 0, y: 0, shake: 0 },
-    wave: { n: 0, def: null, spawnT: 0 },
+    wave: { n: 0, def: null, spawnT: 0, effCount: 1 },
     kills: 0,
     salvageBanked: 0,
     owned,

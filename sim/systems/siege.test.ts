@@ -116,6 +116,24 @@ describe("nightMaxZombies", () => {
   });
 });
 
+describe("nightMaxZombies — occupancy", () => {
+  it("is the day-only value for a single player (regression)", () => {
+    expect(nightMaxZombies(1, 1)).toBe(CONFIG.siege.nightCapBase); // 45
+    expect(nightMaxZombies(5, 1)).toBe(CONFIG.siege.nightCapBase + 4 * CONFIG.siege.nightCapPerDay);
+  });
+
+  it("raises the cap with squad size, bounded by nightCapPlayerMax", () => {
+    expect(nightMaxZombies(1, 4)).toBe(45 + 3 * CONFIG.siege.nightCapPerPlayer);
+    // the occupancy contribution is clamped
+    const big = nightMaxZombies(1, 12);
+    expect(big - 45).toBeLessThanOrEqual(CONFIG.siege.nightCapPlayerMax);
+  });
+
+  it("never exceeds the hard ceiling nightCapMax", () => {
+    expect(nightMaxZombies(30, 12)).toBeLessThanOrEqual(CONFIG.siege.nightCapMax);
+  });
+});
+
 describe("ambientForClock", () => {
   it("is full daylight mid-day", () => {
     // read from CONFIG so feel-tuning the ambient values doesn't break the curve tests
@@ -170,6 +188,21 @@ describe("isFortressBreached", () => {
     expect(isFortressBreached(CONFIG.siege.breachZombies - 1)).toBe(false);
     expect(isFortressBreached(CONFIG.siege.breachZombies)).toBe(true);
     expect(isFortressBreached(CONFIG.siege.breachZombies + 5)).toBe(true);
+  });
+});
+
+describe("isFortressBreached — occupancy", () => {
+  it("uses the base threshold for a single player (regression)", () => {
+    expect(isFortressBreached(CONFIG.siege.breachZombies - 1, 1)).toBe(false);
+    expect(isFortressBreached(CONFIG.siege.breachZombies, 1)).toBe(true); // 14
+  });
+
+  it("raises the threshold with squad size (a big party is not more fragile)", () => {
+    const players = 6;
+    const raised = CONFIG.siege.breachZombies + (players - 1) * CONFIG.siege.breachPerPlayer;
+    expect(isFortressBreached(CONFIG.siege.breachZombies, players)).toBe(false); // 14 no longer breaches
+    expect(isFortressBreached(raised - 1, players)).toBe(false);
+    expect(isFortressBreached(raised, players)).toBe(true);
   });
 });
 

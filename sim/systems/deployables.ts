@@ -6,11 +6,14 @@ import { pushFx } from "../events";
 import { allocId } from "../state";
 import type { Deployable, DeployableDef, SiegePhase, State, Zombie } from "../types";
 import { spawnPickup } from "./pickups";
+import { liveCount } from "./wave";
 
 /** Deployable damage multiplier. At night it IS the enemy `hpScale` for that night (the caller
- *  passes `waveDef(state.day).hpScale`), so a deployable's shots-to-kill ratio is preserved all
- *  run from a single source of truth; during the day, roamers are base HP (hpScale 1) AND
- *  `state.day` already holds the upcoming night's number, so we return 1. */
+ *  passes `waveDef(state.day, liveCount(state)).hpScale`), so a deployable's shots-to-kill ratio
+ *  is preserved all run from a single source of truth — tracking BOTH the day curve and the
+ *  occupancy-toughness `tough` factor the same way the actual spawned enemies do; during the day,
+ *  roamers are base HP (hpScale 1) AND `state.day` already holds the upcoming night's number, so
+ *  we return 1. */
 export function deployDmgScale(phase: SiegePhase, nightHpScale: number): number {
   return phase === "night" ? nightHpScale : 1;
 }
@@ -188,7 +191,7 @@ function tickWeapon(state: State, d: Deployable, def: DeployableDef, dt: number)
       (d.reloadT ?? 0) <= 0 && (d.weaponCd ?? 0) <= 0 && (!w.mag || (d.ammoLeft ?? 0) > 0);
     if (canFire) {
       const speed = w.bulletSpeed;
-      const dmg = w.dmg * deployDmgScale(state.phase, waveDef(state.day).hpScale);
+      const dmg = w.dmg * deployDmgScale(state.phase, waveDef(state.day, liveCount(state)).hpScale);
       state.bullets.push({
         id: allocId(state),
         x: d.x,

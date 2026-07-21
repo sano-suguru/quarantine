@@ -6,6 +6,12 @@ import { clamp, len, rand } from "../engine/math";
 import { allocId } from "../state";
 import type { State } from "../types";
 
+/** Non-absent player count, floored at 1 (single-player = 1). The occupancy input for
+ *  every occupancy-linked curve (wave batch/toughness, night cap, breach threshold). */
+export function liveCount(state: State): number {
+  return state.players.filter((p) => !p.absent).length || 1;
+}
+
 /** Is this point clear of every shelter/POI wall (with a little margin)? */
 function clearOfWalls(state: State, x: number, y: number, r: number): boolean {
   for (const w of state.walls) {
@@ -105,8 +111,8 @@ export function spawnZombie(
 
 export function startWave(state: State, n: number): void {
   // squad size scales the per-pulse batch; absent (held) bodies don't inflate it. Min 1 = SP.
-  const players = state.players.filter((p) => !p.absent).length || 1;
-  state.wave = { n, def: waveDef(n, players), spawnT: 0 };
+  const players = liveCount(state);
+  state.wave = { n, def: waveDef(n, players), spawnT: 0, effCount: players };
 }
 
 /**
@@ -115,6 +121,12 @@ export function startWave(state: State, n: number): void {
  * is passed in (from nightMaxZombies) to keep this module free of a siege import cycle.
  */
 export function sysWave(state: State, dt: number, cap: number): void {
+  // real-time density: ease effCount toward the live count, then re-derive the def so the
+  // budget tracks who's actually here (day+night joins/leaves), smoothed against bursts.
+  const target = liveCount(state);
+  const k = Math.min(1, CONFIG.wave.effCountEase * dt);
+  state.wave.effCount += (target - state.wave.effCount) * k;
+  state.wave.def = waveDef(state.wave.n, Math.round(state.wave.effCount));
   const def = state.wave.def;
   if (!def) return;
   if (state.zombies.length >= cap) return;
