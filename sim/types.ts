@@ -529,6 +529,9 @@ interface Wave {
   n: number;
   def: WaveDefinition | null;
   spawnT: number;
+  /** EMA-smoothed effective non-absent player count; drives real-time density re-eval.
+   *  Server-only transient — NOT snapshotted, NOT persisted (like breachT/flow). */
+  effCount: number;
 }
 
 interface Cam {

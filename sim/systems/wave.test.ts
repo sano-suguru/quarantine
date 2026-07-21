@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { addPlayer } from "../engine/players";
 import { newState } from "../state";
 import type { State, WaveDefinition } from "../types";
-import { startWave, sysWave } from "./wave";
+import { liveCount, startWave, sysWave } from "./wave";
 
 // Guardrail: sysWave calls spawnZombie (RNG positions), but the SCHEDULING — batch size, spawn
 // cadence, and the living-zombie cap — is deterministic. We assert counts only, never coordinates.
@@ -15,7 +16,7 @@ function armWave(s: State, n: number, batch: number, spawnT: number): void {
     hpScale: 1,
     spdScale: 1,
   };
-  s.wave = { n, def, spawnT };
+  s.wave = { n, def, spawnT, effCount: 1 };
 }
 
 describe("startWave", () => {
@@ -30,7 +31,7 @@ describe("startWave", () => {
 describe("sysWave scheduling", () => {
   it("does nothing without a wave definition", () => {
     const s = newState();
-    s.wave = { n: 0, def: null, spawnT: 0 };
+    s.wave = { n: 0, def: null, spawnT: 0, effCount: 1 };
     sysWave(s, 1, 90);
     expect(s.zombies.length).toBe(0);
   });
@@ -67,5 +68,22 @@ describe("sysWave scheduling", () => {
     s.wave.spawnT = 0;
     sysWave(s, 0.1, 10); // already at cap → no spawn
     expect(s.zombies.length).toBe(10);
+  });
+});
+
+describe("liveCount", () => {
+  it("is 1 for a single player", () => {
+    const s = newState();
+    expect(liveCount(s)).toBe(1);
+  });
+
+  it("counts non-absent players and floors at 1", () => {
+    const s = newState();
+    addPlayer(s, 1, 0, 0);
+    addPlayer(s, 2, 0, 0);
+    expect(liveCount(s)).toBe(3); // newState seeds player 0 + 2 added
+    const p = s.players.find((pl) => pl.id === 2);
+    if (p) p.absent = true;
+    expect(liveCount(s)).toBe(2); // absent excluded
   });
 });
