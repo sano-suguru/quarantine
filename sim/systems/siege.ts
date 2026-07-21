@@ -18,10 +18,14 @@ export function nightDuration(day: number): number {
   return Math.min(s.nightDurationMax, s.nightDurationBase + (day - 1) * s.nightDurationPerDay);
 }
 
-/** Living-zombie cap during the night for a given day (day-scaled under a hard ceiling). */
-export function nightMaxZombies(day: number): number {
+/** Living-zombie cap during the night: day-scaled, plus a modest occupancy raise (bounded by
+ *  nightCapPlayerMax so the crowd stays within the full-snapshot budget at maxPlayers), all
+ *  under the hard perf/snapshot ceiling nightCapMax. */
+export function nightMaxZombies(day: number, players = 1): number {
   const s = CONFIG.siege;
-  return Math.min(s.nightCapMax, s.nightCapBase + (day - 1) * s.nightCapPerDay);
+  const dayCap = s.nightCapBase + (day - 1) * s.nightCapPerDay;
+  const occ = Math.min(s.nightCapPlayerMax, Math.max(0, players - 1) * s.nightCapPerPlayer);
+  return Math.min(s.nightCapMax, dayCap + occ);
 }
 
 /** Overrun test: the interior holds at least this many zombies. Pure — the caller counts. */

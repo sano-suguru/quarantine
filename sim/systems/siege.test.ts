@@ -116,6 +116,24 @@ describe("nightMaxZombies", () => {
   });
 });
 
+describe("nightMaxZombies — occupancy", () => {
+  it("is the day-only value for a single player (regression)", () => {
+    expect(nightMaxZombies(1, 1)).toBe(CONFIG.siege.nightCapBase); // 45
+    expect(nightMaxZombies(5, 1)).toBe(CONFIG.siege.nightCapBase + 4 * CONFIG.siege.nightCapPerDay);
+  });
+
+  it("raises the cap with squad size, bounded by nightCapPlayerMax", () => {
+    expect(nightMaxZombies(1, 4)).toBe(45 + 3 * CONFIG.siege.nightCapPerPlayer);
+    // the occupancy contribution is clamped
+    const big = nightMaxZombies(1, 12);
+    expect(big - 45).toBeLessThanOrEqual(CONFIG.siege.nightCapPlayerMax);
+  });
+
+  it("never exceeds the hard ceiling nightCapMax", () => {
+    expect(nightMaxZombies(30, 12)).toBeLessThanOrEqual(CONFIG.siege.nightCapMax);
+  });
+});
+
 describe("ambientForClock", () => {
   it("is full daylight mid-day", () => {
     // read from CONFIG so feel-tuning the ambient values doesn't break the curve tests
