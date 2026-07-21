@@ -191,6 +191,21 @@ describe("isFortressBreached", () => {
   });
 });
 
+describe("isFortressBreached — occupancy", () => {
+  it("uses the base threshold for a single player (regression)", () => {
+    expect(isFortressBreached(CONFIG.siege.breachZombies - 1, 1)).toBe(false);
+    expect(isFortressBreached(CONFIG.siege.breachZombies, 1)).toBe(true); // 14
+  });
+
+  it("raises the threshold with squad size (a big party is not more fragile)", () => {
+    const players = 6;
+    const raised = CONFIG.siege.breachZombies + (players - 1) * CONFIG.siege.breachPerPlayer;
+    expect(isFortressBreached(CONFIG.siege.breachZombies, players)).toBe(false); // 14 no longer breaches
+    expect(isFortressBreached(raised - 1, players)).toBe(false);
+    expect(isFortressBreached(raised, players)).toBe(true);
+  });
+});
+
 describe("sysSiege reset machine", () => {
   it("breached counts down to resetting, resetting counts down to 'reset'", () => {
     const s = newState();
