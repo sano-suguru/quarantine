@@ -111,7 +111,7 @@ interface Wave {
 }
 ```
 
-Search for every `state.wave = {` initializer (at least `sim/state.ts` `newState` and `startWave`) and add `effCount: 1` (or `players`) so the object literal satisfies the type. Run `bun run typecheck` to find them all.
+Add `effCount` to every `Wave` object literal. There are two shapes: the `state.wave = { … }` assignment in `startWave` (done above), and the `wave: { n: 0, def: null, spawnT: 0 }` literal inside `newState` (`sim/state.ts` ~line 92) — grepping `state.wave = {` will MISS the `newState` one, so rely on `bun run typecheck`: because `Wave.effCount` is non-optional, the compiler flags every literal missing it. Add `effCount: 1` to the `newState` literal.
 
 - [ ] **Step 4: Run test + typecheck to verify pass**
 
@@ -146,9 +146,12 @@ In `sim/config.ts`, inside `econ` (after `waveCountPerPlayer`):
     // threat (sublinear vs waveCountPerPlayer → a big party earns a little less per head).
     // Cross-run SALVAGE meta is deliberately NOT scaled (stays occupancy-neutral).
     bountyPerPlayer: 0.35,
-    // per-extra-player shift of the night composition toward tougher types (runner/brute),
-    // and a gentle flat hp/speed bump — the sublinear "per-person difficulty" axis. Small:
-    // count (waveCountPerPlayer) carries the mowing; this keeps individuals threatening.
+    // per-extra-player shift of the night composition toward tougher types (runner/brute) +
+    // a gentle flat hp bump — the TOUGHNESS / threat-TEXTURE axis (individuals get a bit
+    // harder), NOT the per-person easing. Per-person load actually EASES via the nightMaxZombies
+    // cap growing sublinearly vs headcount (85 zombies / 12p ≈ 7-per-head vs 45 solo). ⚠ Coupling:
+    // raising nightCapPlayerMax weakens that cap-driven easing and lets this toughness surface as
+    // harder-per-person — tune the two together. sqrt(extra) keeps the texture bump sublinear.
     toughPerPlayer: 0.12,
 ```
 
@@ -245,7 +248,8 @@ Replace `sim/data/waves.ts` `waveDef` body:
 export function waveDef(n: number, players = 1): WaveDefinition {
   const extra = Math.max(0, Math.max(1, players) - 1); // players beyond the first
   const mul = 1 + extra * CONFIG.econ.waveCountPerPlayer; // batch: ~linear (the mowing axis)
-  // per-person difficulty: sublinear via sqrt(extra) so a big party isn't punished.
+  // toughness/texture: sublinear via sqrt(extra). This makes INDIVIDUALS a bit tougher (harder),
+  // NOT the per-person easing — per-person load eases via the sublinear nightMaxZombies cap.
   const tough = 1 + Math.sqrt(extra) * CONFIG.econ.toughPerPlayer;
   const weights: { type: string; w: number }[] = [{ type: "walker", w: 6 + n * 2.4 }];
   // composition shift: runner/brute weights rise with `tough`, walker stays flat → the mix
@@ -350,6 +354,8 @@ export function sysWave(state: State, dt: number, cap: number): void {
 
 Run: `bun run test -- sim/systems/wave.test.ts` → PASS
 
+**Caution — existing siege.test.ts interaction:** the existing `sysSiege` breach test sets `state.wave.def = null` to "disable the spawner". The new `sysWave` re-arms `def` every tick, so spawns resume — but they land on the off-screen spawn-ring (`spawnZombie` places outside HOME), never inside the interior, so `indoor` count and `breachT` accumulation are unaffected and the test still passes. When you touch that test in Tasks 5/6, update its comment to reflect that the spawner can no longer be disabled by nulling `def` (it re-arms), and that the test relies on ring-placement not reaching the interior. Do not assert on `state.zombies.length` in that test.
+
 - [ ] **Step 5: Commit**
 
 ```bash
@@ -365,7 +371,7 @@ Raise the concurrent-zombie cap modestly with occupancy, bounded by a ceiling th
 
 **Files:**
 - Modify: `sim/systems/siege.ts`
-- Test: `sim/systems/siege.test.ts` (create)
+- Test: `sim/systems/siege.test.ts` (**MODIFY — this file already EXISTS with ~308 lines of core siege regression tests. Do NOT recreate/overwrite it. APPEND a new, distinctly-named describe block. Recreating it would silently delete the existing suite and still go green.**)
 
 **Interfaces:**
 - Consumes: `CONFIG.siege.nightCapPerPlayer`, `nightCapPlayerMax`, `nightCapMax` (existing ceiling).
@@ -373,14 +379,10 @@ Raise the concurrent-zombie cap modestly with occupancy, bounded by a ceiling th
 
 - [ ] **Step 1: Write the failing test**
 
-Create `sim/systems/siege.test.ts`:
+Open the EXISTING `sim/systems/siege.test.ts`. It already has a `describe("nightMaxZombies", …)` block whose tests call `nightMaxZombies(day)` with ONE arg — those stay valid (the new signature defaults `players = 1`, backward-compatible). Reuse the file's existing imports (add `CONFIG` from `../config` and `nightMaxZombies` from `./siege` to the import list only if not already imported). **Append a NEW block with a distinct name** so it does not collide with the existing one:
 
 ```typescript
-import { describe, expect, it } from "vitest";
-import { CONFIG } from "../config";
-import { nightMaxZombies } from "./siege";
-
-describe("nightMaxZombies", () => {
+describe("nightMaxZombies — occupancy", () => {
   it("is the day-only value for a single player (regression)", () => {
     expect(nightMaxZombies(1, 1)).toBe(CONFIG.siege.nightCapBase); // 45
     expect(nightMaxZombies(5, 1)).toBe(CONFIG.siege.nightCapBase + 4 * CONFIG.siege.nightCapPerDay);
@@ -447,12 +449,10 @@ Scale the interior-overrun breach threshold with occupancy so opening the horde 
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `sim/systems/siege.test.ts`:
+Append to the EXISTING `sim/systems/siege.test.ts` (add `isFortressBreached` to the `./siege` import if not already present). The file already has an `isFortressBreached` block with 1-arg calls — those stay valid (default `players = 1`). **Append a NEW distinctly-named block:**
 
 ```typescript
-import { isFortressBreached } from "./siege";
-
-describe("isFortressBreached", () => {
+describe("isFortressBreached — occupancy", () => {
   it("uses the base threshold for a single player (regression)", () => {
     expect(isFortressBreached(CONFIG.siege.breachZombies - 1, 1)).toBe(false);
     expect(isFortressBreached(CONFIG.siege.breachZombies, 1)).toBe(true); // 14
@@ -632,11 +632,13 @@ This is the acceptance gate — the numeric values above are first-pass and are 
 1. **Solo cold arrival feels alive and fair** — density=1 is a complete horror scene, not brutal, not empty.
 2. **Low-pop transition (2–3)** feels natural, no cliff.
 3. **Big-party density** reads as SAS3 mowing (within the 12-player cap) and is dense-but-not-punished (bounty keeps pace).
-4. **No runaway soft-resets at high pop** — the breach co-scale holds; a big party defending does not trip Day→1.
+4. **Breach still REACHABLE but not runaway at high pop** — two-sided check: (a) a big party defending normally does NOT trip Day→1 (the co-scale holds); AND (b) if a 12-player arena *deliberately lets its openings fall*, the interior CAN still reach the scaled threshold (14 + 11×3 = 47) and soft-reset — confirm breach isn't tuned so high it's unreachable (the interior geometrically holds ~120, so 47 is possible, but through 4 narrow openings it's demanding — verify it actually fires when earned, else `breachPerPlayer` is too high).
 5. **Real-time transitions are smooth** — a mid-night join/leave ramps the budget without a visible spawn-rate jerk (EMA).
 6. **Dread survives at low population** (the genre slider).
 
-Record results honestly. Adjust `CONFIG` values (`bountyPerPlayer`, `toughPerPlayer`, `nightCapPerPlayer`/`nightCapPlayerMax`, `breachPerPlayer`, `effCountEase`) per feel and re-commit as tuning follow-ups.
+Record results honestly. Adjust `CONFIG` values (`bountyPerPlayer`, `toughPerPlayer`, `nightCapPerPlayer`/`nightCapPlayerMax`, `breachPerPlayer`, `effCountEase`) per feel and re-commit as tuning follow-ups. **Watch the cap↔toughness coupling** (Task 2 comment): if a big party feels too easy and you raise `nightCapPlayerMax`, the cap-driven per-person easing weakens and `toughPerPlayer` surfaces as harder-per-person — tune the pair together.
+
+**Note — existing absolute-value tests:** a few pre-existing tests pin exact numbers against base constants: `sim/data/waves.test.ts` (`waveDef(1,3).batch === 2` depends on `waveCountPerPlayer = 0.5`) and `sim/systems/siege.test.ts` (`nightMaxZombies`/`isFortressBreached` base values). If tuning changes those base constants, update those pinned assertions in the same commit — they are regression guards, not failures.
 
 - [ ] **Step 4: Commit any tuning adjustments**
 
@@ -650,10 +652,10 @@ git commit -m "tune(density): feel-gate playtest adjustments"
 ## Self-Review
 
 **Spec coverage (this plan = the density core of the spec §3):**
-- Real-time day+night re-eval + EMA smoothing → Tasks 1, 4. ✓
-- Count ~linear vs per-person sublinear separation → Task 3 (batch linear `mul`, toughness `sqrt(extra)`). ✓
+- Real-time EMA re-eval of the HORDE budget → Tasks 1, 4 — **NIGHT only** (the horde exists only at night; `sysWave` runs in `sysSiege`'s night branch). In-run bounty (Task 7) scales day AND night (any kill). So "real-time day+night" holds for reward; **horde density is night-scoped** (correct — there is no day horde). Occupancy-scaling the sparse day `seedRoamers` is a **deferred minor nicety**, not done here (roamers are intentionally sparse respite; a mid-day join adding roamers would need continuous day spawning that doesn't exist). Claim corrected from the earlier "day+night ✓".
+- Count ~linear (batch `mul`) vs per-person load EASED — Task 3 + Task 5. ⚠ The per-person easing is **emergent from the sublinear `nightMaxZombies` cap** (85/12p ≈ 7-per-head vs 45 solo), NOT from `toughPerPlayer` (which makes individuals slightly *harder* — the toughness/texture axis). These are coupled: raising `nightCapPlayerMax` weakens the easing and surfaces harder-per-person. Documented in Task 2's config comment and the Task 8 tuning note.
 - Toughness composition-shift primary + gentle flat HP → Task 3. ✓
-- In-run reward scales, cross-run SALVAGE neutral → Task 7 (bounty scaled; `salvageEarned`/`salvageShare` untouched by design). ✓
+- In-run reward scales, cross-run SALVAGE neutral → Task 7 (bounty scaled; `salvageEarned`/`salvageShare` untouched). **Rationale it's already neutral:** dawn splits the delta `floor((day*8 + kills*0.15 − banked)/present)` — the `day*8` term is DIVIDED by headcount (per-capita shrinks with more players) and the `kills` term is ~constant per-capita, so per-player meta accrual is not inflated by squad size. Leaving it untouched is correct. ✓
 - Modest occupancy `nightMaxZombies` raise bounded by full-snapshot budget → Task 5. ✓
 - Mandatory `breachZombies` occupancy co-scale → Task 6. ✓
 - Genre-slider + feel gates → Task 8. ✓
